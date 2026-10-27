@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="theme-color" content="#3e2210">
+	<title>$GODOT_PROJECT_NAME</title>
+	$GODOT_HEAD_INCLUDE
+	<style>
+		html, body { margin: 0; padding: 0; position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
+			background: #3e2210; color: #fff7e8; font-family: "Baloo Bhaijaan 2", "Segoe UI", Tahoma, sans-serif;
+			touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+		#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+		#canvas:focus { outline: none; }
+		.overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+			gap: 18px; background: #3e2210; z-index: 10; text-align: center; padding: 24px; box-sizing: border-box; }
+		.logo { font-size: clamp(34px, 7vw, 64px); font-weight: 800; color: #e8552f; letter-spacing: 0.5px; line-height: 1.1; }
+		.sub { color: #f7e4bf; opacity: 0.85; font-size: clamp(15px, 2.4vw, 20px); }
+		.bar { width: min(420px, 80vw); height: 14px; background: rgba(255,255,255,0.12); border-radius: 8px; overflow: hidden; }
+		.bar > div { height: 100%; width: 0%; background: #4a9f4f; transition: width 0.2s; }
+		.btn { appearance: none; border: 0; border-bottom: 4px solid #2f7a35; background: #4a9f4f; color: #fff7e8; font: 800 26px/1 inherit;
+			padding: 18px 48px; border-radius: 14px; cursor: pointer; display: none; }
+		.btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+		.note { font-size: 15px; opacity: 0.7; }
+		#rotate { display: none; z-index: 20; }
+		#rotate .phone { width: 54px; height: 96px; border: 5px solid #f7e4bf; border-radius: 12px; animation: turn 1.6s ease-in-out infinite; }
+		@keyframes turn { 0%, 20% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+		@media (orientation: portrait) and (max-width: 900px) { #rotate { display: flex; } }
+		.hidden { display: none !important; }
+	</style>
+</head>
+<body>
+	<canvas id="canvas" tabindex="0">Your browser does not support the canvas tag.</canvas>
+	<noscript><div class="overlay">Your browser does not support JavaScript.</div></noscript>
+
+	<div id="status" class="overlay">
+		<div class="logo">مشاوي تايكون</div>
+		<div class="sub">Mashawi Tycoon</div>
+		<div class="bar"><div id="status-progress"></div></div>
+		<div id="status-notice" class="note">جارٍ التحميل... / Loading...</div>
+		<button id="play" class="btn">▶ العب / Play</button>
+	</div>
+
+	<div id="rotate" class="overlay">
+		<div class="phone"></div>
+		<div class="logo" style="font-size:30px">أدر هاتفك</div>
+		<div class="sub">Rotate your phone to play</div>
+	</div>
+
+	<script src="$GODOT_URL"></script>
+	<script>
+	const GODOT_CONFIG = $GODOT_CONFIG;
+	const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+	(function () {
+		const statusOverlay = document.getElementById('status');
+		const progress = document.getElementById('status-progress');
+		const notice = document.getElementById('status-notice');
+		const play = document.getElementById('play');
+		const rotate = document.getElementById('rotate');
+		let started = false;
+
+		function fail(err) {
+			console.error(err);
+			notice.textContent = (err instanceof Error) ? err.message : String(err);
+			play.style.display = 'none';
+		}
+
+		const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+		if (missing.length !== 0) {
+			fail('This browser cannot run the game:\n' + missing.join('\n'));
+			return;
+		}
+
+		const exe = GODOT_CONFIG.executable;
+		const pack = GODOT_CONFIG.mainPack || (exe + '.pck');
+		const engine = new Engine(Object.assign({}, GODOT_CONFIG, {
+			onProgress: function (current, total) {
+				if (current > 0 && total > 0) { progress.style.width = Math.round(100 * current / total) + '%'; }
+			},
+		}));
+		// Download everything now; start the engine only on a tap so iOS unlocks audio.
+		const loaded = Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]);
+		loaded.then(function () {
+			progress.style.width = '100%';
+			notice.textContent = 'جاهز / Ready';
+			play.style.display = 'inline-block';
+		}, fail);
+
+		function start() {
+			if (started) { return; }
+			started = true;
+			play.style.display = 'none';
+			notice.textContent = 'جارٍ التشغيل... / Starting...';
+			try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch(function () {}); } } catch (e) {}
+			loaded.then(function () {
+				return engine.start({ args: ['--main-pack', pack] });
+			}).then(function () {
+				document.getElementById('canvas').focus();
+			}, fail);
+		}
+		play.addEventListener('click', start);
+		window.addEventListener('godot-ready', function () { statusOverlay.classList.add('hidden'); });
+		// Safety net: hide the overlay a few seconds after start even if the event never comes.
+		play.addEventListener('click', function () { setTimeout(function () { statusOverlay.classList.add('hidden'); }, 6000); });
+
+		// Portrait guard for phones (JS mirror of the CSS media query, for old WebViews).
+		function checkOrientation() {
+			const portrait = window.matchMedia('(orientation: portrait) and (max-width: 900px)').matches;
+			rotate.style.display = portrait ? 'flex' : 'none';
+		}
+		window.addEventListener('resize', checkOrientation);
+		window.addEventListener('orientationchange', checkOrientation);
+		checkOrientation();
+	}());
+	</script>
+</body>
+</html>

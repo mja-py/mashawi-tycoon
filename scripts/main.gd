@@ -22,6 +22,9 @@ func _ready() -> void:
 		add_child(hud)
 	Game.changed.connect(_on_game_changed)
 	_apply_dev_flags()
+	if OS.has_feature("web"):
+		# tells the HTML shell to drop its loading overlay
+		JavaScriptBridge.eval("window.dispatchEvent(new Event('godot-ready'))")
 
 func _apply_dev_flags() -> void:
 	if DevTools.has("location"):
