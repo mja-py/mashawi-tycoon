@@ -1,0 +1,292 @@
+keys,en,ar
+ui.title,MASHAWI TYCOON,مشاوي تايكون
+ui.subtitle,Build the best mashawi stand in Dubai.,ابنِ أفضل عربة مشاوي في دبي.
+ui.new_game,New Game,لعبة جديدة
+ui.continue,Continue,متابعة
+ui.lang_toggle,العربية,English
+ui.credits,"Art: Kenney, KayKit (CC0)  ·  Font: Baloo Bhaijaan 2 (OFL)",الرسوم: Kenney و KayKit (CC0)  ·  الخط: Baloo Bhaijaan 2 (OFL)
+ui.supplies,Supplies,المؤن
+ui.menu,Menu,القائمة
+ui.place,Place,الموقع
+ui.upgrades,Upgrades,التطويرات
+ui.promote,Promote,الإعلانات
+ui.open_shop,OPEN SHOP  >,افتح المحل
+ui.close,Close,إغلاق
+ui.day,Day %d,اليوم %d
+ui.forecast,Forecast: %s,التوقعات: %s
+ui.costs_today,Costs today: %s,تكاليف اليوم: %s
+ui.skip,Skip to closing,تخطي إلى الإغلاق
+ui.live,Served %d  ·  %s   (in line: %d),تم تقديم %d  ·  %s   (في الطابور: %d)
+ui.next_day,Next day  >,اليوم التالي
+ui.r_title,Day %d  -  %s,اليوم %d  -  %s
+ui.r_passers,Passers-by,المارّة
+ui.r_served,Customers served,زبائن تم تقديمهم
+ui.r_left_wait,Left: line too slow,غادروا: الطابور بطيء
+ui.r_left_full,Left: line full,غادروا: الطابور ممتلئ
+ui.r_sold_out,Left: sold out,غادروا: نفدت البضاعة
+ui.r_satisfaction,Satisfaction,الرضا
+ui.r_reputation,Reputation,السمعة
+ui.r_stars,%s stars,%s نجوم
+ui.r_sold,Sold:  %s,المبيعات:  %s
+ui.r_nothing,nothing,لا شيء
+ui.r_revenue,Revenue,الإيرادات
+ui.r_cogs,Ingredients used,تكلفة المكونات
+ui.r_rent,Rent,الإيجار
+ui.r_wages,Wages,الأجور
+ui.r_spoiled,Spoiled (%s),تالف (%s)
+ui.r_profit,PROFIT,الربح
+ui.r_cash,Cash,النقد
+ui.r_forecast,Tomorrow's forecast: %s,توقعات الغد: %s
+ui.s_hint,Buy what you'll sell today. Meat and chicken lose %d%% overnight,اشترِ ما ستبيعه اليوم. اللحم والدجاج يفسد منهما %d%% خلال الليل
+ui.s_hint_fridge," (fridge: %d%%, cooler: 0%%).", (مع الثلاجة: %d%%، مع البراد: 0%%).
+ui.s_yesterday,  Yesterday you served %d customers.,  بالأمس قدّمت لـ %d زبون.
+ui.s_can_make,Can make now:  %s,يمكنك تحضير الآن:  %s
+ui.s_expect,Expect roughly %s customers today if the forecast holds (%s).,توقّع حوالي %s زبون اليوم إذا صدقت التوقعات (%s).
+ui.s_stock,In stock: %d %s,المخزون: %d %s
+ui.s_spoils,spoils %d%% overnight!,يفسد %d%% خلال الليل!
+ui.s_loses,loses %d%% overnight,يفقد %d%% خلال الليل
+ui.m_hint,"Set prices, tune recipes and add new dishes. Customers compare quality to price.",حدّد الأسعار واضبط الوصفات وأضف أطباقًا جديدة. الزبائن يقارنون الجودة بالسعر.
+ui.m_on,ON the menu,في القائمة
+ui.m_off,OFF the menu,خارج القائمة
+ui.m_add,Add to menu  -  %s,أضف إلى القائمة  -  %s
+ui.m_price,Price,السعر
+ui.m_cost,Costs %s to make   ·   Quality: %s,التكلفة %s   ·   الجودة: %s
+ui.q_legendary,Legendary,أسطوري
+ui.q_excellent,Excellent,ممتاز
+ui.q_good,Good,جيد
+ui.q_okay,Okay,مقبول
+ui.q_poor,Poor,ضعيف
+ui.q_awful,Awful,سيئ
+ui.m_upgrades,Upgrades: %s,التحسينات: %s
+ui.m_no_upgrades,No upgrades yet,لا تحسينات بعد
+ui.m_full,Fully upgraded!,مطوّر بالكامل!
+recipe.meat,Meat,لحم
+recipe.veg,Salad,سلطة
+recipe.sauce,Sauce,صوص
+ui.p_hint,"Where will you set up today? Busier places cost rent, and each crowd has its own taste.",أين ستفتح اليوم؟ الأماكن المزدحمة لها إيجار، ولكل جمهور ذوقه.
+ui.p_free,Free,مجاني
+ui.p_rent,Rent %s/day,الإيجار %s/يوم
+ui.p_traffic,Traffic: %s,الحركة: %s
+ui.t_low,Low,قليلة
+ui.t_medium,Medium,متوسطة
+ui.t_high,High,عالية
+ui.t_vhigh,Very high,عالية جدًا
+ui.p_open,Open %s,مفتوح %s
+ui.p_here,You're here,أنت هنا
+ui.p_needs,Needs %.1f stars,يتطلب %.1f نجوم
+ui.p_move,Move here,انتقل إلى هنا
+ui.u_hint,Your vehicle decides where you can sell. Upgrades are permanent improvements to your stand and crew.,مركبتك تحدد أين يمكنك البيع. التطويرات تحسينات دائمة لعربتك وفريقك.
+ui.u_owned,Owned,مملوك
+ui.u_buy,Buy  %s,اشترِ  %s
+ui.a_hint,Get the word out. Promotions matter most where rivals compete for the same crowd.,انشر الخبر. الإعلانات أهم ما يكون حيث يتنافس المنافسون على نفس الزبائن.
+ui.a_active,Active - %d day(s) left,نشط - باقي %d يوم
+ui.a_start,Start  %s,ابدأ  %s
+ui.no_money,Not enough money.,لا يوجد مال كافٍ.
+ui.added,%s added to the menu!,تمت إضافة %s إلى القائمة!
+ui.enhanced,%s: %s,%s: %s
+ui.requires,Requires %s first.,يتطلب %s أولًا.
+ui.bought,Bought %s.,اشتريت %s.
+ui.already_running,Already running.,الحملة نشطة بالفعل.
+ui.started,%s started.,بدأت %s.
+ui.rep_low,Your reputation isn't high enough yet.,سمعتك ليست كافية بعد.
+ui.loan,Your cousin lent you %s. Buy only what you can sell today!,أقرضك ابن عمك %s. اشترِ فقط ما تستطيع بيعه اليوم!
+ui.off_menu,%s is OFF the menu. Customers can't buy it.,%s خارج القائمة. لن يشتريه الزبائن.
+ui.no_food,No food is ON the menu! Switch a dish on first.,لا يوجد طعام في القائمة! فعّل طبقًا أولًا.
+ui.buy_first,Buy some supplies first!,اشترِ بعض المؤن أولًا!
+ev.sold_out_all,You're sold out! Customers are walking away.,نفدت بضاعتك! الزبائن يغادرون.
+ev.queue_full,The line is full. Customers are leaving!,الطابور ممتلئ. الزبائن يغادرون!
+ev.slow,Customers are leaving the line. Faster service would help.,الزبائن يغادرون الطابور. الخدمة الأسرع تساعد.
+ev.sold_out_item,You're sold out of %s!,نفد %s!
+ev.out_of,Out of %s!,نفد %s!
+ev.closing,Closing already?,تغلقون بهذه السرعة؟
+ui.w_title,Welcome to Dubai!,مرحبًا بك في دبي!
+ui.w1,"1.  Buy supplies for about as many customers as you expect. Meat spoils overnight, so buy fresh every day.",1.  اشترِ مؤنًا بقدر الزبائن المتوقعين. اللحم يفسد خلال الليل، فاشترِ طازجًا كل يوم.
+ui.w2,2.  Keep Chicken Tikka ON the menu. Set a fair price: customers compare quality to price.,2.  أبقِ تكة الدجاج في القائمة. ضع سعرًا عادلًا: الزبائن يقارنون الجودة بالسعر.
+ui.w3,3.  Reputation grows with happy customers. More stars unlock busier places.,3.  السمعة تنمو مع الزبائن السعداء. النجوم تفتح أماكن أكثر ازدحامًا.
+ui.w4,4.  Upgrades and ads cost money. Grow before you spend.,4.  التطويرات والإعلانات تكلف مالًا. كبّر مشروعك قبل أن تنفق.
+ui.w_go,Let's go!,يلا نبدأ!
+stage.dubai,Dubai,دبي
+weather.sunny,Sunny,مشمس
+weather.hot,Heatwave,موجة حر
+weather.cloudy,Cloudy,غائم
+weather.sandstorm,Sandstorm,عاصفة رملية
+weather.breeze,Winter breeze,نسيم شتوي
+loc.fahidi,Al Fahidi Corner,زاوية الفهيدي
+loc.fahidi.desc,"A quiet lane in the old quarter under the wind towers. Free, but few people pass by.",زقاق هادئ في الحي القديم تحت البراجيل. مجاني، لكن المارّة قليلون.
+loc.creek,Creek Park,حديقة الخور
+loc.creek.desc,"Families and joggers along the creek. Great on breezy days, empty in a sandstorm.",عائلات ورياضيون على ضفاف الخور. رائع في الأيام اللطيفة، فارغ في العواصف.
+loc.metro,Metro Station,محطة المترو
+loc.metro.desc,"Commuters in a hurry. Lots of them, but they won't wait in line.",ركاب مستعجلون. كثيرون، لكنهم لا ينتظرون في الطابور.
+loc.jbr,JBR Beach,شاطئ جي بي آر
+loc.jbr.desc,Tourists and sun. A heatwave here sells drinks by the crate.,سياح وشمس. موجة الحر هنا تبيع المشروبات بالصناديق.
+loc.downtown,Downtown,داون تاون
+loc.downtown.desc,"Office crowds with deep pockets and high standards, under the Burj.",موظفون بجيوب عميقة ومعايير عالية، تحت برج خليفة.
+loc.gv,Global Village,القرية العالمية
+loc.gv.desc,"Lanterns, music and hungry night crowds.",فوانيس وموسيقى وزوار جائعون طوال الليل.
+unit.pcs,pcs,قطعة
+unit.portions,portions,حصة
+unit.cans,cans,علبة
+unit.cups,cups,كوب
+up.cart2,Bigger Stand,عربة أكبر
+up.cart2.desc,More counter space: the line can hold 3 more customers.,مساحة أكبر: يتسع الطابور لثلاثة زبائن إضافيين.
+up.grill2,Double Charcoal Grill,شواية فحم مزدوجة
+up.grill2.desc,Serve customers 30% faster.,تقديم أسرع بنسبة 30%.
+up.fridge,Fridge,ثلاجة
+up.fridge.desc,Keeps meat and chicken overnight: only 10% is lost instead of 35%.,تحفظ اللحم والدجاج طوال الليل: يفسد 10% فقط بدلًا من 35%.
+up.fridge2,Walk-in Cooler,براد كبير
+up.fridge2.desc,"Nothing spoils. Meat, chicken and veg stay fresh.",لا شيء يفسد. اللحم والدجاج والخضار تبقى طازجة.
+up.awning,Shade Sail,مظلة شمسية
+up.awning.desc,Customers keep coming in a sandstorm (halves the penalty).,الزبائن يستمرون بالقدوم في العاصفة الرملية (نصف الخسارة).
+up.speaker,Speaker & Oud Music,سماعة وموسيقى عود
+up.speaker.desc,Draws passers-by: +8% stop chance.,تجذب المارّة: +8% فرصة التوقف.
+up.neon,Neon Sign,لافتة نيون
+up.neon.desc,+12% stop chance. Lights up at night.,+12% فرصة التوقف. تضيء ليلًا.
+up.seating,Majlis Seating,جلسة مجلس
+up.seating.desc,+8% satisfaction. Happy customers talk.,+8% رضا. الزبائن السعداء يتكلمون عنك.
+up.helper,Hire a Helper,توظيف مساعد
+up.helper.desc,A second pair of hands: 35% faster service. Costs AED 60 wages every day.,يد مساعدة: خدمة أسرع بنسبة 35%. أجر 60 د.إ يوميًا.
+mk.fliers,Hand out Fliers,توزيع منشورات
+mk.fliers.desc,+15% stop chance today.,+15% فرصة التوقف اليوم.
+mk.posters,Posters,لوحات إعلانية
+mk.posters.desc,+15% stop chance for 3 days.,+15% فرصة التوقف لمدة 3 أيام.
+mk.social,Instagram Page,صفحة إنستغرام
+mk.social.desc,+12% stop chance for a week.,+12% فرصة التوقف لمدة أسبوع.
+mk.radio,Radio Ad,إعلان راديو
+mk.radio.desc,+30% stop chance for 5 days. Everybody hears it.,+30% فرصة التوقف لمدة 5 أيام. الكل يسمعه.
+bubble.great.1,Delicious!,لذيذ!
+bubble.great.2,Best tikka in Dubai!,أحلى تكة في دبي!
+bubble.great.3,Yum!,يم!
+bubble.great.4,Worth every dirham!,يستاهل كل درهم!
+bubble.great.5,I'm coming back!,بأرجع أكيد!
+bubble.ok.1,Not bad.,لا بأس.
+bubble.ok.2,"Hmm, okay.",همم، مقبول.
+bubble.ok.3,Fills the hole.,يسد الجوع.
+bubble.ok.4,Decent.,زين.
+bubble.bad_quality.1,Too dry!,ناشف وايد!
+bubble.bad_quality.2,Where's the meat?,وين اللحم؟
+bubble.bad_quality.3,Needs sauce!,يبغى له صوص!
+bubble.bad_quality.4,Bland...,ما له طعم...
+bubble.too_pricey.1,Too expensive!,غالي وايد!
+bubble.too_pricey.2,That price?!,بهالسعر؟!
+bubble.too_pricey.3,I'll eat at home.,بآكل في البيت.
+bubble.too_slow.1,Too slow!,بطيء وايد!
+bubble.too_slow.2,I can't wait all day.,ما أقدر أنطر طول اليوم.
+bubble.too_slow.3,Forget it.,خلاص، نسيت.
+bubble.queue_full.1,What a line!,شو هالطابور!
+bubble.queue_full.2,Not waiting for that.,ما بنطر.
+bubble.sold_out.1,Sold out?!,خلص كل شي؟!
+bubble.sold_out.2,Nothing left?,ما بقى شي؟
+bubble.sold_out.3,No mashawi today.,ما في مشاوي اليوم.
+bubble.hot.1,So hot... a drink!,حر وايد... أبغى مشروب!
+bubble.hot.2,Need something cold.,أبغى شي بارد.
+bubble.sandstorm.1,"Ugh, sand everywhere.",أف، رمل في كل مكان.
+bubble.sandstorm.2,Can't see a thing.,ما أشوف شي.
+bubble.breeze.1,Lovely weather!,الجو روعة!
+bubble.breeze.2,Perfect day for mashawi.,يوم مثالي للمشاوي.
+item.chicken_tikka,Chicken Tikka,تكة دجاج
+item.chicken_tikka.desc,"Marinated chicken chunks on a skewer, charcoal grilled. Bread and salad on the side.",قطع دجاج متبّلة على السيخ، مشوية على الفحم. مع خبز وسلطة.
+item.chicken_tikka.e1,Yoghurt & saffron marinade,تتبيلة لبن وزعفران
+item.chicken_tikka.e2,Grilled tomato & onion,طماطم وبصل مشوي
+item.chicken_tikka.e3,Charcoal master,أستاذ الفحم
+item.mutton_tikka,Mutton Tikka,تكة لحم
+item.mutton_tikka.desc,"Tender mutton cubes on the skewer, the Dubai cafeteria classic.",قطع لحم غنم طرية على السيخ، كلاسيكية كافتيريات دبي.
+item.mutton_tikka.e1,Overnight marinade,تتبيلة ليلة كاملة
+item.mutton_tikka.e2,Fat-tail pieces,قطع من اللية
+item.mutton_tikka.e3,Premium mutton,لحم غنم فاخر
+item.kebab,Kebab,كباب
+item.kebab.desc,Spiced minced-meat kebab on a flat skewer.,كباب لحم مفروم متبّل على السيخ العريض.
+item.kebab.e1,Fresh parsley & onion,بقدونس وبصل طازج
+item.kebab.e2,Sumac & chili,سماق وفلفل
+item.kebab.e3,Chef's spice mix,خلطة بهارات الشيف
+item.sandwich,Tikka Sandwich,ساندويتش تكة
+item.sandwich.desc,Chicken tikka rolled in bread with salad and garlic. Cheap and quick.,تكة دجاج ملفوفة في الخبز مع سلطة وثوم. رخيصة وسريعة.
+item.sandwich.e1,Toum garlic,ثومية
+item.sandwich.e2,Pickles & fries inside,مخلل وبطاطس داخلية
+item.mixed,Mixed Grill Plate,طبق مشاوي مشكلة
+item.mixed.desc,"Mutton tikka, chicken tikka and kebab with bread, salad and grilled veg.",تكة لحم وتكة دجاج وكباب مع خبز وسلطة وخضار مشوية.
+item.mixed.e1,Grilled veg,خضار مشوية
+item.mixed.e2,Saffron rice,رز بالزعفران
+item.mixed.e3,Giant platter,طبق عملاق
+item.salad,Salad,سلطة
+item.salad.desc,"Fresh chopped salad with lemon. Cheap side, always wanted.",سلطة مقطعة طازجة مع ليمون. طبق جانبي رخيص والكل يطلبه.
+item.salad.e1,Pomegranate molasses,دبس رمان
+item.fries,Fries,بطاطس مقلية
+item.fries.desc,Crispy fries with a shake of spice.,بطاطس مقرمشة مع رشة بهارات.
+item.fries.e1,Seasoning,تتبيلة
+item.fries.e2,Cheese fries,بطاطس بالجبن
+item.laban,Laban (Yoghurt Drink),لبن
+item.laban.desc,Chilled salty yoghurt drink. The classic with grills.,لبن بارد مملّح. الرفيق الكلاسيكي للمشاوي.
+item.laban.e1,Fresh churned,طازج ومخفوق
+item.soda,Cold Soda,مشروب غازي
+item.soda.desc,Ice-cold cans. Flies off the stand in the heat.,علب مثلجة. تطير من العربة في الحر.
+item.soda.e1,Ice bucket,سطل ثلج
+item.karak,Karak Tea,شاي كرك
+item.karak.desc,"Sweet, milky, spiced. Everyone wants a cup.",حلو بالحليب والهيل. الكل يبغى كوب.
+item.karak.e1,Extra saffron,زعفران زيادة
+ing.bread,Bread (Khubz),خبز
+ing.chicken,Chicken,دجاج
+ing.mutton,Mutton,لحم غنم
+ing.mince,Kebab Mince,لحم كباب مفروم
+ing.veg,Salad Veg,خضار السلطة
+ing.sauce,Garlic & Sauces,ثوم وصوصات
+ing.charcoal,Charcoal,فحم
+ing.yogurt,Laban Cups,أكواب لبن
+ing.drink,Soda Cans,علب مشروبات غازية
+ing.karak,Karak Tea,شاي كرك
+ing.fries,Frozen Fries,بطاطس مجمدة
+menu.group.grill,Charcoal Grills,مشاوي على الفحم
+menu.group.side,Sides,أطباق جانبية
+menu.group.drink,Drinks,مشروبات
+menu.group.sweet,Sweets,حلويات
+ui.locked_by,Needs: %s,يتطلب: %s
+ui.veh_title,Your vehicle,مركبتك
+ui.veh_current,Current,الحالية
+ui.veh_order,Buy the Food Truck first.,اشترِ شاحنة الطعام أولًا.
+ui.veh_needed,This place needs a bigger vehicle.,هذا المكان يحتاج مركبة أكبر.
+ui.veh_reach,Reaches: %s,يصل إلى: %s
+veh.cart,Street Cart,عربة الشارع
+veh.cart.desc,Your starter cart. Fine for the old quarter and the park.,عربتك الأولى. تكفي للحي القديم والحديقة.
+veh.truck,Food Truck,شاحنة طعام
+veh.truck.desc,"A proper truck: serves 15% faster, holds 2 more in line, and can drive to the Metro, JBR and Downtown.",شاحنة حقيقية: تقديم أسرع بنسبة 15%، طابور أطول بزبونين، وتصل إلى المترو وجي بي آر وداون تاون.
+veh.truck2,Big Grill Truck,شاحنة المشاوي الكبيرة
+veh.truck2.desc,"Serves 25% faster, 4 more in line, and gets you a spot at the Mall and Global Village.",تقديم أسرع بنسبة 25%، طابور أطول بأربعة، وتحجز لك مكانًا في المول والقرية العالمية.
+loc.mall,Mall Food Court,فود كورت المول
+loc.mall.desc,"Air-conditioned crowds all day, but a dozen rival counters. Without promotion you're invisible.",زحمة مكيّفة طوال اليوم، لكن عشرات المنافسين. بدون إعلانات لن يراك أحد.
+ui.p_competition,Competition: %s,المنافسة: %s
+ui.p_promo,Promos x%.1f,الإعلانات x%.1f
+ui.c_high,high,عالية
+ui.c_fierce,fierce,شرسة
+ui.a_effect,Promo effect here: x%.1f   ·   Rivals are taking %d%% of your customers,تأثير الإعلانات هنا: x%.1f   ·   المنافسون يأخذون %d%% من زبائنك
+ui.a_effect_none,Promo effect here: x%.1f   ·   No rivals at this place,تأثير الإعلانات هنا: x%.1f   ·   لا منافسين هنا
+ui.r_lost_rival,Left: went to a rival,غادروا: ذهبوا للمنافس
+ev.rival,Rivals are stealing customers! Promote to stand out.,المنافسون يسرقون زبائنك! أعلن لتتميّز.
+up.sweets,Sweets Counter,ركن الحلويات
+up.sweets.desc,"A glass display for desserts: unlocks saffron milk cake, sago halwa and Omani halwa. Needs the Food Truck.",عرض زجاجي للحلويات: يفتح كيكة الحليب بالزعفران وحلوى الساقو والحلوى العمانية. يتطلب شاحنة الطعام.
+item.saffron_cake,Saffron Milk Cake,كيكة حليب بالزعفران
+item.saffron_cake.desc,"Sponge soaked in saffron milk, pistachio on top. The Gulf favourite.",إسفنجية مشبّعة بحليب الزعفران مع فستق. المفضلة في الخليج.
+item.saffron_cake.e1,Extra saffron,زعفران زيادة
+item.saffron_cake.e2,Rose cream,كريمة الورد
+item.sago_halwa,Sago Halwa,حلوى الساقو
+item.sago_halwa.desc,Glossy amber sago pudding with cardamom and almonds.,حلوى ساقو كهرمانية لامعة مع هيل ولوز.
+item.sago_halwa.e1,Toasted almonds,لوز محمّص
+item.sago_halwa.e2,Saffron & rose water,زعفران وماء ورد
+item.omani_halwa,Omani Halwa,حلوى عمانية
+item.omani_halwa.desc,"Dark, sticky, cardamom-rich halwa. Served with karak.",حلوى داكنة لزجة غنية بالهيل. تُقدّم مع الكرك.
+item.omani_halwa.e1,Ghee & nuts,سمن ومكسرات
+item.omani_halwa.e2,Muscat recipe,وصفة مسقط
+ing.cake,Saffron Cake Slices,شرائح كيكة الزعفران
+ing.sago,Sago Halwa,حلوى الساقو
+ing.halwa,Omani Halwa,حلوى عمانية
+unit.slices,slices,شريحة
+bubble.rival.1,The other stall looks better.,الكشك الثاني شكله أحسن.
+bubble.rival.2,Never heard of this place.,ما سمعت عن هالمحل.
+bubble.rival.3,I'll try the famous one.,بأجرّب المشهور.
+bubble.sweet.1,And something sweet!,وشي حلو بعد!
+bubble.sweet.2,"Halwa with my karak, please.",حلوى مع الكرك لو سمحت.
+ui.sign,MASHAWI,مشاوي
+rival.1,Shawarma,شاورما
+rival.2,Burger,برجر
+rival.3,Pizza,بيتزا
+rival.4,Mandi,مندي
+rival.5,Karak,كرك
+ui.r_too_pricey,Left: too pricey,غادروا: السعر غالي
