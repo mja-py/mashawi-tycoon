@@ -82,9 +82,9 @@ Publish:
 1. Create an empty GitHub repository and add it as `origin` (`git remote add origin <url>`).
 2. `tools/deploy_web.sh` exports and force-pushes `build/web` to the `gh-pages` branch.
 3. GitHub: Settings > Pages > Deploy from a branch > `gh-pages` / root. The game is then at
-   `https://<user>.github.io/<repo>/`.
+   `https://mja-py.github.io/mashawi-tycoon/`.
 4. Shopify: Online Store > Pages > your page > Add section > **Custom Liquid**, paste
-   `web/shopify-section.html` with `GAME_URL` replaced by that address. Desktop visitors get the game
+   `web/shopify-section.html` (the address is already filled in). Desktop visitors get the game
    inline after clicking Play; phones open it full-page in a new tab.
 
 ## Project layout

@@ -13,4 +13,4 @@ git checkout -q -b gh-pages
 git add -A
 git -c user.name="${GIT_AUTHOR_NAME:-deploy}" -c user.email="${GIT_AUTHOR_EMAIL:-deploy@localhost}" commit -q -m "Deploy web build $(date +%F)"
 git push -f "$REMOTE" gh-pages
-echo "Pushed to gh-pages. URL: https://<user>.github.io/<repo>/"
+echo "Pushed to gh-pages. URL: https://mja-py.github.io/mashawi-tycoon/"
