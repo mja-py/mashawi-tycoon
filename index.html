@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="apple-mobile-web-app-title" content="Mashawi">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="theme-color" content="#3e2210">
+	<title>Mashawi Tycoon</title>
+	<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<link rel="manifest" href="index.manifest.json">
+
+	<style>
+		html, body { margin: 0; padding: 0; position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
+			background: #3e2210; color: #fff7e8; font-family: "Baloo Bhaijaan 2", "Segoe UI", Tahoma, sans-serif;
+			touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+		#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+		#canvas:focus { outline: none; }
+		/* invisible probe: its padding equals the phone's safe-area insets (notch, home bar) */
+		#safe { position: fixed; inset: 0; visibility: hidden; pointer-events: none;
+			padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+		.overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+			gap: 18px; background: #3e2210; z-index: 10; text-align: center; padding: 24px; box-sizing: border-box; }
+		.logo { font-size: clamp(34px, 7vw, 64px); font-weight: 800; color: #e8552f; letter-spacing: 0.5px; line-height: 1.1; }
+		.sub { color: #f7e4bf; opacity: 0.85; font-size: clamp(15px, 2.4vw, 20px); }
+		.bar { width: min(420px, 80vw); height: 14px; background: rgba(255,255,255,0.12); border-radius: 8px; overflow: hidden; }
+		.bar > div { height: 100%; width: 0%; background: #4a9f4f; transition: width 0.2s; }
+		.btn { appearance: none; border: 0; border-bottom: 4px solid #2f7a35; background: #4a9f4f; color: #fff7e8; font: 800 26px/1 inherit;
+			padding: 18px 48px; border-radius: 14px; cursor: pointer; display: none; }
+		.btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+		.note { font-size: 15px; opacity: 0.7; }
+		#hint { display: none; align-items: center; gap: 14px; max-width: 560px; font-size: 16px; line-height: 1.45; text-align: start;
+			background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; padding: 12px 16px; }
+		#hint .share { flex: none; color: #4aa3ff; }
+		#hint b { color: #f7e4bf; }
+		#hint .en { display: block; direction: ltr; text-align: left; opacity: 0.75; font-size: 14px; margin-top: 4px; }
+		#fs { position: fixed; top: max(6px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5; display: none;
+			width: 48px; height: 48px; border: 0; border-radius: 12px; background: rgba(62,34,16,0.55); color: #fff7e8; font-size: 26px; line-height: 48px;
+			cursor: pointer; padding: 0; }
+		#rotate { display: none; z-index: 20; }
+		#rotate .phone { width: 54px; height: 96px; border: 5px solid #f7e4bf; border-radius: 12px; animation: turn 1.6s ease-in-out infinite; }
+		@keyframes turn { 0%, 20% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+		@media (orientation: portrait) and (max-width: 900px) { #rotate { display: flex; } }
+		.hidden { display: none !important; }
+	</style>
+</head>
+<body>
+	<canvas id="canvas" tabindex="0">Your browser does not support the canvas tag.</canvas>
+	<div id="safe"></div>
+	<button id="fs" title="Full screen" aria-label="Full screen">⛶</button>
+	<noscript><div class="overlay">Your browser does not support JavaScript.</div></noscript>
+
+	<div id="status" class="overlay">
+		<div class="logo">مشاوي تايكون</div>
+		<div class="sub">Mashawi Tycoon</div>
+		<div class="bar"><div id="status-progress"></div></div>
+		<div id="status-notice" class="note">جارٍ التحميل... / Loading...</div>
+		<button id="play" class="btn">▶ العب / Play</button>
+		<div id="hint">
+			<svg class="share" viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M7 11H5v10h14V11h-2"/></svg>
+			<div>ملء الشاشة على الآيفون: اضغط زر <b>المشاركة</b> في سفاري ثم <b>إضافة إلى الشاشة الرئيسية</b>، وافتح اللعبة من الشاشة الرئيسية.<br>
+			<span class="en">Full screen on iPhone: tap Safari's <b>Share</b> button, then <b>Add to Home Screen</b>, and open the game from there.</span></div>
+		</div>
+	</div>
+
+	<div id="rotate" class="overlay">
+		<div class="phone"></div>
+		<div class="logo" style="font-size:30px">أدر هاتفك</div>
+		<div class="sub">Rotate your phone to play</div>
+	</div>
+
+	<script>
+	// Cap the canvas at 2 device pixels per CSS pixel: 3x phones (iPhone) would otherwise
+	// push 2.25x more pixels for no visible gain in a chunky low-poly game.
+	(function () {
+		const real = window.devicePixelRatio || 1;
+		if (real > 2) {
+			try { Object.defineProperty(window, 'devicePixelRatio', { get: function () { return 2; }, configurable: true }); } catch (e) {}
+		}
+	}());
+	// Safe-area insets (notch, home indicator) in canvas pixels, read by the game's HUD.
+	window.godotSafeInsets = function () {
+		const s = getComputedStyle(document.getElementById('safe'));
+		const d = window.devicePixelRatio || 1;
+		return [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft].map(function (v) { return (parseFloat(v) || 0) * d; }).join(',');
+	};
+	</script>
+	<script src="index.js"></script>
+	<script>
+	const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":3470996,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+	const GODOT_THREADS_ENABLED = false;
+	(function () {
+		const statusOverlay = document.getElementById('status');
+		const progress = document.getElementById('status-progress');
+		const notice = document.getElementById('status-notice');
+		const play = document.getElementById('play');
+		const hint = document.getElementById('hint');
+		const rotate = document.getElementById('rotate');
+		const fsBtn = document.getElementById('fs');
+		const doc = document.documentElement;
+		let started = false;
+
+		function fail(err) {
+			console.error(err);
+			notice.textContent = (err instanceof Error) ? err.message : String(err);
+			play.style.display = 'none';
+		}
+
+		const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+		if (missing.length !== 0) {
+			fail('This browser cannot run the game:\n' + missing.join('\n'));
+			return;
+		}
+
+		// ---- full screen -------------------------------------------------------
+		// iPhone Safari has no page fullscreen (webkitFullscreenEnabled is true there but only works for
+		// <video>); the "Add to Home Screen" app is the only way to lose the Safari bar.
+		const isIPhone = /iPhone|iPod/.test(navigator.userAgent);
+		const fsEnabled = !isIPhone && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+		const standalone = window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true;
+		function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+		function requestFullscreen() {
+			if (!fsEnabled || isFullscreen()) { return Promise.resolve(); }
+			try {
+				const p = doc.requestFullscreen ? doc.requestFullscreen({ navigationUI: 'hide' }) : doc.webkitRequestFullscreen();
+				return (p && p.then) ? p.catch(function () {}) : Promise.resolve();
+			} catch (e) { return Promise.resolve(); }
+		}
+		function lockLandscape() {
+			try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch(function () {}); } } catch (e) {}
+		}
+		function updateFsButton() {
+			// Shown only once the game runs outside fullscreen (e.g. after Esc), never in the installed app.
+			fsBtn.style.display = (started && fsEnabled && !standalone && !isFullscreen()) ? 'block' : 'none';
+		}
+		document.addEventListener('fullscreenchange', updateFsButton);
+		document.addEventListener('webkitfullscreenchange', updateFsButton);
+		fsBtn.addEventListener('click', function () { requestFullscreen().then(lockLandscape); document.getElementById('canvas').focus(); });
+		if (isIPhone && !standalone) { hint.style.display = 'flex'; }
+
+		// ---- service worker: cached engine on later visits, reload when a new build is out ----
+		if ('serviceWorker' in navigator && GODOT_CONFIG.serviceWorker) {
+			navigator.serviceWorker.register(GODOT_CONFIG.serviceWorker).then(function (reg) {
+				function applyUpdate() {
+					// A new build waiting while this page is still on the loading screen: switch now.
+					if (reg.waiting && navigator.serviceWorker.controller && !started) { reg.waiting.postMessage('update'); }
+				}
+				applyUpdate();
+				reg.addEventListener('updatefound', function () {
+					const w = reg.installing;
+					if (w) { w.addEventListener('statechange', applyUpdate); }
+				});
+				reg.update().catch(function () {});
+			}).catch(function (e) { console.warn('service worker', e); });
+		}
+
+		// ---- engine -------------------------------------------------------------
+		const exe = GODOT_CONFIG.executable;
+		const pack = GODOT_CONFIG.mainPack || (exe + '.pck');
+		const engine = new Engine(Object.assign({}, GODOT_CONFIG, {
+			onProgress: function (current, total) {
+				if (current > 0 && total > 0) { progress.style.width = Math.round(100 * current / total) + '%'; }
+			},
+		}));
+		// Download everything now; start the engine only on a tap so iOS unlocks audio.
+		const loaded = Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]);
+		loaded.then(function () {
+			progress.style.width = '100%';
+			notice.textContent = 'جاهز / Ready';
+			play.style.display = 'inline-block';
+		}, fail);
+
+		function start() {
+			if (started) { return; }
+			started = true;
+			play.style.display = 'none';
+			hint.style.display = 'none';
+			notice.textContent = 'جارٍ التشغيل... / Starting...';
+			// The tap is a user gesture: go full screen where the browser allows it (desktop, Android).
+			requestFullscreen().then(lockLandscape);
+			loaded.then(function () {
+				// ?dev=--fps%20--dbg_input forwards dev flags to the game (see scripts/core/dev_tools.gd).
+				const args = ['--main-pack', pack];
+				const dev = new URLSearchParams(location.search).get('dev');
+				if (dev) { args.push('--'); dev.split(' ').forEach(function (a) { if (a) { args.push(a); } }); }
+				return engine.start({ args: args });
+			}).then(function () {
+				document.getElementById('canvas').focus();
+				updateFsButton();
+			}, fail);
+		}
+		play.addEventListener('click', start);
+		window.addEventListener('godot-ready', function () { statusOverlay.classList.add('hidden'); });
+		// Safety net: hide the overlay a few seconds after start even if the event never comes.
+		play.addEventListener('click', function () { setTimeout(function () { statusOverlay.classList.add('hidden'); }, 6000); });
+
+		// Portrait guard for phones (JS mirror of the CSS media query, for old WebViews).
+		function checkOrientation() {
+			const portrait = window.matchMedia('(orientation: portrait) and (max-width: 900px)').matches;
+			rotate.style.display = portrait ? 'flex' : 'none';
+		}
+		window.addEventListener('resize', checkOrientation);
+		window.addEventListener('orientationchange', checkOrientation);
+		checkOrientation();
+	}());
+	</script>
+</body>
+</html>
+
