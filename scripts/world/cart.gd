@@ -9,6 +9,10 @@ var _spit: Node3D
 var _vendor: Node3D
 var _helper: Node3D
 var _neon: Label3D
+var _neon_on := false
+## Painted name boards (cart roof, truck); hidden while the neon replaces them.
+var _title: Label3D
+var _truck_title: Label3D
 var _neon_light: OmniLight3D
 var _awning_big: Node3D
 var _speaker: Node3D
@@ -16,6 +20,12 @@ var _fridge: Node3D
 var _seating: Node3D
 var _body: Node3D
 var _chassis: Array[Node3D] = []
+var _wheels: Array[Node3D] = []
+var _skirt: Node3D
+## Stage 1 (stall): wheels off, the plot's canopy replaces the roof.
+var stall := false
+## Called with set_serving(on) so the Plot can animate its own crew (kiosk and up).
+var serving_hook: Callable
 var _truck: Node3D
 var _roof: Node3D
 var _vehicle := ""
@@ -39,7 +49,9 @@ func _build() -> void:
 	for sx in [-0.5, 0.5]:
 		var w := ModelLib.cylinder(_body, 0.11, 0.06, Vector3(sx, 0.11, 0.12), dark)
 		w.rotation.z = PI / 2
-		_chassis.append(w)
+		_wheels.append(w)
+	_skirt = ModelLib.box(_body, Vector3(1.06, 0.14, 0.5), Vector3(0, 0.07, 0), wood.darkened(0.2))
+	_skirt.visible = false
 	# chassis + counter
 	_chassis.append(ModelLib.box(_body, Vector3(1.1, 0.42, 0.55), Vector3(0, 0.34, 0), red))
 	# food truck body (vehicle upgrade) sits behind the counter
@@ -63,17 +75,17 @@ func _build() -> void:
 			ModelLib.box(_roof, Vector3(0.035, 0.6, 0.035), Vector3(sx, 0.88, sz), dark)
 	var roof := ModelLib.box(_roof, Vector3(1.25, 0.05, 0.72), Vector3(0, 1.2, 0.0), red)
 	roof.rotation.x = deg_to_rad(6)
-	_stripes(roof, 1.25, 0.72)
+	PlotBuilders.stripes(roof, 1.25, 0.72)
 	# big awning (upgrade)
 	_awning_big = Node3D.new()
 	_body.add_child(_awning_big)
 	var canvas := ModelLib.box(_awning_big, Vector3(1.5, 0.04, 0.5), Vector3(0, 1.14, 0.58), red)
 	canvas.rotation.x = deg_to_rad(14)
-	_stripes(canvas, 1.5, 0.5)
+	PlotBuilders.stripes(canvas, 1.5, 0.5)
 	_awning_big.visible = false
 	# menu board on the roof front
 	ModelLib.box(_roof, Vector3(0.9, 0.22, 0.03), Vector3(0, 1.32, 0.36), cream)
-	var title := _sign(_roof, Vector3(0, 1.32, 0.38), 72, 0.0028)
+	_title = PlotBuilders.sign(_roof, Vector3(0, 1.32, 0.38), 72, 0.0028)
 	# rotating spit
 	_spit = Node3D.new()
 	_spit.position = Vector3(-0.33, 0.59, -0.05)
@@ -135,23 +147,22 @@ func _build() -> void:
 	ModelLib.spawn("food/bottle-musterd", _body, Vector3(0.03, 0.59, 0.22), 0, 0.4)
 	# neon sign (upgrade)
 	_neon = Label3D.new()
-	_neon.text = title.text
+	_neon.text = _title.text
 	_neon.font = UiTheme.font()
 	_neon.font_size = 80
 	_neon.pixel_size = 0.004
 	_neon.modulate = Color(1.0, 0.25, 0.6)
 	_neon.outline_modulate = Color(1.0, 0.7, 0.9)
 	_neon.outline_size = 10
-	_neon.position = Vector3(0, 1.62, 0.1)
 	_neon.visible = false
-	_body.add_child(_neon)
+	add_child(_neon)
 	_neon_light = OmniLight3D.new()
 	_neon_light.light_color = Color(1.0, 0.4, 0.7)
 	_neon_light.light_energy = 1.6
 	_neon_light.omni_range = 2.2
 	_neon_light.position = Vector3(0, 1.5, 0.5)
 	_neon_light.visible = false
-	_body.add_child(_neon_light)
+	add_child(_neon_light)
 	# speaker (upgrade)
 	_speaker = Node3D.new()
 	_body.add_child(_speaker)
@@ -161,8 +172,9 @@ func _build() -> void:
 	# fridge (upgrade)
 	_fridge = Node3D.new()
 	_body.add_child(_fridge)
-	ModelLib.box(_fridge, Vector3(0.34, 0.6, 0.34), Vector3(-0.85, 0.3, -0.45), Color(0.92, 0.94, 0.96))
-	ModelLib.box(_fridge, Vector3(0.02, 0.2, 0.03), Vector3(-0.67, 0.35, -0.3), dark)
+	# beside the counter on the pavement (behind the cart it would sink into a shop front)
+	ModelLib.box(_fridge, Vector3(0.34, 0.6, 0.34), Vector3(-0.85, 0.3, -0.05), Color(0.92, 0.94, 0.96))
+	ModelLib.box(_fridge, Vector3(0.02, 0.2, 0.03), Vector3(-0.67, 0.35, 0.1), dark)
 	_fridge.visible = false
 	# seating (upgrade)
 	_seating = Node3D.new()
@@ -184,13 +196,6 @@ func _build() -> void:
 		_helper.rotation.y = deg_to_rad(-35)
 	_helper.visible = false
 
-func _stripes(roof: MeshInstance3D, w: float, d: float) -> void:
-	var n := int(w / 0.18)
-	for i in range(n):
-		if i % 2 == 0:
-			continue
-		var s := ModelLib.box(roof, Vector3(0.18, 0.052, d), Vector3(-w / 2 + 0.09 + i * 0.18, 0.0, 0.0), Color(0.97, 0.93, 0.82))
-
 func _spawn_person(model: String, pos: Vector3) -> Node3D:
 	var n := ModelLib.spawn(model, self, pos, 0, CHAR_SCALE)
 	if n:
@@ -203,12 +208,10 @@ func apply_vehicle(vehicle: String) -> void:
 	_vehicle = vehicle
 	for c in _truck.get_children():
 		c.queue_free()
-	var def: Dictionary = Data.VEHICLES.get(vehicle, {})
+	var def: Dictionary = {"model": "cars/delivery"} if vehicle == "truck" else ({"model": "cars/truck"} if vehicle == "truck2" else {})
 	var is_truck: bool = def.has("model")
 	_truck.visible = is_truck
-	_roof.visible = not is_truck
-	for c in _chassis:
-		c.visible = not is_truck
+	_refresh_frame()
 	if is_truck:
 		var scale := 0.62 if vehicle == "truck" else 0.72
 		ModelLib.spawn(def["model"], _truck, Vector3(0.0, 0.0, -0.75), 90, scale)
@@ -218,15 +221,58 @@ func apply_vehicle(vehicle: String) -> void:
 		ModelLib.box(_truck, Vector3(1.15, 0.08, 0.04), Vector3(0, 0.32, -0.36), Color(0.52, 0.13, 0.16))
 		var aw := ModelLib.box(_truck, Vector3(1.2, 0.04, 0.5), Vector3(0, top, -0.1), Color(0.52, 0.13, 0.16))
 		aw.rotation.x = deg_to_rad(12)
-		_stripes(aw, 1.2, 0.5)
+		PlotBuilders.stripes(aw, 1.2, 0.5)
 		ModelLib.box(_truck, Vector3(1.1, 0.26, 0.05), Vector3(0, top + 0.2, -0.6), Color(0.97, 0.92, 0.80))
-		_sign(_truck, Vector3(0, top + 0.2, -0.57), 80, 0.0028)
+		_truck_title = PlotBuilders.sign(_truck, Vector3(0, top + 0.2, -0.57), 80, 0.0028)
 		if vehicle == "truck2":
 			ModelLib.box(_truck, Vector3(1.1, 0.03, 0.03), Vector3(0, top + 0.36, -0.58), Color(1.0, 0.25, 0.6), 2.0)
-	# the neon sign sits above whatever roof is in use
-	_neon.position = Vector3(0, (1.6 if vehicle == "truck" else 1.85) if is_truck else 1.62, 0.1)
-	_neon_light.position.y = _neon.position.y - 0.1
+	_place_neon()
 	_update_width()
+
+## Neon name (signage tier 3+): replaces the painted name on whichever board is in use
+## (cart roof, stall canopy, truck) instead of floating above it.
+func set_neon(on: bool) -> void:
+	_neon_on = on
+	_neon.visible = on
+	_place_neon()
+
+func _place_neon() -> void:
+	var is_truck := _truck.visible
+	var top := 0.95 if _vehicle == "truck" else 1.15
+	if is_truck:
+		_neon.position = Vector3(0, top + 0.2, -0.54)
+		_neon.font_size = 80
+		_neon.pixel_size = 0.0028
+	elif stall:
+		# the canopy board is built by the Plot in plot space (stand scale 0.72)
+		_neon.position = Vector3(0, 1.14 / 0.72, 0.52 / 0.72)
+		_neon.font_size = 72
+		_neon.pixel_size = 0.0026 / 0.72
+	else:
+		_neon.position = Vector3(0, 1.32, 0.40)
+		_neon.font_size = 72
+		_neon.pixel_size = 0.0028
+	_neon_light.position = _neon.position + Vector3(0, -0.1, 0.5)
+	if _title:
+		_title.visible = not _neon_on
+	if _truck_title and is_instance_valid(_truck_title):
+		_truck_title.visible = not _neon_on
+
+## Wheels / roof / skirt for the current vehicle and stall mode.
+func _refresh_frame() -> void:
+	var is_truck := _truck.visible
+	_roof.visible = not is_truck and not stall
+	for c in _chassis:
+		c.visible = not is_truck
+	for w in _wheels:
+		w.visible = not is_truck and not stall
+	_skirt.visible = stall and not is_truck
+
+func set_stall(on: bool) -> void:
+	stall = on
+	if _body:
+		_refresh_frame()
+		_place_neon()
 
 ## Counter width follows the Bigger Stand upgrade and the vehicle; the crew and fridge
 ## stand just past the counter ends whatever the width.
@@ -244,24 +290,10 @@ func _update_width() -> void:
 	if _fridge:
 		_fridge.position.x = -(0.62 * wide + 0.3) + 0.85 - 0.62
 
-## The stand's name board (roof or truck).
-func _sign(parent: Node3D, pos: Vector3, font_size: int, pixel_size: float) -> Label3D:
-	var l := Label3D.new()
-	l.text = tr("ui.sign")
-	l.font = UiTheme.font()
-	l.font_size = font_size
-	l.pixel_size = pixel_size
-	l.modulate = Color(0.45, 0.1, 0.1)
-	l.outline_size = 0
-	l.position = pos
-	parent.add_child(l)
-	return l
-
 func apply_upgrades(upgrades: Dictionary) -> void:
 	_upgrades = upgrades
 	_sweets.visible = upgrades.has("sweets")
 	_awning_big.visible = upgrades.has("awning")
-	_neon.visible = upgrades.has("neon")
 	_speaker.visible = upgrades.has("speaker")
 	_fridge.visible = upgrades.has("fridge") or upgrades.has("fridge2")
 	_seating.visible = upgrades.has("seating")
@@ -276,6 +308,8 @@ func set_serving(on: bool) -> void:
 	if on == _serving:
 		return
 	_serving = on
+	if serving_hook.is_valid():
+		serving_hook.call(on)
 	if _vendor:
 		ModelLib.play_loop(_vendor, "interact-right" if on else "idle", 1.4 if on else 1.0)
 	if _helper and _helper.visible:

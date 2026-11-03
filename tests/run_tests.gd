@@ -15,8 +15,14 @@ func check(cond: bool, msg: String) -> void:
 func _ready() -> void:
 	var game := Game
 	_test_economy()
+	_test_stations()
 	_test_game_flow(game)
+	_test_stages(game)
+	_test_goals(game)
 	_test_save_load(game)
+	_test_pricing(game)
+	_test_save_validation(game)
+	_test_migration(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
 
@@ -46,12 +52,39 @@ func _test_economy() -> void:
 	var t_rain := Economy.traffic_per_hour(loc, "sandstorm", 13.0, false)
 	check(t_rain < t_sun * 0.6, "sandstorm cuts traffic")
 	check(Economy.traffic_per_hour(loc, "sandstorm", 13.0, true) > t_rain, "shade sail helps in a sandstorm")
+	check(Economy.arrival_rate(loc, "sandstorm", 13.0, {"shade_level": 1}) > Economy.arrival_rate(loc, "sandstorm", 13.0, {}), "shade station halves the storm loss")
+	check(Economy.arrival_rate(loc, "sunny", 20.0, {"lights_level": 5}) > Economy.arrival_rate(loc, "sunny", 20.0, {}), "lights draw an evening crowd")
+	check(is_equal_approx(Economy.arrival_rate(loc, "sunny", 12.0, {"lights_level": 5}), Economy.arrival_rate(loc, "sunny", 12.0, {})), "lights do nothing at noon")
 	check(Economy.satisfaction(1.1, 1.0, 0.0, loc, 0.0) > Economy.satisfaction(0.6, 1.0, 0.0, loc, 0.0), "quality raises satisfaction")
 	check(Economy.unit_cost("chicken_tikka", {"recipe": {"meat": 2, "veg": 2, "sauce": 1}}) < 8.0, "chicken tikka costs under AED 8 to make")
+	check(is_equal_approx(Economy.reputation_decay(0.5, 10), 0.46) and Economy.reputation_decay(0.12, 50) == 0.1, "reputation decays slowly with a floor")
+	check(is_equal_approx(Economy.effective_popularity(0.5, 1.0), 0.7), "effective popularity mixes global and local")
+
+func _test_stations() -> void:
+	var counter: Dictionary = Data.STATIONS["counter"]
+	check(Economy.station_cost(counter, 0) == 250.0, "counter level 1 costs the base price")
+	var c10 := Economy.station_cost(counter, 10)
+	check(c10 > 250.0 * 7.0 and c10 < 250.0 * 7.6 and fmod(c10, 50.0) == 0.0, "counter level 11 costs base x 1.22^10 rounded (%s)" % c10)
+	check(is_equal_approx(Economy.counter_capacity(0), 0.5) and Economy.queue_cap(0, Data.stage_def(0)) == 4, "day-1 parity: 2 min per order, 4 in line")
+	check(Economy.counter_capacity(10) > Economy.counter_capacity(0) * 4.0, "ten counter levels quadruple order speed")
+	check(Economy.queue_cap(3, Data.stage_def(2)) == 4 + 3 + 2, "queue cap adds counter levels and the stage bonus")
+	check(Economy.kitchen_capacity(Data.STATIONS["doner"], 0) == 0.0 and Economy.kitchen_capacity(Data.STATIONS["doner"], 1) > 0.0, "doner spit does nothing until installed")
+	var mix := Economy.kitchen_capacity_mix({"grill": 1.0, "karak": 2.0}, {"grill": 0.78, "karak": 0.22})
+	check(mix > 1.0 and mix < 2.0 and mix < 1.0 / 0.78, "harmonic mix sits between the slowest and fastest station (%f)" % mix)
+	check(Economy.kitchen_capacity_mix({"grill": 1.0}, {"": 1.0}) == INF, "counter-only items need no kitchen")
+	check(Data.station_tier(0) == 0 and Data.station_tier(1) == 1 and Data.station_tier(3) == 1 and Data.station_tier(4) == 2 and Data.station_tier(10) == 4, "station visual tiers at 1/4/7/10")
+	check(Economy.dine_in_share(Data.stage_def(0), 0) == 0.0 and Economy.dine_in_share(Data.stage_def(3), 12) > 0.2, "dine-in needs the kiosk and seats")
+	check(Economy.bottleneck({"counter": 0.95, "grill": 0.4}) == "counter", "bottleneck names the saturated stage")
+	check(Economy.bottleneck({"counter": 0.2, "grill": 0.3}) == "arrivals", "idle everywhere means you need customers")
+	check(Economy.bottleneck({"counter": 0.6, "grill": 0.7}) == "", "comfortable load has no bottleneck")
+
+func _ctx_for(game, stations: Dictionary, stage: int, location: String = "fahidi") -> Dictionary:
+	return game.what_if({"stations": stations, "stage": stage, "location": location})
 
 func _test_game_flow(game) -> void:
 	game.new_game()
 	check(game.money == Data.START_MONEY, "start money")
+	check(game.stage_tier() == 0 and not game.is_fixed(), "start at the cart")
 	check(game.portions_possible("chicken_tikka") == 0, "no stock at start")
 	check(game.buy_pack("bread", 0) and game.buy_pack("chicken", 0) and game.buy_pack("veg", 0) and game.buy_pack("sauce", 0) and game.buy_pack("charcoal", 0), "buying packs")
 	check(game.portions_possible("chicken_tikka") == 5, "10 chicken / 2 per chicken tikka = 5 portions (%d)" % game.portions_possible("chicken_tikka"))
@@ -62,40 +95,117 @@ func _test_game_flow(game) -> void:
 	check(not game.unlock_item("chicken_tikka"), "cannot re-unlock")
 	game.money = 10.0
 	check(not game.unlock_item("mutton_tikka"), "cannot afford mutton tikka")
+	check(not game.buy_station_level("counter"), "cannot afford a counter level")
 	game.money = 5000.0
 	check(game.unlock_item("mutton_tikka") and game.menu["mutton_tikka"]["unlocked"], "unlock mutton tikka")
-	check(game.buy_upgrade("fridge") and game.has_upgrade("fridge"), "buy fridge")
-	check(not game.set_location("mall"), "mall needs the big truck")
-	check(not game.buy_upgrade("sweets"), "sweets counter needs the food truck")
-	check(not game.buy_vehicle("truck2"), "cannot skip to the big truck")
+	check(game.buy_station_level("coldbox") and game.station_level("coldbox") == 1, "buy cold storage")
+	check(is_equal_approx(game.spoil_rate("chicken"), 0.1) and is_zero_approx(game.spoil_rate("drink")) and is_equal_approx(game.spoil_rate("veg"), 0.2), "spoil_rate with a fridge")
+	check(not game.buy_station_level("doner"), "doner spit needs the stall")
+	check(not game.item_available("fries") and not game.unlock_item("fries"), "fries need a fryer")
+	check(not game.set_location("metro"), "metro needs the stall")
+	check(not game.set_location("mall"), "mall needs the truck")
+	check(game.buy_station_level("counter") and game.queue_capacity() == 5 and game.counter_capacity() > 0.5, "a counter level adds a place in line and speed")
 	game.money = 20000.0
-	check(game.buy_vehicle("truck") and game.vehicle == "truck", "buy food truck")
-	check(game.location_vehicle_ok("metro") and not game.location_vehicle_ok("mall"), "truck reaches metro, not mall")
-	check(game.buy_upgrade("sweets"), "sweets counter after truck")
-	check(game.item_available("saffron_cake") and game.unlock_item("saffron_cake"), "unlock a sweet")
-	check(game.buy_vehicle("truck2") and game.queue_capacity() >= Economy.BASE_QUEUE_CAP + 4, "big truck adds queue")
+	var money_before: float = game.money
+	check(game.buy_stage() and game.stage_tier() == 1 and game.rig["stage"] == "stall", "build the stall")
+	check(is_equal_approx(money_before - game.money, 2000.0), "stall costs 2000")
+	check(game.location_stage_ok("metro") and not game.location_stage_ok("mall"), "stall reaches metro, not the mall")
+	check(game.buy_station_level("doner") and game.item_available("shawarma"), "doner spit unlocks shawarma")
+	check(game.unlock_item("shawarma") and game.menu["shawarma"]["unlocked"], "add shawarma to the menu")
+	check(game.buy_station_level("fryer") and game.unlock_item("fries"), "fryer then fries")
+	game.money = 20000.0
+	check(game.buy_stage() and game.rig["stage"] == "truck", "build the food truck")
+	check(game.station_available("sweets") and game.buy_station_level("sweets") and game.item_available("saffron_cake") and game.unlock_item("saffron_cake"), "sweets counter then a sweet")
 	game.popularity = 0.9
-	check(game.set_location("mall") and game.competition() > 0.0, "mall reachable with big truck")
-	check(Data.vehicle_for_tier(0) == "cart" and Data.vehicle_for_tier(2) == "truck2", "vehicle_for_tier")
-	check(is_equal_approx(game.spoil_rate("chicken"), 0.1) and is_zero_approx(game.spoil_rate("drink")), "spoil_rate with fridge")
+	check(game.set_location("mall") and game.competition() > 0.0, "mall reachable with the truck")
+	check(game.queue_capacity() == 4 + 1 + 2, "queue at the mall: base + counter level + truck bonus")
 	for ing in Data.INGREDIENTS:
-		game.inventory[ing] = 200
+		game.inventory[ing] = 300
 	var fast := FastSim.run(game.sim_context(), game.rng)
 	check(int(fast["passers"]) > 50 and int(fast["served"]) > 0 and float(fast["revenue"]) > 0.0, "FastSim produces a day (%s passers, %s served)" % [fast["passers"], fast["served"]])
 	check(int(fast["lost_rival"]) > 0, "FastSim counts customers lost to rivals at the mall")
-	check(not game.buy_upgrade("fridge"), "cannot buy twice")
+	check(fast.has("util") and fast["util"].has("counter"), "FastSim reports utilisation")
 	game.inventory["chicken"] = 100
-	var r: Dictionary = game.end_day({"served": 20, "revenue": 240.0, "cogs": 120.0, "satisfaction_sum": 14.0, "sold": {"chicken_tikka": 20}})
+	var r: Dictionary = game.end_day({"served": 20, "revenue": 240.0, "cogs": 120.0, "satisfaction_sum": 14.0, "sold": {"chicken_tikka": 20}, "util": {"counter": 0.9}})
 	check(game.inventory["chicken"] == 90, "fridge keeps 90%% of chicken (%d)" % game.inventory["chicken"])
 	check(r["profit"] < 120.0, "profit accounts for spoilage")
+	check(r["bottleneck"] == "counter", "report names the bottleneck")
 	check(game.day == 2, "day advanced")
 	check(game.popularity > Data.START_POPULARITY, "good day raises popularity")
+	check(game.local_reputation() > Data.START_POPULARITY, "good day raises local reputation too")
+	check(game.stats["days_played"] == 1 and game.stats["best_day_served"] == 20, "stats track the day")
+
+func _test_stages(game) -> void:
+	game.new_game()
+	game.money = 200000.0
+	check(game.stage_lock_reason() == "", "stall is buildable at once")
+	game.buy_stage()
+	game.buy_stage()
+	check(game.stage_tier() == 2, "two builds reach the truck")
+	game.buy_station_level("grill")
+	game.buy_station_level("grill")
+	game.buy_station_level("counter")
+	check(game.stage_lock_reason() != "", "kiosk needs local reputation")
+	game.plot()["reputation"] = 0.5
+	check(game.stage_lock_reason() == "", "kiosk unlocks with local reputation (%s)" % game.stage_lock_reason())
+	check(game.buy_stage() and game.is_fixed() and game.plot()["stage"] == "kiosk", "build a kiosk at fahidi")
+	check(game.station_level("grill") == 2 and game.station_level("counter") == 1 and game.rig["stations"].is_empty(), "rig station levels move into the kiosk")
+	check(game.rig["stage"] == "truck", "the truck is still yours")
+	check(game.station_available("seating") and game.buy_station_level("seating") and game.seats() == 2, "seating gives 2 seats per level")
+	check(game.sim_context()["dine_in_share"] > 0.0, "kiosk serves dine-in")
+	check(game.stage_lock_reason() != "", "restaurant needs more local reputation (%s)" % game.stage_lock_reason())
+	check(game.levels_owned() == 4, "levels owned counts rig and plots (%d)" % game.levels_owned())
+	check(game.set_location("creek") and not game.is_fixed() and game.stage_tier() == 2 and game.station_level("grill") == 0, "at creek you are back on the truck with an empty rig")
+	check(game.set_location("fahidi") and game.is_fixed() and game.station_level("grill") == 2, "back at fahidi the kiosk is waiting")
+	var est := Economy.throughput_estimate(game.sim_context())
+	check(float(est["served"]) > 0.0 and est["util"].has("seating"), "estimate covers seating at the kiosk")
+	# capacity saturates: a maxed kiosk serves a lot, and an empty one much less
+	game.popularity = 0.9
+	var big := Economy.throughput_estimate(_ctx_for(game, {"counter": 15, "grill": 15, "karak": 10, "seating": 10}, 3, "downtown"))
+	var small := Economy.throughput_estimate(_ctx_for(game, {"counter": 0, "grill": 0}, 3, "downtown"))
+	check(float(big["served"]) > float(small["served"]) * 1.2, "more station levels, more customers served downtown (%s vs %s)" % [big["served"], small["served"]])
+	check(float(small["util"]["counter"]) > 0.5 and float(big["util"]["counter"]) < float(small["util"]["counter"]), "an empty kiosk downtown works its counter hard; levels relieve it (%s)" % str(small["util"]))
+	check(game.station_level("grill") == 2 and game.location == "fahidi", "what_if leaves the state alone")
+	# a maxed kiosk day in FastSim
+	for id in ["counter", "grill", "karak", "seating"]:
+		game._station_store()[id] = 12
+	game.popularity = 0.9
+	game.plot()["reputation"] = 0.9
+	for ing in Data.INGREDIENTS:
+		game.inventory[ing] = 1000
+	game.weather = "sunny"
+	game.rng.seed = 2026 # a fixed day: the unseeded run lands at 73-90 served
+	var fast := FastSim.run(game.sim_context(), game.rng)
+	check(int(fast["served"]) > 80 and int(fast["dine_in"]) > 10, "maxed kiosk day at fahidi serves plenty with diners (%s served, %s dined)" % [fast["served"], fast["dine_in"]])
+
+func _test_goals(game) -> void:
+	game.new_game()
+	check(game.current_goal()["id"] == "first_30" and not game.goal_ready(), "first goal waits for 30 customers")
+	check(not game.claim_goal(), "cannot claim early")
+	game.inventory["chicken"] = 500
+	game.end_day({"served": 35, "revenue": 350.0, "cogs": 100.0, "satisfaction_sum": 25.0, "sold": {}})
+	check(game.goal_ready(), "30 served in a day completes the first goal")
+	var m: float = game.money
+	check(game.claim_goal() and game.money == m + 150.0 and game.goal_index == 1 and game.goals_claimed == ["first_30"], "claim pays once and advances")
+	check(not game.claim_goal(), "next goal not ready yet")
+	game.money = 1000.0
+	game.buy_station_level("counter")
+	check(game.goal_ready() and game.claim_goal() and game.current_goal()["id"] == "stars15", "counter goal, then stars")
+	check(game.goal_progress() > 0.5 and game.goal_progress() < 1.0, "progress toward 1.5 stars is partial")
 
 func _test_save_load(game) -> void:
 	game.new_game()
 	game.set_price("chicken_tikka", 15.0)
 	game.set_recipe("chicken_tikka", "meat", 3)
-	game.buy_upgrade("awning")
+	game.money = 200000.0
+	game.buy_station_level("shade")
+	game.buy_stage()
+	game.buy_stage()
+	game.plot()["reputation"] = 0.6
+	game.buy_stage()
+	game.buy_station_level("seating")
+	game.goal_index = 2
+	game.goals_claimed = ["first_30", "counter1"]
 	game.money = 777.0
 	game.save()
 	game.new_game()
@@ -103,7 +213,9 @@ func _test_save_load(game) -> void:
 	check(game.money == 777.0, "money restored")
 	check(game.menu["chicken_tikka"]["price"] == 15.0, "price restored")
 	check(game.menu["chicken_tikka"]["recipe"]["meat"] == 3, "recipe restored")
-	check(game.has_upgrade("awning"), "upgrade restored")
+	check(game.rig["stage"] == "truck" and game.plot()["stage"] == "kiosk", "stages restored")
+	check(game.station_level("shade") == 1 and game.station_level("seating") == 1, "station levels restored")
+	check(game.goal_index == 2 and game.goals_claimed.size() == 2, "goals restored")
 	game.delete_save()
 	check(not game.has_save(), "save deleted")
 	game.new_game()
@@ -113,3 +225,110 @@ func _test_save_load(game) -> void:
 	game.prepare_day()
 	check(game.bailouts == 1, "no bailout when solvent")
 	check(game.expected_customers() > 5, "expected customers estimate (%d)" % game.expected_customers())
+
+func _test_pricing(game) -> void:
+	var fahidi: Dictionary = Data.LOCATIONS["fahidi"]
+	var gv: Dictionary = Data.LOCATIONS["gv"]
+	var r_f := Economy.price_range("chicken_tikka", fahidi)
+	var r_gv := Economy.price_range("chicken_tikka", gv)
+	check(r_f[0] == 5.0 and r_f[1] == 15.0, "fahidi chicken tikka range is 5-15 (%s)" % str(r_f))
+	check(r_gv[1] > r_f[1], "global village allows higher prices than fahidi (%s)" % str(r_gv))
+	check(Economy.price_range("chicken_tikka", fahidi, Data.stage_def(3))[1] > r_f[1], "a kiosk raises the price cap")
+	check(Economy.price_range("karak", fahidi)[0] >= 1.0, "cheapest item never drops below 1 AED")
+	for id in Data.LOCATIONS:
+		var r := Economy.price_range("mixed", Data.LOCATIONS[id])
+		check(r[1] <= 45.0 * 2.5 and r[1] >= 45.0, "%s platter cap stays sane (%s)" % [id, str(r)])
+	game.new_game()
+	game.set_price("chicken_tikka", 200.0)
+	check(game.menu["chicken_tikka"]["price"] == 15.0, "set_price clamps to the location cap")
+	game.set_price("chicken_tikka", 0.0)
+	check(game.menu["chicken_tikka"]["price"] == 5.0, "set_price clamps to the floor")
+	game.money = 50000.0
+	game.popularity = 1.0
+	game.buy_stage()
+	game.buy_stage()
+	check(game.set_location("gv"), "move to global village")
+	game.set_price("chicken_tikka", 20.0)
+	check(game.menu["chicken_tikka"]["price"] == 20.0, "20 AED allowed at global village")
+	check(game.set_location("fahidi") and game.menu["chicken_tikka"]["price"] == 17.0, "moving back clamps the price again (truck cap 1.7x)")
+	# overpricing must not pay: compare expected AED per passer at base vs max vs 3x price
+	var w: Dictionary = Data.WEATHER["sunny"]
+	var q := 0.85
+	var per_passer := func(price: float, loc: Dictionary) -> float:
+		var v := Economy.item_value("chicken_tikka", q, price, loc, w)
+		return Economy.stop_probability(0.5, v, 0.0, 0, 4) * price
+	var fair: float = per_passer.call(10.0, fahidi)
+	var maxed: float = per_passer.call(15.0, fahidi)
+	var greedy: float = per_passer.call(30.0, fahidi)
+	check(maxed < fair, "max allowed price earns less per passer than the fair price (%.2f vs %.2f)" % [maxed, fair])
+	check(greedy < fair * 0.6, "3x price earns well under the fair price per passer (%.2f vs %.2f)" % [greedy, fair])
+	var v3 := Economy.item_value("chicken_tikka", q, 30.0, fahidi, w)
+	var v1 := Economy.item_value("chicken_tikka", q, 10.0, fahidi, w)
+	check(Economy.stop_probability(0.5, v3, 0.0, 0, 4) < Economy.stop_probability(0.5, v1, 0.0, 0, 4) * 0.25, "3x price cuts stops to under a quarter")
+	check(Economy.stop_probability(0.5, 0.0, 0.0, 0, 4) == 0.0, "worthless menu stops nobody")
+
+func _write_save(game, d: Dictionary) -> void:
+	var f := FileAccess.open(game.save_path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(d))
+	f.close()
+
+func _test_save_validation(game) -> void:
+	game.new_game()
+	# a version-3 save written by hand with out-of-range values everywhere
+	var bad := {
+		"version": 3, "money": 1234.0, "day": 7, "popularity": 4.0, "location": "mall",
+		"rig": {"stage": "kiosk", "stations": {"grill": 99, "seating": 3, "ghost": 2}},
+		"plots": {"creek": {"stage": "cart", "stations": {"grill": 1}, "reputation": 7.0, "last_visit": 99},
+			"nowhere": {"stage": "kiosk"}, "jbr": {"stage": "kiosk", "stations": {"seating": 50, "office": 1}, "reputation": 0.5, "last_visit": 3}},
+		"goal_index": 99, "goals_claimed": ["first_30", "bogus"], "stats": {"days_played": -4, "best_day_profit": "x"},
+		"menu": {"chicken_tikka": {"unlocked": true, "enabled": true, "price": 200.0, "level": 9, "recipe": {"meat": 7, "veg": -1, "sauce": 1}},
+			"soda": {"unlocked": true, "enabled": true, "price": 0.0, "level": 0, "recipe": {}}},
+		"inventory": {"bread": -5}, "history": [1, "x", {"location": "nowhere"}, {"location": "creek", "weather": "sunny", "served": 3}],
+		"marketing": {"fliers": 0},
+	}
+	_write_save(game, bad)
+	var summary: Dictionary = game.save_summary()
+	check(summary.get("day", 0) == 7 and summary.get("money", 0.0) == 1234.0, "save summary reads day and money")
+	check(game.load_game(), "bad save loads")
+	check(game.rig["stage"] == "cart", "a kiosk rig is reset to the cart")
+	check(game.rig["stations"].get("grill", 0) == 25 and not game.rig["stations"].has("seating") and not game.rig["stations"].has("ghost"), "rig stations clamped and filtered (%s)" % str(game.rig["stations"]))
+	check(not game.plots.has("nowhere") and game.plots["creek"]["stage"] == "" and game.plots["creek"]["stations"].is_empty(), "unknown plots dropped, cart plot stage cleared")
+	check(game.plots["jbr"]["stations"]["seating"] == 25 and not game.plots["jbr"]["stations"].has("office"), "plot station levels clamped to the kiosk's caps")
+	check(game.plots["creek"]["reputation"] == 1.0 and game.plots["creek"]["last_visit"] == 7, "plot reputation and visit clamped")
+	check(game.location == "fahidi", "mall needs a truck: location reset")
+	check(game.menu["chicken_tikka"]["price"] == 15.0, "200 AED price clamped to today's range (%s)" % str(game.menu["chicken_tikka"]["price"]))
+	check(game.menu["soda"]["price"] == 2.0, "zero price raised to the floor")
+	check(game.menu["chicken_tikka"]["level"] == 3, "enhance level clamped")
+	check(game.menu["chicken_tikka"]["recipe"]["meat"] == 3 and game.menu["chicken_tikka"]["recipe"]["veg"] == 0, "recipe clamped")
+	check(game.popularity == 1.0, "popularity clamped")
+	check(game.inventory["bread"] == 0, "negative stock zeroed")
+	check(game.history.size() == 1, "junk history rows dropped (%d)" % game.history.size())
+	check(not game.marketing.has("fliers"), "expired marketing dropped")
+	check(game.goal_index == Data.GOALS.size() and game.goals_claimed == ["first_30"], "goal index clamped, unknown goals dropped")
+	check(game.stats["days_played"] == 0 and game.stats["best_day_profit"] == 0.0, "stats sanitised")
+	check(game.money == 1234.0 and game.day == 7, "money and day kept")
+	game.delete_save()
+
+func _test_migration(game) -> void:
+	game.new_game()
+	var old := {
+		"version": 2, "money": 1000.0, "day": 20, "popularity": 0.5, "location": "metro", "vehicle": "truck2",
+		"upgrades": {"cart2": true, "grill2": true, "fridge": true, "helper": true, "neon": true, "seating": true, "awning": true},
+		"menu": {"fries": {"unlocked": true, "enabled": true, "price": 7.0, "level": 0, "recipe": {}}},
+		"total_served": 500, "history": [{"location": "metro", "weather": "sunny", "served": 40, "profit": 100.0}],
+	}
+	_write_save(game, old)
+	check(game.load_game(), "v2 save loads")
+	check(game.rig["stage"] == "truck", "truck2 becomes the truck stage")
+	check(game.station_level("counter") == 2 and game.station_level("grill") == 3 and game.station_level("coldbox") == 1, "upgrades became station levels")
+	check(game.station_level("lights") == 2 and game.station_level("shade") == 1, "neon and awning became lights and shade")
+	check(game.station_level("fryer") == 1 and game.menu["fries"]["unlocked"], "unlocked fries bring a fryer")
+	check(game.money == 1000.0 + 300.0 + 800.0, "helper and seating refunded (%s)" % game.money)
+	check(game.location == "metro", "metro stays reachable with the truck")
+	check(game.goal_index >= 4 and game.goals_claimed.has("served200"), "already-achieved goals are skipped (%d)" % game.goal_index)
+	game.delete_save()
+	# a cart player with the neon sign gets signage instead of lights
+	_write_save(game, {"version": 2, "money": 100.0, "day": 3, "popularity": 0.3, "location": "fahidi", "vehicle": "cart", "upgrades": {"neon": true, "sweets": true}})
+	check(game.load_game() and game.station_level("signage") == 2 and game.station_level("lights") == 0, "neon on a cart becomes signage")
+	check(game.money == 100.0 + 2500.0, "sweets counter without a truck is refunded")
+	game.delete_save()

@@ -1,15 +1,21 @@
 extends Node
-## Mutable game state: money, inventory, menu, upgrades, location, day cycle.
+## Mutable game state: money, inventory, menu, the rig/plot stations, goals, location, day cycle.
 ## Emits `changed` whenever something the UI shows may have moved.
 
 signal changed
 signal notify(text: String, kind: String)
+signal goal_claimed(goal: Dictionary)
 
-const SAVE_VERSION := 1
+const SAVE_VERSION := 3
 const HISTORY_LIMIT := 90
 ## Tests and headless runs point this elsewhere so the player's save is never touched.
 var save_path := "user://save.json"
 var persist := true
+## Web: a copy of the save also goes to localStorage, which survives a killed tab even when
+## the browser never got round to flushing Godot's IndexedDB file system.
+const WEB_SAVE_KEY := "mashawi_save"
+## A plot stage from this tier up belongs to the location, not to the mobile rig.
+const FIXED_FROM_TIER := 3
 
 var money: float = Data.START_MONEY
 var day: int = 1
@@ -22,12 +28,17 @@ var inventory: Dictionary = {}
 ## Weighted-average price actually paid per unit of each ingredient.
 var avg_cost: Dictionary = {}
 var menu: Dictionary = {}
-var upgrades: Dictionary = {}
-var vehicle: String = "cart"
+## The mobile stand: stage id (cart/stall/truck) and its station levels; travels with you.
+var rig: Dictionary = {"stage": "cart", "stations": {}}
+## Per location: fixed stage ("" until a kiosk is built), its stations, local reputation.
+var plots: Dictionary = {}
 var marketing: Dictionary = {}
 var history: Array = []
 var total_served: int = 0
 var bailouts: int = 0
+var goal_index: int = 0
+var goals_claimed: Array = []
+var stats: Dictionary = {}
 var rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
@@ -55,27 +66,47 @@ func new_game() -> void:
 			"level": 0,
 			"recipe": {"meat": 2, "veg": 2, "sauce": 1},
 		}
-	upgrades = {}
-	vehicle = "cart"
+	rig = {"stage": "cart", "stations": {}}
+	plots = {}
 	marketing = {}
 	history = []
 	total_served = 0
 	bailouts = 0
+	goal_index = 0
+	goals_claimed = []
+	stats = _new_stats()
 	forecast = _roll_weather()
 	weather = forecast
+	_plot_entry(location)
 	changed.emit()
 
+func _new_stats() -> Dictionary:
+	return {"best_day_profit": 0.0, "best_day_served": 0, "days_played": 0, "levels_bought": 0, "stages_built": 0,
+		"total_profit": 0.0, "locations_visited": [location]}
+
 ## Called when the prep screen opens. A relative lends a little cash if you're broke,
-## so a bad streak never ends the game outright.
+## so a bad streak never ends the game outright. Plots you are away from slowly lose
+## their local reputation.
 func prepare_day() -> void:
 	if money < Data.BAILOUT_BELOW and bailouts < Data.BAILOUT_MAX:
 		bailouts += 1
 		money += Data.BAILOUT_AMOUNT
 		notify.emit(tr("ui.loan") % Loc.money(Data.BAILOUT_AMOUNT), "warn")
-		changed.emit()
+	for id in plots:
+		if id == location:
+			continue
+		var p: Dictionary = plots[id]
+		var away := day - int(p.get("last_visit", day))
+		if away > 0 and plot_stage_tier(id) >= FIXED_FROM_TIER:
+			p["reputation"] = Economy.reputation_decay(float(p["reputation"]), 1)
+	var here := plot()
+	here["last_visit"] = day
+	if not stats["locations_visited"].has(location):
+		stats["locations_visited"].append(location)
+	changed.emit()
 
 func expected_customers() -> int:
-	return Economy.expected_customers(loc(), forecast, Data.location_hours(location), popularity, marketing_boost() + attract_bonus(), has_upgrade("awning"))
+	return Economy.expected_customers(sim_context())
 
 func food_on_sale() -> bool:
 	for id in Data.MENU_ITEMS:
@@ -99,17 +130,107 @@ func loc() -> Dictionary:
 func weather_def() -> Dictionary:
 	return Data.WEATHER[weather]
 
-## Overnight loss rate for an ingredient given the fridge upgrades.
+## The plot record of a location (created on first use).
+func _plot_entry(id: String) -> Dictionary:
+	if not plots.has(id):
+		plots[id] = {"stage": "", "stations": {}, "reputation": popularity, "last_visit": day}
+	return plots[id]
+
+func plot() -> Dictionary:
+	return _plot_entry(location)
+
+func rig_tier() -> int:
+	return Data.stage_tier_of(String(rig["stage"]))
+
+## Tier of the fixed stage built at a location, or -1 when there is none.
+func plot_stage_tier(id: String) -> int:
+	if not plots.has(id) or String(plots[id].get("stage", "")) == "":
+		return -1
+	return Data.stage_tier_of(String(plots[id]["stage"]))
+
+## The stage you sell from where you stand today: the plot's building, else your rig.
+func stage_tier() -> int:
+	return maxi(rig_tier(), plot_stage_tier(location))
+
+func stage_def() -> Dictionary:
+	return Data.stage_def(stage_tier())
+
+## True when today's stage belongs to the location (kiosk and up).
+func is_fixed() -> bool:
+	return plot_stage_tier(location) >= FIXED_FROM_TIER
+
+func _station_store() -> Dictionary:
+	return plot()["stations"] if is_fixed() else rig["stations"]
+
+func station_level(id: String) -> int:
+	return int(_station_store().get(id, 0))
+
+func station_available(id: String) -> bool:
+	return id in stage_def()["stations"]
+
+func station_cap(id: String) -> int:
+	return Economy.station_level_cap(Data.STATIONS[id], stage_def())
+
+func station_cost(id: String) -> float:
+	return Economy.station_cost(Data.STATIONS[id], station_level(id))
+
+## Every station usable at this stage with its level.
+func active_stations() -> Dictionary:
+	var out := {}
+	for id in stage_def()["stations"]:
+		out[id] = station_level(id)
+	return out
+
+## Station levels bought anywhere (rig + every plot), for goals.
+func levels_owned() -> int:
+	var n := 0
+	for id in rig["stations"]:
+		n += int(rig["stations"][id])
+	for loc_id in plots:
+		for id in plots[loc_id]["stations"]:
+			n += int(plots[loc_id]["stations"][id])
+	return n
+
+func counter_capacity() -> float:
+	return Economy.counter_capacity(station_level("counter"))
+
+func queue_capacity() -> int:
+	return Economy.queue_cap(station_level("counter"), stage_def())
+
+## Kitchen station -> portions per minute, for the stations present at this stage.
+func kitchen_caps() -> Dictionary:
+	var out := {}
+	for id in stage_def()["stations"]:
+		var def: Dictionary = Data.STATIONS[id]
+		if def.has("kinds"):
+			out[id] = Economy.kitchen_capacity(def, station_level(id))
+	return out
+
+## Item station kind ("grill", "drink", ...) -> station id that cooks it here.
+func station_of_kind() -> Dictionary:
+	var out := {}
+	for id in stage_def()["stations"]:
+		for k in Data.STATIONS[id].get("kinds", []):
+			out[k] = id
+	return out
+
+func seats() -> int:
+	var n := 0
+	for id in ["seating", "majlis"]:
+		if station_available(id):
+			n += station_level(id) * int(Data.STATIONS[id].get("seats_per_level", 0))
+	return n
+
+## Overnight loss rate for an ingredient given the cold storage level.
 func spoil_rate(ing: String) -> float:
 	var def: Dictionary = Data.INGREDIENTS[ing]
 	var rate := float(def["spoil"])
+	var cold: Dictionary = Data.STATIONS["coldbox"]
+	var level := clampi(station_level("coldbox"), 0, 3)
 	if def["cold"] is bool and def["cold"]:
-		if has_upgrade("fridge2"):
-			rate = 0.0
-		elif has_upgrade("fridge"):
-			rate = float(Data.UPGRADES["fridge"]["spoil_meat"])
-	elif def["cold"] is String and has_upgrade("fridge2"):
-		rate = 0.0
+		rate = minf(rate, float(cold["spoil_meat"][level]))
+	elif def["cold"] is String:
+		rate = minf(rate, float(cold["spoil_veg"][level]))
 	return rate
 
 ## Items on sale of a kind ("food" or "drink") with their value to today's crowd and stock.
@@ -127,6 +248,21 @@ func candidates(kind_wanted: String) -> Array:
 			continue
 		var value := Economy.item_value(id, quality(id), float(menu[id]["price"]), l, w)
 		out.append({"id": id, "value": value, "stock": portions_possible(id)})
+	return out
+
+## Everything on sale with value, price and cost (the analytic estimate's input).
+func offer(assume_stock: bool = false) -> Array:
+	var out := []
+	var l := loc()
+	var w: Dictionary = Data.WEATHER[forecast]
+	for id in Data.MENU_ITEMS:
+		if not is_on_sale(id):
+			continue
+		var def: Dictionary = Data.MENU_ITEMS[id]
+		out.append({"id": id, "kind": def["kind"], "station_kind": def.get("station_kind", ""),
+			"value": Economy.item_value(id, quality(id), float(menu[id]["price"]), l, w),
+			"price": float(menu[id]["price"]), "unit_cost": unit_cost(id),
+			"stock": 999 if assume_stock else portions_possible(id)})
 	return out
 
 func quality(item_id: String) -> float:
@@ -156,27 +292,6 @@ func is_on_sale(item_id: String) -> bool:
 	var m: Dictionary = menu[item_id]
 	return m["unlocked"] and m["enabled"]
 
-func has_upgrade(id: String) -> bool:
-	return upgrades.has(id)
-
-func vehicle_def() -> Dictionary:
-	return Data.VEHICLES[vehicle]
-
-func vehicle_tier() -> int:
-	return int(vehicle_def()["tier"])
-
-func service_time_min() -> float:
-	var t := Economy.BASE_SERVICE_MIN * float(vehicle_def().get("service", 1.0))
-	for id in upgrades:
-		t *= float(Data.UPGRADES[id].get("service", 1.0))
-	return t
-
-func queue_capacity() -> int:
-	var c := Economy.BASE_QUEUE_CAP + int(vehicle_def().get("queue", 0))
-	for id in upgrades:
-		c += int(Data.UPGRADES[id].get("queue", 0))
-	return c
-
 func competition() -> float:
 	return float(loc().get("competition", 0.0))
 
@@ -187,41 +302,32 @@ func promo_power() -> float:
 func competition_loss() -> float:
 	return Economy.competition_loss(competition(), marketing_boost() + attract_bonus(), promo_power())
 
+## The station an item or ingredient needs, "" when none.
+func required_station(def: Dictionary) -> String:
+	return String(def.get("requires_station", ""))
+
 func item_available(item_id: String) -> bool:
-	var def: Dictionary = Data.MENU_ITEMS[item_id]
-	return not def.has("requires") or has_upgrade(def["requires"])
+	var s := required_station(Data.MENU_ITEMS[item_id])
+	return s == "" or (station_available(s) and station_level(s) >= 1)
 
 func ingredient_available(ing: String) -> bool:
-	var def: Dictionary = Data.INGREDIENTS[ing]
-	return not def.has("requires") or has_upgrade(def["requires"])
+	var s := required_station(Data.INGREDIENTS[ing])
+	return s == "" or (station_available(s) and station_level(s) >= 1)
 
-func location_vehicle_ok(id: String) -> bool:
-	return vehicle_tier() >= int(Data.LOCATIONS[id].get("vehicle", 0))
-
-func buy_vehicle(id: String) -> bool:
-	var def: Dictionary = Data.VEHICLES[id]
-	if int(def["tier"]) <= vehicle_tier():
-		return false
-	if int(def["tier"]) > vehicle_tier() + 1:
-		notify.emit(tr("ui.veh_order"), "error")
-		return false
-	if not _spend(float(def["cost"])):
-		return false
-	vehicle = id
-	notify.emit(tr("ui.bought") % tr(def["name"]), "good")
-	changed.emit()
-	return true
+## Can you set up at a location with your rig (or its own building)?
+func location_stage_ok(id: String) -> bool:
+	return maxi(rig_tier(), plot_stage_tier(id)) >= int(Data.LOCATIONS[id].get("min_stage", 0))
 
 func attract_bonus() -> float:
 	var b := 0.0
-	for id in upgrades:
-		b += float(Data.UPGRADES[id].get("attract", 0.0))
+	for id in stage_def()["stations"]:
+		b += float(Data.STATIONS[id].get("attract_per_level", 0.0)) * station_level(id)
 	return b
 
 func satisfaction_bonus() -> float:
 	var b := 0.0
-	for id in upgrades:
-		b += float(Data.UPGRADES[id].get("satisfaction", 0.0))
+	for id in stage_def()["stations"]:
+		b += float(Data.STATIONS[id].get("satisfaction_per_level", 0.0)) * station_level(id)
 	return b
 
 func marketing_boost() -> float:
@@ -231,19 +337,91 @@ func marketing_boost() -> float:
 	return b
 
 func daily_wages() -> float:
-	var w := 0.0
-	for id in upgrades:
-		w += float(Data.UPGRADES[id].get("wage", 0.0))
-	return w
+	return 0.0
 
 func stars() -> float:
 	return popularity * 5.0
+
+func local_reputation() -> float:
+	return float(plot().get("reputation", popularity))
+
+func effective_popularity() -> float:
+	return Economy.effective_popularity(popularity, local_reputation())
 
 func location_unlocked(id: String) -> bool:
 	return popularity >= float(Data.LOCATIONS[id].get("unlock_pop", 0.0))
 
 func stage_locations() -> Array:
 	return Data.STAGES[stage]["locations"]
+
+## What the 3D plot needs to know to draw today's stand.
+func plot_state() -> Dictionary:
+	return {"stage": stage_tier(), "stations": active_stations(), "staff": {}, "events": {},
+		"site": {"layout": loc()["layout"], "location": location}}
+
+## Legacy visual flags for the cart (until the Plot node replaces it).
+func legacy_visual() -> Dictionary:
+	var up := {}
+	if station_level("counter") >= 2:
+		up["cart2"] = true
+	if station_level("coldbox") >= 1:
+		up["fridge"] = true
+	if station_level("shade") >= 1:
+		up["awning"] = true
+	if station_level("music") >= 1:
+		up["speaker"] = true
+	if seats() > 0:
+		up["seating"] = true
+	if station_level("sweets") >= 1:
+		up["sweets"] = true
+	if station_level("grill") >= 4:
+		up["helper"] = true
+	return {"upgrades": up, "vehicle": "truck" if stage_tier() >= 2 else "cart"}
+
+# ---------------------------------------------------------------- goals
+
+func current_goal() -> Dictionary:
+	if goal_index >= Data.GOALS.size():
+		return {}
+	return Data.GOALS[goal_index]
+
+func goal_snapshot() -> Dictionary:
+	var last: Dictionary = history.back() if not history.is_empty() else {}
+	var unlocked := []
+	for id in menu:
+		if menu[id]["unlocked"]:
+			unlocked.append(id)
+	var st := {}
+	for id in Data.STATIONS:
+		st[id] = maxi(int(rig["stations"].get(id, 0)), station_level(id))
+	return {
+		"day_served": int(last.get("served", 0)), "day_profit": float(last.get("profit", 0.0)), "day_dine_in": int(last.get("dine_in", 0)),
+		"total_served": total_served, "stars": stars(), "levels_owned": levels_owned(), "stage": stage_tier(),
+		"stations": st, "visited": stats["locations_visited"], "unlocked": unlocked,
+	}
+
+func goal_progress() -> float:
+	var g := current_goal()
+	if g.is_empty():
+		return 0.0
+	return Economy.goal_progress(g, goal_snapshot())
+
+func goal_ready() -> bool:
+	return not current_goal().is_empty() and goal_progress() >= 1.0
+
+func claim_goal() -> bool:
+	if not goal_ready():
+		return false
+	var g := current_goal()
+	var reward: Dictionary = g["reward"]
+	money += float(reward.get("money", 0.0))
+	popularity = clampf(popularity + float(reward.get("popularity", 0.0)), 0.05, 1.0)
+	goals_claimed.append(g["id"])
+	goal_index += 1
+	notify.emit(tr("ui.g_claimed") % Loc.money(float(reward.get("money", 0.0))), "good")
+	goal_claimed.emit(g)
+	changed.emit()
+	return true
 
 # ---------------------------------------------------------------- actions
 
@@ -265,9 +443,25 @@ func buy_pack(ingredient: String, pack_index: int) -> bool:
 	changed.emit()
 	return true
 
+## [lowest, highest] price allowed for an item where the stand is today.
+func price_range(item_id: String) -> Array:
+	return Economy.price_range(item_id, loc(), stage_def())
+
 func set_price(item_id: String, price: float) -> void:
-	menu[item_id]["price"] = snappedf(clampf(price, 1.0, 200.0), 1.0)
+	var r := price_range(item_id)
+	menu[item_id]["price"] = snappedf(clampf(price, float(r[0]), float(r[1])), 1.0)
 	changed.emit()
+
+## Pull every price back inside the current location's range. Returns the ids that moved.
+func clamp_prices() -> Array:
+	var moved := []
+	for id in menu:
+		var r := price_range(id)
+		var p := snappedf(clampf(float(menu[id]["price"]), float(r[0]), float(r[1])), 1.0)
+		if not is_equal_approx(p, float(menu[id]["price"])):
+			menu[id]["price"] = p
+			moved.append(id)
+	return moved
 
 func set_recipe(item_id: String, key: String, value: int) -> void:
 	var s: Dictionary = Data.RECIPE_SLIDERS[key]
@@ -285,7 +479,7 @@ func unlock_item(item_id: String) -> bool:
 	if menu[item_id]["unlocked"]:
 		return false
 	if not item_available(item_id):
-		notify.emit(tr("ui.requires") % tr(Data.UPGRADES[Data.MENU_ITEMS[item_id]["requires"]]["name"]), "error")
+		notify.emit(tr("ui.requires") % tr(Data.STATIONS[required_station(Data.MENU_ITEMS[item_id])]["name"]), "error")
 		return false
 	if not _spend(float(Data.MENU_ITEMS[item_id]["unlock_cost"])):
 		return false
@@ -307,20 +501,75 @@ func enhance_item(item_id: String) -> bool:
 	changed.emit()
 	return true
 
-func buy_upgrade(id: String) -> bool:
-	if upgrades.has(id):
+## Why a station cannot be levelled right now ("" when it can).
+func station_lock_reason(id: String) -> String:
+	var def: Dictionary = Data.STATIONS[id]
+	if not station_available(id):
+		return tr("ui.b_needs_stage") % tr(Data.stage_def(int(def["min_stage"]))["name"])
+	if def.get("later", false):
+		return tr("ui.b_soon")
+	if station_level(id) >= station_cap(id):
+		return tr("ui.b_maxed")
+	return ""
+
+func buy_station_level(id: String) -> bool:
+	var why := station_lock_reason(id)
+	if why != "":
+		notify.emit(why, "error")
 		return false
-	var def: Dictionary = Data.UPGRADES[id]
-	if def.has("requires") and not upgrades.has(def["requires"]):
-		notify.emit(tr("ui.requires") % tr(Data.UPGRADES[def["requires"]]["name"]), "error")
+	if not _spend(station_cost(id)):
 		return false
-	if int(def.get("requires_vehicle", 0)) > vehicle_tier():
-		notify.emit(tr("ui.requires") % tr(Data.VEHICLES[Data.vehicle_for_tier(int(def["requires_vehicle"]))]["name"]), "error")
+	var store := _station_store()
+	store[id] = int(store.get(id, 0)) + 1
+	stats["levels_bought"] = int(stats["levels_bought"]) + 1
+	notify.emit(tr("ui.b_bought") % [tr(Data.STATIONS[id]["name"]), store[id]], "good")
+	changed.emit()
+	return true
+
+## The next stage you could build here, {} at the top.
+func next_stage_def() -> Dictionary:
+	var t := stage_tier() + 1
+	if t >= Data.PLOT_STAGES.size():
+		return {}
+	return Data.PLOT_STAGES[t]
+
+## Why the next stage cannot be bought ("" when it can; the price is checked on purchase).
+func stage_lock_reason() -> String:
+	var nxt := next_stage_def()
+	if nxt.is_empty():
+		return tr("ui.b_top_stage")
+	if nxt.get("later", false):
+		return tr("ui.b_soon")
+	if nxt.has("requires_rig") and rig_tier() < int(nxt["requires_rig"]):
+		return tr("ui.b_needs_stage") % tr(Data.stage_def(int(nxt["requires_rig"]))["name"])
+	if nxt.has("requires_local_rep") and local_reputation() < float(nxt["requires_local_rep"]):
+		return tr("ui.b_needs_rep") % (float(nxt["requires_local_rep"]) * 5.0)
+	return ""
+
+## Build the next stage: rig stages replace the rig; a plot stage is built at this location.
+## The first fixed stage takes over the rig's station levels (the rig is emptied).
+func buy_stage() -> bool:
+	var why := stage_lock_reason()
+	if why != "":
+		notify.emit(why, "error")
 		return false
-	if not _spend(float(def["cost"])):
+	var nxt := next_stage_def()
+	if not _spend(float(nxt["cost"])):
 		return false
-	upgrades[id] = true
-	notify.emit(tr("ui.bought") % tr(def["name"]), "good")
+	var tier := Data.stage_tier_of(String(nxt["id"]))
+	if String(nxt["scope"]) == "rig":
+		rig["stage"] = nxt["id"]
+	else:
+		var p := plot()
+		var was_fixed := plot_stage_tier(location) >= FIXED_FROM_TIER
+		p["stage"] = nxt["id"]
+		if not was_fixed:
+			for id in rig["stations"]:
+				p["stations"][id] = int(p["stations"].get(id, 0)) + int(rig["stations"][id])
+			rig["stations"] = {}
+	stats["stages_built"] = int(stats["stages_built"]) + 1
+	notify.emit(tr("ui.b_built") % tr(nxt["name"]), "good")
+	clamp_prices()
 	changed.emit()
 	return true
 
@@ -340,29 +589,92 @@ func set_location(id: String) -> bool:
 	if not location_unlocked(id):
 		notify.emit(tr("ui.rep_low"), "error")
 		return false
-	if not location_vehicle_ok(id):
-		notify.emit(tr("ui.veh_needed"), "error")
+	if not location_stage_ok(id):
+		notify.emit(tr("ui.stage_needed") % tr(Data.stage_def(int(Data.LOCATIONS[id].get("min_stage", 0)))["name"]), "error")
 		return false
 	location = id
+	var p := plot()
+	p["last_visit"] = day
+	if not stats["locations_visited"].has(id):
+		stats["locations_visited"].append(id)
+	if not clamp_prices().is_empty():
+		notify.emit(tr("ui.m_price_clamped") % tr(loc()["name"]), "warn")
 	changed.emit()
 	return true
 
 # ---------------------------------------------------------------- day cycle
 
 func sim_context() -> Dictionary:
+	var sd := stage_def()
+	var n_seats := seats()
 	return {
 		"location": location,
 		"weather": weather,
 		"hours": Data.location_hours(location),
-		"service_min": service_time_min(),
+		"stage": stage_tier(),
+		"stations": active_stations(),
+		"counter_cap": counter_capacity(),
 		"queue_cap": queue_capacity(),
+		"kitchen": kitchen_caps(),
+		"station_of_kind": station_of_kind(),
+		"seats": n_seats,
+		"dine_in_share": Economy.dine_in_share(sd, n_seats),
+		"dwell_min": float(Data.STATIONS["seating"]["dwell_min"]),
+		"clean_min": float(Data.STATIONS["seating"]["clean_min"]),
+		"spend_mult": Economy.spend_multiplier(station_level("majlis") if station_available("majlis") else 0),
+		"appeal": float(sd["appeal"]),
 		"patience_min": Economy.BASE_PATIENCE_MIN * float(loc().get("patience", 1.0)),
 		"boost": marketing_boost() + attract_bonus(),
 		"competition": competition(),
 		"promo_power": promo_power(),
-		"has_awning": has_upgrade("awning"),
+		"shade_level": station_level("shade"),
+		"lights_level": station_level("lights") if station_available("lights") else 0,
 		"satisfaction_bonus": satisfaction_bonus(),
+		"popularity": effective_popularity(),
+		"local_rep": local_reputation(),
+		"offer": offer(true),
+		"wages": daily_wages(),
+		"cars_per_hour": 0.0,
 	}
+
+## The context a different setup would produce, without changing anything:
+## overrides = {"stations": {id: level}, "stage": tier, "location": id, "unlock": item_id}.
+func what_if(overrides: Dictionary) -> Dictionary:
+	var saved_rig: Dictionary = rig.duplicate(true)
+	var saved_plots: Dictionary = plots.duplicate(true)
+	var saved_location := location
+	var saved_menu: Dictionary = menu.duplicate(true)
+	var saved_stats_visited: Array = stats["locations_visited"].duplicate()
+	if overrides.has("location"):
+		location = String(overrides["location"])
+		_plot_entry(location)
+	if overrides.has("stage"):
+		var t := int(overrides["stage"])
+		var def := Data.stage_def(t)
+		if String(def["scope"]) == "rig":
+			rig["stage"] = def["id"]
+		else:
+			var p := plot()
+			if plot_stage_tier(location) < FIXED_FROM_TIER:
+				for id in rig["stations"]:
+					p["stations"][id] = int(p["stations"].get(id, 0)) + int(rig["stations"][id])
+				rig["stations"] = {}
+			p["stage"] = def["id"]
+	if overrides.has("stations"):
+		var store := _station_store()
+		for id in overrides["stations"]:
+			store[id] = int(overrides["stations"][id])
+	if overrides.has("unlock"):
+		menu[String(overrides["unlock"])]["unlocked"] = true
+		menu[String(overrides["unlock"])]["enabled"] = true
+	clamp_prices()
+	var ctx := sim_context()
+	rig = saved_rig
+	plots = saved_plots
+	location = saved_location
+	menu = saved_menu
+	stats["locations_visited"] = saved_stats_visited
+	return ctx
 
 ## Sell one portion of an item. Returns false if ingredients are missing.
 func sell(item_id: String, price: float) -> bool:
@@ -377,7 +689,7 @@ func sell(item_id: String, price: float) -> bool:
 	return true
 
 ## Close the books for the day. Returns the report dictionary shown to the player.
-func end_day(stats: Dictionary) -> Dictionary:
+func end_day(day_stats: Dictionary) -> Dictionary:
 	var rent := float(loc()["rent"])
 	var wages := daily_wages()
 	money -= rent + wages
@@ -391,43 +703,60 @@ func end_day(stats: Dictionary) -> Dictionary:
 			inventory[ing] = qty - lost
 			spoiled[ing] = lost
 			spoil_cost += lost * ingredient_cost(ing)
-	var pop_delta := Economy.popularity_delta(stats, popularity)
+	var pop_delta := Economy.popularity_delta(day_stats, popularity)
 	popularity = clampf(popularity + pop_delta, 0.05, 1.0)
+	var p := plot()
+	var local_delta := Economy.popularity_delta(day_stats, float(p["reputation"])) * 1.5
+	p["reputation"] = clampf(float(p["reputation"]) + local_delta, 0.05, 1.0)
+	p["last_visit"] = day
 	for id in marketing.keys():
 		marketing[id] = int(marketing[id]) - 1
 		if marketing[id] <= 0:
 			marketing.erase(id)
-	var revenue := float(stats.get("revenue", 0.0))
-	var cogs := float(stats.get("cogs", 0.0))
+	var revenue := float(day_stats.get("revenue", 0.0))
+	var cogs := float(day_stats.get("cogs", 0.0))
+	var profit := revenue - cogs - rent - wages - spoil_cost
+	var util: Dictionary = day_stats.get("util", {})
 	var report := {
 		"day": day,
 		"location": location,
 		"weather": weather,
-		"served": int(stats.get("served", 0)),
-		"passers": int(stats.get("passers", 0)),
+		"stage": stage_tier(),
+		"served": int(day_stats.get("served", 0)),
+		"passers": int(day_stats.get("passers", 0)),
+		"dine_in": int(day_stats.get("dine_in", 0)),
 		"revenue": revenue,
 		"cogs": cogs,
 		"rent": rent,
 		"wages": wages,
 		"spoiled": spoiled,
 		"spoil_cost": spoil_cost,
-		"profit": revenue - cogs - rent - wages - spoil_cost,
-		"left_wait": int(stats.get("left_wait", 0)),
-		"lost_rival": int(stats.get("lost_rival", 0)),
-		"too_pricey": int(stats.get("too_pricey", 0)),
-		"sold_out": int(stats.get("sold_out", 0)),
-		"queue_full": int(stats.get("queue_full", 0)),
-		"satisfaction": (float(stats.get("satisfaction_sum", 0.0)) / maxi(1, int(stats.get("served", 0)))),
+		"profit": profit,
+		"left_wait": int(day_stats.get("left_wait", 0)),
+		"lost_rival": int(day_stats.get("lost_rival", 0)),
+		"too_pricey": int(day_stats.get("too_pricey", 0)),
+		"sold_out": int(day_stats.get("sold_out", 0)),
+		"queue_full": int(day_stats.get("queue_full", 0)),
+		"satisfaction": (float(day_stats.get("satisfaction_sum", 0.0)) / maxi(1, int(day_stats.get("served", 0)))),
 		"pop_delta": pop_delta,
 		"popularity": popularity,
-		"sold": stats.get("sold", {}),
+		"local_rep": float(p["reputation"]),
+		"local_delta": local_delta,
+		"util": util,
+		"bottleneck": Economy.bottleneck(util),
+		"sold": day_stats.get("sold", {}),
 		"money": money,
 	}
+	stats["days_played"] = int(stats["days_played"]) + 1
+	stats["total_profit"] = float(stats["total_profit"]) + profit
+	stats["best_day_profit"] = maxf(float(stats["best_day_profit"]), profit)
+	stats["best_day_served"] = maxi(int(stats["best_day_served"]), int(report["served"]))
 	history.append(report)
 	if history.size() > HISTORY_LIMIT:
 		history = history.slice(history.size() - HISTORY_LIMIT)
 	day += 1
 	forecast = _roll_weather()
+	report["goal_ready"] = goal_ready()
 	save()
 	changed.emit()
 	return report
@@ -443,30 +772,75 @@ func _roll_weather() -> String:
 
 # ---------------------------------------------------------------- persistence
 
+func _web() -> bool:
+	return OS.has_feature("web")
+
+func _web_storage() -> JavaScriptObject:
+	return JavaScriptBridge.get_interface("localStorage")
+
+## Raw JSON text of the web backup copy, or "" when there is none.
+func _web_backup() -> String:
+	if not _web():
+		return ""
+	var ls := _web_storage()
+	if ls == null:
+		return ""
+	var v = ls.getItem(WEB_SAVE_KEY)
+	return String(v) if v is String else ""
+
+func _file_text() -> String:
+	if not FileAccess.file_exists(save_path):
+		return ""
+	var f := FileAccess.open(save_path, FileAccess.READ)
+	return f.get_as_text() if f else ""
+
+## The newest valid save available: the user:// file or (web) the localStorage copy.
+func _read_save() -> Dictionary:
+	var best := {}
+	for text in [_file_text(), _web_backup()]:
+		if text == "":
+			continue
+		var parsed = JSON.parse_string(text)
+		if typeof(parsed) != TYPE_DICTIONARY:
+			continue
+		if best.is_empty() or float(parsed.get("saved_at", 0)) > float(best.get("saved_at", 0)):
+			best = parsed
+	return best
+
 func has_save() -> bool:
-	return FileAccess.file_exists(save_path)
+	return not _read_save().is_empty()
+
+## Day and cash of the stored game, for the title screen ({} when there is none).
+func save_summary() -> Dictionary:
+	var d := _read_save()
+	if d.is_empty():
+		return {}
+	return {"day": int(d.get("day", 1)), "money": float(d.get("money", 0.0))}
 
 func save() -> void:
 	if not persist:
 		return
 	var data := {
-		"version": SAVE_VERSION, "money": money, "day": day, "popularity": popularity,
+		"version": SAVE_VERSION, "saved_at": Time.get_unix_time_from_system(),
+		"money": money, "day": day, "popularity": popularity,
 		"stage": stage, "location": location, "weather": weather, "forecast": forecast,
-		"inventory": inventory, "avg_cost": avg_cost, "menu": menu, "upgrades": upgrades, "marketing": marketing,
-		"history": history, "total_served": total_served, "bailouts": bailouts, "vehicle": vehicle,
+		"inventory": inventory, "avg_cost": avg_cost, "menu": menu, "marketing": marketing,
+		"rig": rig, "plots": plots, "goal_index": goal_index, "goals_claimed": goals_claimed, "stats": stats,
+		"history": history, "total_served": total_served, "bailouts": bailouts,
 	}
+	var text := JSON.stringify(data)
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify(data))
+		f.store_string(text)
+		f.close()
+	if _web():
+		var ls := _web_storage()
+		if ls:
+			ls.setItem(WEB_SAVE_KEY, text)
 
 func load_game() -> bool:
-	if not has_save():
-		return false
-	var f := FileAccess.open(save_path, FileAccess.READ)
-	if f == null:
-		return false
-	var parsed = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
+	var parsed := _read_save()
+	if parsed.is_empty():
 		return false
 	new_game()
 	money = float(parsed.get("money", money))
@@ -483,8 +857,6 @@ func load_game() -> bool:
 		forecast = String(parsed["forecast"])
 	total_served = int(parsed.get("total_served", 0))
 	bailouts = int(parsed.get("bailouts", 0))
-	if Data.VEHICLES.has(String(parsed.get("vehicle", ""))):
-		vehicle = String(parsed["vehicle"])
 	for ing in parsed.get("inventory", {}):
 		if inventory.has(ing):
 			inventory[ing] = int(parsed["inventory"][ing])
@@ -492,24 +864,186 @@ func load_game() -> bool:
 		if avg_cost.has(ing):
 			avg_cost[ing] = float(parsed["avg_cost"][ing])
 	for id in parsed.get("menu", {}):
-		if menu.has(id):
+		if menu.has(id) and parsed["menu"][id] is Dictionary:
 			var m: Dictionary = parsed["menu"][id]
-			menu[id]["unlocked"] = bool(m.get("unlocked", false))
+			menu[id]["unlocked"] = bool(m.get("unlocked", false)) or bool(Data.MENU_ITEMS[id]["start"])
 			menu[id]["enabled"] = bool(m.get("enabled", false))
 			menu[id]["price"] = float(m.get("price", menu[id]["price"]))
 			menu[id]["level"] = int(m.get("level", 0))
 			for k in Data.RECIPE_SLIDERS:
 				menu[id]["recipe"][k] = int(m.get("recipe", {}).get(k, menu[id]["recipe"][k]))
-	for id in parsed.get("upgrades", {}):
-		if Data.UPGRADES.has(id):
-			upgrades[id] = true
 	for id in parsed.get("marketing", {}):
 		if Data.MARKETING.has(id):
 			marketing[id] = int(parsed["marketing"][id])
 	history = parsed.get("history", [])
+	if parsed.get("rig", null) is Dictionary:
+		rig = {"stage": String(parsed["rig"].get("stage", "cart")), "stations": _int_dict(parsed["rig"].get("stations", {}))}
+	plots = {}
+	if parsed.get("plots", null) is Dictionary:
+		for loc_id in parsed["plots"]:
+			var p = parsed["plots"][loc_id]
+			if Data.LOCATIONS.has(loc_id) and p is Dictionary:
+				plots[loc_id] = {"stage": String(p.get("stage", "")), "stations": _int_dict(p.get("stations", {})),
+					"reputation": float(p.get("reputation", popularity)), "last_visit": int(p.get("last_visit", day))}
+	goal_index = int(parsed.get("goal_index", 0))
+	goals_claimed = parsed.get("goals_claimed", []) if parsed.get("goals_claimed", null) is Array else []
+	stats = _new_stats()
+	if parsed.get("stats", null) is Dictionary:
+		for k in stats:
+			if parsed["stats"].has(k):
+				stats[k] = parsed["stats"][k]
+	if int(parsed.get("version", 1)) < 3:
+		_migrate_legacy(parsed)
+	_validate()
 	changed.emit()
 	return true
 
+func _int_dict(d) -> Dictionary:
+	var out := {}
+	if d is Dictionary:
+		for k in d:
+			out[String(k)] = int(d[k])
+	return out
+
+## Saves from before the station system: vehicles become rig stages, one-off upgrades
+## become station levels (or refunds where the station needs a stage you have not got).
+func _migrate_legacy(parsed: Dictionary) -> void:
+	var acc := {"refund": 0.0} # a dictionary so the lambda below can add to it
+	var veh := String(parsed.get("vehicle", "cart"))
+	rig["stage"] = "truck" if veh in ["truck", "truck2"] else "cart"
+	var st: Dictionary = rig["stations"]
+	var stage_stations: Array = Data.stage_def(rig_tier())["stations"]
+	var add := func(id: String, levels: int, cost: float) -> void:
+		if id in stage_stations:
+			st[id] = int(st.get(id, 0)) + levels
+		else:
+			acc["refund"] += cost
+	var ups: Dictionary = parsed.get("upgrades", {}) if parsed.get("upgrades", null) is Dictionary else {}
+	for id in ups:
+		match String(id):
+			"cart2": add.call("counter", 2, 750.0)
+			"grill2": add.call("grill", 3, 1100.0)
+			"fridge": add.call("coldbox", 1, 800.0)
+			"fridge2": add.call("coldbox", 2, 2100.0)
+			"awning": add.call("shade", 1, 550.0)
+			"speaker": add.call("music", 1, 650.0)
+			"neon":
+				if "lights" in stage_stations:
+					add.call("lights", 2, 1000.0)
+				else:
+					add.call("signage", 2, 1000.0)
+			"sweets": add.call("sweets", 1, 2500.0)
+			"helper": acc["refund"] += 300.0
+			"seating": acc["refund"] += 800.0
+	if bool(parsed.get("menu", {}).get("fries", {}).get("unlocked", false)):
+		if "fryer" in stage_stations:
+			st["fryer"] = maxi(int(st.get("fryer", 0)), 1)
+		else:
+			menu["fries"]["unlocked"] = false
+			acc["refund"] += 300.0
+	for id in ["saffron_cake", "sago_halwa", "omani_halwa"]:
+		if menu[id]["unlocked"] and int(st.get("sweets", 0)) < 1:
+			menu[id]["unlocked"] = false
+			acc["refund"] += float(Data.MENU_ITEMS[id]["unlock_cost"])
+	var refund: float = acc["refund"]
+	money += refund
+	stats["days_played"] = maxi(int(stats["days_played"]), day - 1)
+	stats["locations_visited"] = [location]
+	_plot_entry(location)["reputation"] = popularity
+	# skip the goals this player has already achieved (no retroactive cash)
+	while goal_index < Data.GOALS.size() and Economy.goal_progress(Data.GOALS[goal_index], goal_snapshot()) >= 1.0:
+		goals_claimed.append(Data.GOALS[goal_index]["id"])
+		goal_index += 1
+	notify.emit(tr("ui.migrated") % Loc.money(refund), "info")
+
+## Bring a loaded save inside today's rules: price ranges change between versions, and a
+## corrupt or hand-edited file must never produce NaN money or an impossible menu.
+func _validate() -> void:
+	if is_nan(money) or is_inf(money):
+		money = 0.0
+	money = maxf(money, 0.0)
+	if is_nan(popularity) or is_inf(popularity):
+		popularity = Data.START_POPULARITY
+	popularity = clampf(popularity, 0.05, 1.0)
+	day = maxi(day, 1)
+	total_served = maxi(total_served, 0)
+	bailouts = clampi(bailouts, 0, Data.BAILOUT_MAX)
+	# rig: a known mobile stage with known stations inside their caps
+	var rig_stage := String(rig.get("stage", "cart"))
+	if Data.stage_tier_of(rig_stage) >= FIXED_FROM_TIER or rig_stage != Data.PLOT_STAGES[Data.stage_tier_of(rig_stage)]["id"]:
+		rig_stage = "cart"
+	rig["stage"] = rig_stage
+	rig["stations"] = _clean_stations(rig["stations"], Data.stage_def(rig_tier()))
+	for loc_id in plots.keys():
+		var p: Dictionary = plots[loc_id]
+		var sid := String(p.get("stage", ""))
+		if sid != "" and (Data.stage_tier_of(sid) < FIXED_FROM_TIER or sid != Data.PLOT_STAGES[Data.stage_tier_of(sid)]["id"]):
+			sid = ""
+		p["stage"] = sid
+		p["stations"] = _clean_stations(p.get("stations", {}), Data.stage_def(Data.stage_tier_of(sid))) if sid != "" else {}
+		var rep := float(p.get("reputation", popularity))
+		p["reputation"] = Data.START_POPULARITY if is_nan(rep) else clampf(rep, 0.05, 1.0)
+		p["last_visit"] = clampi(int(p.get("last_visit", day)), 1, day)
+	if not location_stage_ok(location):
+		location = "fahidi"
+	_plot_entry(location)
+	for ing in inventory:
+		inventory[ing] = maxi(int(inventory[ing]), 0)
+		if float(avg_cost[ing]) <= 0.0 or is_nan(float(avg_cost[ing])):
+			avg_cost[ing] = Data.reference_unit_price(ing)
+	for id in menu:
+		var enh: Array = Data.MENU_ITEMS[id]["enhance"]
+		menu[id]["level"] = clampi(int(menu[id]["level"]), 0, enh.size())
+		if is_nan(float(menu[id]["price"])):
+			menu[id]["price"] = float(Data.MENU_ITEMS[id]["base_price"])
+		for k in Data.RECIPE_SLIDERS:
+			var s: Dictionary = Data.RECIPE_SLIDERS[k]
+			menu[id]["recipe"][k] = clampi(int(menu[id]["recipe"][k]), int(s["min"]), int(s["max"]))
+	clamp_prices()
+	for id in marketing.keys():
+		if int(marketing[id]) < 1:
+			marketing.erase(id)
+	goal_index = clampi(goal_index, 0, Data.GOALS.size())
+	var known_goals := []
+	for g in goals_claimed:
+		for def in Data.GOALS:
+			if def["id"] == String(g):
+				known_goals.append(String(g))
+	goals_claimed = known_goals
+	for k in ["best_day_profit", "total_profit"]:
+		stats[k] = maxf(float(stats.get(k, 0.0)), 0.0) if not is_nan(float(stats.get(k, 0.0))) else 0.0
+	for k in ["best_day_served", "days_played", "levels_bought", "stages_built"]:
+		stats[k] = maxi(int(stats.get(k, 0)), 0)
+	var visited := []
+	for v in stats.get("locations_visited", []):
+		if Data.LOCATIONS.has(String(v)) and not visited.has(String(v)):
+			visited.append(String(v))
+	if not visited.has(location):
+		visited.append(location)
+	stats["locations_visited"] = visited
+	var clean := []
+	for r in history:
+		if r is Dictionary and Data.LOCATIONS.has(String(r.get("location", ""))) and Data.WEATHER.has(String(r.get("weather", ""))):
+			clean.append(r)
+	history = clean
+	if history.size() > HISTORY_LIMIT:
+		history = history.slice(history.size() - HISTORY_LIMIT)
+
+## Keep only known stations the stage allows, levels clamped to their caps.
+func _clean_stations(raw, stage_def_: Dictionary) -> Dictionary:
+	var out := {}
+	if raw is Dictionary:
+		for id in raw:
+			if Data.STATIONS.has(id) and id in stage_def_["stations"]:
+				var lvl := clampi(int(raw[id]), 0, Economy.station_level_cap(Data.STATIONS[id], stage_def_))
+				if lvl > 0:
+					out[String(id)] = lvl
+	return out
+
 func delete_save() -> void:
-	if has_save():
+	if FileAccess.file_exists(save_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
+	if _web():
+		var ls := _web_storage()
+		if ls:
+			ls.removeItem(WEB_SAVE_KEY)

@@ -116,7 +116,7 @@ func _arm(pos: Vector3, robe: Color, skin: Color) -> Node3D:
 func _pick(rng: RandomNumberGenerator, arr: Array) -> Color:
 	return arr[rng.randi_range(0, arr.size() - 1)]
 
-## Animation names match the Kenney character clips the game already uses.
+## Animation names match the Kenney character clips the game already uses ("sit" included).
 func set_anim(name: String, speed: float = 1.0) -> void:
 	if name in ["emote-yes", "emote-no", "pick-up", "interact-right", "interact-left"]:
 		_once_left = 0.9
@@ -133,6 +133,13 @@ func _process(delta: float) -> void:
 		_arm_l.rotation.x = sin(ph) * 0.5
 		_arm_r.rotation.x = -sin(ph) * 0.5
 		_head.rotation = Vector3(0, 0, -sin(ph) * 0.03)
+	elif _anim == "sit":
+		# seated: body lowered onto the chair, hands forward on the table
+		_root.position.y = lerpf(_root.position.y, -0.14, 0.3)
+		_body.rotation.z = 0.0
+		_arm_l.rotation.x = lerpf(_arm_l.rotation.x, -1.1, 0.2)
+		_arm_r.rotation.x = lerpf(_arm_r.rotation.x, -1.1 + sin(_t * 1.5) * 0.12, 0.2)
+		_head.rotation = Vector3(sin(_t * 0.7) * 0.05, 0, 0)
 	else:
 		_root.position.y = sin(_t * 2.0) * 0.004
 		_body.rotation.z = 0.0

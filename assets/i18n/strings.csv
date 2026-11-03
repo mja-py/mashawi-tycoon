@@ -8,7 +8,6 @@ ui.credits,"Art: Kenney, KayKit (CC0)  ·  Font: Baloo Bhaijaan 2 (OFL)",الر�
 ui.supplies,Supplies,المؤن
 ui.menu,Menu,القائمة
 ui.place,Place,الموقع
-ui.upgrades,Upgrades,التطويرات
 ui.promote,Promote,الإعلانات
 ui.open_shop,OPEN SHOP  >,افتح المحل
 ui.close,Close,إغلاق
@@ -16,7 +15,7 @@ ui.day,Day %d,اليوم %d
 ui.forecast,Forecast: %s,التوقعات: %s
 ui.costs_today,Costs today: %s,تكاليف اليوم: %s
 ui.skip,Skip to closing,تخطي إلى الإغلاق
-ui.live,Served %d  ·  %s   (in line: %d),تم تقديم %d  ·  %s   (في الطابور: %d)
+ui.live,Served %d  ·  %s   (line %d · kitchen %d · seated %d),تم تقديم %d  ·  %s   (طابور %d · مطبخ %d · جالسون %d)
 ui.next_day,Next day  >,اليوم التالي
 ui.r_title,Day %d  -  %s,اليوم %d  -  %s
 ui.r_passers,Passers-by,المارّة
@@ -75,9 +74,6 @@ ui.p_open,Open %s,مفتوح %s
 ui.p_here,You're here,أنت هنا
 ui.p_needs,Needs %.1f stars,يتطلب %.1f نجوم
 ui.p_move,Move here,انتقل إلى هنا
-ui.u_hint,Your vehicle decides where you can sell. Upgrades are permanent improvements to your stand and crew.,مركبتك تحدد أين يمكنك البيع. التطويرات تحسينات دائمة لعربتك وفريقك.
-ui.u_owned,Owned,مملوك
-ui.u_buy,Buy  %s,اشترِ  %s
 ui.a_hint,Get the word out. Promotions matter most where rivals compete for the same crowd.,انشر الخبر. الإعلانات أهم ما يكون حيث يتنافس المنافسون على نفس الزبائن.
 ui.a_active,Active - %d day(s) left,نشط - باقي %d يوم
 ui.a_start,Start  %s,ابدأ  %s
@@ -103,7 +99,7 @@ ui.w_title,Welcome to Dubai!,مرحبًا بك في دبي!
 ui.w1,"1.  Buy supplies for about as many customers as you expect. Meat spoils overnight, so buy fresh every day.",1.  اشترِ مؤنًا بقدر الزبائن المتوقعين. اللحم يفسد خلال الليل، فاشترِ طازجًا كل يوم.
 ui.w2,2.  Keep Chicken Tikka ON the menu. Set a fair price: customers compare quality to price.,2.  أبقِ تكة الدجاج في القائمة. ضع سعرًا عادلًا: الزبائن يقارنون الجودة بالسعر.
 ui.w3,3.  Reputation grows with happy customers. More stars unlock busier places.,3.  السمعة تنمو مع الزبائن السعداء. النجوم تفتح أماكن أكثر ازدحامًا.
-ui.w4,4.  Upgrades and ads cost money. Grow before you spend.,4.  التطويرات والإعلانات تكلف مالًا. كبّر مشروعك قبل أن تنفق.
+ui.w4,"4.  Build stations (counter, grill, lights...) level by level, follow the Goals tab, and grow from a cart to a restaurant.",4.  ابنِ المحطات (الكاونتر، الشواية، الإضاءة...) مستوى بعد مستوى، تابع تبويب الأهداف، وكبّر من عربة إلى مطعم.
 ui.w_go,Let's go!,يلا نبدأ!
 stage.dubai,Dubai,دبي
 weather.sunny,Sunny,مشمس
@@ -127,24 +123,6 @@ unit.pcs,pcs,قطعة
 unit.portions,portions,حصة
 unit.cans,cans,علبة
 unit.cups,cups,كوب
-up.cart2,Bigger Stand,عربة أكبر
-up.cart2.desc,More counter space: the line can hold 3 more customers.,مساحة أكبر: يتسع الطابور لثلاثة زبائن إضافيين.
-up.grill2,Double Charcoal Grill,شواية فحم مزدوجة
-up.grill2.desc,Serve customers 30% faster.,تقديم أسرع بنسبة 30%.
-up.fridge,Fridge,ثلاجة
-up.fridge.desc,Keeps meat and chicken overnight: only 10% is lost instead of 35%.,تحفظ اللحم والدجاج طوال الليل: يفسد 10% فقط بدلًا من 35%.
-up.fridge2,Walk-in Cooler,براد كبير
-up.fridge2.desc,"Nothing spoils. Meat, chicken and veg stay fresh.",لا شيء يفسد. اللحم والدجاج والخضار تبقى طازجة.
-up.awning,Shade Sail,مظلة شمسية
-up.awning.desc,Customers keep coming in a sandstorm (halves the penalty).,الزبائن يستمرون بالقدوم في العاصفة الرملية (نصف الخسارة).
-up.speaker,Speaker & Oud Music,سماعة وموسيقى عود
-up.speaker.desc,Draws passers-by: +8% stop chance.,تجذب المارّة: +8% فرصة التوقف.
-up.neon,Neon Sign,لافتة نيون
-up.neon.desc,+12% stop chance. Lights up at night.,+12% فرصة التوقف. تضيء ليلًا.
-up.seating,Majlis Seating,جلسة مجلس
-up.seating.desc,+8% satisfaction. Happy customers talk.,+8% رضا. الزبائن السعداء يتكلمون عنك.
-up.helper,Hire a Helper,توظيف مساعد
-up.helper.desc,A second pair of hands: 35% faster service. Costs AED 60 wages every day.,يد مساعدة: خدمة أسرع بنسبة 35%. أجر 60 د.إ يوميًا.
 mk.fliers,Hand out Fliers,توزيع منشورات
 mk.fliers.desc,+15% stop chance today.,+15% فرصة التوقف اليوم.
 mk.posters,Posters,لوحات إعلانية
@@ -239,17 +217,6 @@ menu.group.side,Sides,أطباق جانبية
 menu.group.drink,Drinks,مشروبات
 menu.group.sweet,Sweets,حلويات
 ui.locked_by,Needs: %s,يتطلب: %s
-ui.veh_title,Your vehicle,مركبتك
-ui.veh_current,Current,الحالية
-ui.veh_order,Buy the Food Truck first.,اشترِ شاحنة الطعام أولًا.
-ui.veh_needed,This place needs a bigger vehicle.,هذا المكان يحتاج مركبة أكبر.
-ui.veh_reach,Reaches: %s,يصل إلى: %s
-veh.cart,Street Cart,عربة الشارع
-veh.cart.desc,Your starter cart. Fine for the old quarter and the park.,عربتك الأولى. تكفي للحي القديم والحديقة.
-veh.truck,Food Truck,شاحنة طعام
-veh.truck.desc,"A proper truck: serves 15% faster, holds 2 more in line, and can drive to the Metro, JBR and Downtown.",شاحنة حقيقية: تقديم أسرع بنسبة 15%، طابور أطول بزبونين، وتصل إلى المترو وجي بي آر وداون تاون.
-veh.truck2,Big Grill Truck,شاحنة المشاوي الكبيرة
-veh.truck2.desc,"Serves 25% faster, 4 more in line, and gets you a spot at the Mall and Global Village.",تقديم أسرع بنسبة 25%، طابور أطول بأربعة، وتحجز لك مكانًا في المول والقرية العالمية.
 loc.mall,Mall Food Court,فود كورت المول
 loc.mall.desc,"Air-conditioned crowds all day, but a dozen rival counters. Without promotion you're invisible.",زحمة مكيّفة طوال اليوم، لكن عشرات المنافسين. بدون إعلانات لن يراك أحد.
 ui.p_competition,Competition: %s,المنافسة: %s
@@ -260,8 +227,6 @@ ui.a_effect,Promo effect here: x%.1f   ·   Rivals are taking %d%% of your custo
 ui.a_effect_none,Promo effect here: x%.1f   ·   No rivals at this place,تأثير الإعلانات هنا: x%.1f   ·   لا منافسين هنا
 ui.r_lost_rival,Left: went to a rival,غادروا: ذهبوا للمنافس
 ev.rival,Rivals are stealing customers! Promote to stand out.,المنافسون يسرقون زبائنك! أعلن لتتميّز.
-up.sweets,Sweets Counter,ركن الحلويات
-up.sweets.desc,"A glass display for desserts: unlocks saffron milk cake, sago halwa and Omani halwa. Needs the Food Truck.",عرض زجاجي للحلويات: يفتح كيكة الحليب بالزعفران وحلوى الساقو والحلوى العمانية. يتطلب شاحنة الطعام.
 item.saffron_cake,Saffron Milk Cake,كيكة حليب بالزعفران
 item.saffron_cake.desc,"Sponge soaked in saffron milk, pistachio on top. The Gulf favourite.",إسفنجية مشبّعة بحليب الزعفران مع فستق. المفضلة في الخليج.
 item.saffron_cake.e1,Extra saffron,زعفران زيادة
@@ -290,3 +255,196 @@ rival.3,Pizza,بيتزا
 rival.4,Mandi,مندي
 rival.5,Karak,كرك
 ui.r_too_pricey,Left: too pricey,غادروا: السعر غالي
+ui.m_range,Range %s,النطاق %s
+ui.m_price_clamped,Prices adjusted to what %s allows.,تم ضبط الأسعار حسب ما يسمح به %s.
+ui.p_prices,Prices up to x%.1f,الأسعار حتى x%.1f
+ui.continue_day,"Continue  -  Day %d, %s",متابعة  -  اليوم %d، %s
+ui.ng_confirm,Start a new game? Your saved game (day %d) will be erased.,بدء لعبة جديدة؟ سيتم مسح لعبتك المحفوظة (اليوم %d).
+ui.ng_yes,Start new game,ابدأ لعبة جديدة
+ui.cancel,Cancel,إلغاء
+ui.saved,Progress saved,تم حفظ التقدم
+ui.m_group_all,All,الكل
+ui.m_range_cost,Range %s   ·   Cost %s,النطاق %s   ·   التكلفة %s
+ui.m_quality,Quality: %s,الجودة: %s
+
+ui.build,Build,البناء
+ui.goals,Goals,الأهداف
+ui.upgrades,Build,البناء
+ui.stage_needed,This place needs a %s.,هذا المكان يحتاج %s.
+ui.migrated,Your stand was rebuilt with the new station system. Refunded: %s.,أُعيد بناء عربتك بنظام المحطات الجديد. المبلغ المسترد: %s.
+ui.b_fixed,Built here,مبني هنا
+ui.b_mobile,Mobile,متنقل
+ui.b_appeal,Appeal x%.2f,الجاذبية x%.2f
+ui.b_line,Line holds %d,الطابور يتسع لـ %d
+ui.b_dine,%d%% dine in,%d%% يأكلون في المكان
+ui.b_next,Next: %s. %s,التالي: %s. %s
+ui.b_build,Build %s  -  %s,ابنِ %s  -  %s
+ui.b_top_stage,This is the biggest stage.,هذه أكبر مرحلة.
+ui.b_soon,Coming in a later update.,قريبًا في تحديث لاحق.
+ui.b_needs_stage,Needs: %s,يتطلب: %s
+ui.b_needs_rep,Needs %.1f local stars here,يتطلب %.1f نجوم محلية هنا
+ui.b_maxed,Max level,أقصى مستوى
+ui.b_built,Built: %s!,تم البناء: %s!
+ui.b_bought,%s is now level %d.,%s الآن في المستوى %d.
+ui.b_level,Level %d / %d,المستوى %d / %d
+ui.b_gain,"+%d customers/day, %s profit",+%d زبون/يوم، %s ربح
+ui.b_buy_level,Level %d  -  %s,المستوى %d  -  %s
+ui.b_unlock,Install  -  %s,تركيب  -  %s
+ui.b_bn,Bottleneck today: %s. Upgrade it and the line moves.,الاختناق اليوم: %s. طوّرها ليتحرك الطابور.
+ui.b_bn_arrivals,"Everything idles: you need more customers, not more equipment. Promote, move, or raise your reputation.",كل شيء خامل: تحتاج زبائن أكثر لا معدات أكثر. أعلن أو انتقل أو ارفع سمعتك.
+ui.b_bn_none,Capacity is fine for about %d customers today.,الطاقة كافية لحوالي %d زبون اليوم.
+build.group.front,Front of house,الواجهة
+build.group.kitchen,Kitchen,المطبخ
+build.group.dining,Dining,الجلسات
+build.group.extras,Extras,إضافات
+plot.cart,Street Cart,عربة الشارع
+plot.cart.desc,Your starter cart. Fine for the old quarter and the park.,عربتك الأولى. تكفي للحي القديم والحديقة.
+plot.stall,Market Stall,بسطة السوق
+plot.stall.desc,"A canopy, a proper counter and room for a doner spit and fryer. Reaches the Metro and JBR.",مظلة وكاونتر حقيقي ومكان لسيخ الشاورما والقلاية. تصل إلى المترو وجي بي آر.
+plot.truck,Food Truck,شاحنة طعام
+plot.truck.desc,"A real truck with a sweets counter. Drives to Downtown, the Mall and Global Village.",شاحنة حقيقية مع ركن حلويات. تصل إلى داون تاون والمول والقرية العالمية.
+plot.kiosk,Kiosk & Terrace,كشك ومقاعد خارجية
+plot.kiosk.desc,"A fixed booth with a shaded terrace: customers sit, eat and spend more. Stays at this location.",كشك ثابت مع تراس مظلل: الزبائن يجلسون ويأكلون وينفقون أكثر. يبقى في هذا الموقع.
+plot.restaurant,Restaurant,مطعم
+plot.restaurant.desc,A shop front with a dining room and majlis. Can run as a branch with a manager.,واجهة محل مع صالة طعام ومجلس. يمكن تشغيله كفرع بمدير.
+plot.flagship,Flagship,الفرع الرئيسي
+plot.flagship.desc,"Two floors, two terraces and a fountain. Opens the road to Sharjah.",طابقان وتراسان ونافورة. يفتح الطريق إلى الشارقة.
+station.counter,Counter,الكاونتر
+station.counter.desc,Cashiers take orders and keep the line moving.,الكاشير يأخذ الطلبات ويحرّك الطابور.
+station.counter.effect,+35% orders per minute and one more place in line per level.,+35% طلبات في الدقيقة ومكان إضافي في الطابور لكل مستوى.
+station.grill,Charcoal Grill,شواية الفحم
+station.grill.desc,"Tikka, kebab and platters come off the mangal.",التكة والكباب والمشاوي تخرج من المنقل.
+station.grill.effect,+30% grilled portions per minute per level.,+30% حصص مشوية في الدقيقة لكل مستوى.
+station.doner,Shawarma Spit,سيخ الشاورما
+station.doner.desc,A turning spit unlocks Shawarma on the menu.,سيخ دوّار يضيف الشاورما إلى القائمة.
+station.doner.effect,Unlocks Shawarma; +30% wraps per minute per level.,يفتح الشاورما؛ +30% لفائف في الدقيقة لكل مستوى.
+station.fryer,Fryer,القلاية
+station.fryer.desc,Fries as a side for every platter.,بطاطس مقلية كطبق جانبي مع كل وجبة.
+station.fryer.effect,Unlocks Fries; +30% portions per minute per level.,يفتح البطاطس؛ +30% حصص في الدقيقة لكل مستوى.
+station.karak,Karak Station,ركن الكرك
+station.karak.desc,"Tea, laban and cold drinks poured fast.",شاي ولبن ومشروبات باردة تُقدَّم بسرعة.
+station.karak.effect,+30% drinks per minute per level.,+30% مشروبات في الدقيقة لكل مستوى.
+station.sweets,Sweets Counter,ركن الحلويات
+station.sweets.desc,"Saffron cake, sago and Omani halwa after the meal.",كيكة الزعفران والساجو والحلوى العمانية بعد الوجبة.
+station.sweets.effect,Unlocks sweets; +30% servings per minute per level.,يفتح الحلويات؛ +30% حصص في الدقيقة لكل مستوى.
+station.juice,Juice Bar,ركن العصائر
+station.juice.desc,Fresh juices for the terrace.,عصائر طازجة للتراس.
+station.juice.effect,Unlocks fresh juice.,يفتح العصير الطازج.
+station.coldbox,Cold Storage,التبريد
+station.coldbox.desc,"Fridge, then a walk-in cooler: less spoils overnight.",ثلاجة ثم براد كبير: يفسد أقل خلال الليل.
+station.coldbox.effect,Level 1: meat loses 10%. Level 2: veg keeps. Level 3: nothing spoils.,المستوى 1: يفسد 10% من اللحم. المستوى 2: الخضار تبقى. المستوى 3: لا شيء يفسد.
+station.signage,Signage,اللافتات
+station.signage.desc,"A painted board, then lit, then neon: people notice you.",لوحة مرسومة ثم مضيئة ثم نيون: الناس يلاحظونك.
+station.signage.effect,+3% stop chance per level.,+3% فرصة التوقف لكل مستوى.
+station.lights,Lanterns & Lights,الفوانيس والإضاءة
+station.lights.desc,Lanterns and string lights draw the evening crowd.,الفوانيس وحبال الإضاءة تجذب زبائن المساء.
+station.lights.effect,+6% traffic after 18:00 per level.,+6% حركة بعد الساعة 18:00 لكل مستوى.
+station.music,Music,الموسيقى
+station.music.desc,"A speaker, then an oud player, then a small stage.",سماعة ثم عازف عود ثم منصة صغيرة.
+station.music.effect,+2% satisfaction and +2% stop chance per level.,+2% رضا و+2% فرصة توقف لكل مستوى.
+station.shade,Shade & Cooling,الظل والتبريد
+station.shade.desc,"Parasols, a sail, misting fans: comfort in the heat and the dust.",مظلات وشراع ومراوح رذاذ: راحة في الحر والغبار.
+station.shade.effect,Halves the sandstorm loss; +4% traffic on hot days per level.,ينصّف خسارة العاصفة الرملية؛ +4% حركة في الأيام الحارة لكل مستوى.
+station.seating,Seating,المقاعد
+station.seating.desc,Tables on the terrace. Diners spend 15% more.,طاولات على التراس. الجالسون ينفقون 15% أكثر.
+station.seating.effect,"2 seats per level. More seats, more dine-in.",مقعدان لكل مستوى. مقاعد أكثر، زبائن جالسون أكثر.
+station.majlis,Majlis,المجلس
+station.majlis.desc,"Cushions, a low table and tea: the slow, happy crowd.",وسائد وطاولة منخفضة وشاي: الزبائن المرتاحون.
+station.majlis.effect,"4 seats, +4% satisfaction, +3% spend per level.",4 مقاعد، +4% رضا، +3% إنفاق لكل مستوى.
+station.valet,Valet & Parking,الفاليه والمواقف
+station.valet.desc,Bays at the kerb: customers arrive by car too.,مواقف على الرصيف: الزبائن يأتون بالسيارة أيضًا.
+station.valet.effect,+4 cars per hour per level (depends on the place).,+4 سيارات في الساعة لكل مستوى (حسب المكان).
+station.washroom,Washrooms,دورات المياه
+station.washroom.desc,Clean washrooms for a full dining room.,دورات مياه نظيفة لصالة ممتلئة.
+station.washroom.effect,+3% satisfaction per level; supports 12 seats per level.,+3% رضا لكل مستوى؛ يدعم 12 مقعدًا لكل مستوى.
+station.staffroom,Staff Room,غرفة الموظفين
+station.staffroom.desc,Room for more staff and faster training.,مكان لموظفين أكثر وتدريب أسرع.
+station.staffroom.effect,+1 staff slot per level.,+1 مكان موظف لكل مستوى.
+station.office,Office,المكتب
+station.office.desc,A manager runs the place while you are away.,مدير يدير المكان في غيابك.
+station.office.effect,Needed to open a branch.,مطلوب لفتح فرع.
+item.shawarma,Chicken Shawarma,شاورما دجاج
+item.shawarma.desc,Shaved off the spit into a warm wrap with garlic and pickles.,تُقطع من السيخ في خبز دافئ مع الثوم والمخلل.
+item.shawarma.e1,Garlic toum,ثومية
+item.shawarma.e2,Saj bread,خبز صاج
+item.shawarma.e3,Double meat,لحم مضاعف
+bubble.dine_in.1,That was lovely!,كان لذيذًا!
+bubble.dine_in.2,Good spot to sit.,مكان جميل للجلوس.
+ev.bottleneck,Lineups at the %s are too long! Upgrade it in Build.,الطابور عند %s طويل جدًا! طوّرها من البناء.
+ev.seats_full,All tables are taken. More seating would help.,كل الطاولات مشغولة. مقاعد أكثر تساعد.
+ui.r_dine_in,Ate at a table,أكلوا على طاولة
+ui.r_local,Local reputation,السمعة المحلية
+ui.r_bottleneck,Bottleneck: %s. Upgrade it in Build.,الاختناق: %s. طوّرها من البناء.
+ui.p_built,Built: %s,مبني: %s
+ui.p_local,Local %s stars,%s نجوم محلية
+ui.g_claimed,Goal reached! +%s,تحقق الهدف! +%s
+ui.g_reward,Reward: %s,المكافأة: %s
+ui.g_claim,Claim reward,استلم المكافأة
+ui.g_progress,%d%% there,%d%% تم
+ui.g_done,Done,منجز
+ui.g_all_done,You have done everything on the list. More goals are coming.,أنجزت كل ما في القائمة. أهداف أخرى قادمة.
+ui.g_ok,"Thanks, Uncle!",شكرًا يا عمي!
+mentor.saeed,Uncle Saeed,العم سعيد
+ui.x_title,Your story so far,قصتك حتى الآن
+ui.x_served,Customers served,زبائن تم تقديمهم
+ui.x_best_served,Best day (customers),أفضل يوم (زبائن)
+ui.x_best_profit,Best day (profit),أفضل يوم (ربح)
+ui.x_total_profit,Total profit,إجمالي الربح
+ui.x_days,Days in business,أيام العمل
+ui.x_levels,Station levels owned,مستويات المحطات
+ui.x_stages,Stages built,مراحل مبنية
+ui.x_places,Places visited,أماكن زرتها
+goal.first_30,First thirty,أول ثلاثين
+goal.first_30.desc,Serve 30 customers in one day.,قدّم لثلاثين زبونًا في يوم واحد.
+goal.first_30.say,"Thirty in a day! My old cart never did that in its first week. Here, for the charcoal.",ثلاثون في يوم! عربتي القديمة ما فعلتها في أسبوعها الأول. خذ، للفحم.
+goal.counter1,A proper counter,كاونتر حقيقي
+goal.counter1.desc,Upgrade the Counter to level 1 in Build.,طوّر الكاونتر إلى المستوى 1 من البناء.
+goal.counter1.say,See how the line moves now? Every dirham you put in the counter comes back in the queue.,أرأيت كيف يتحرك الطابور؟ كل درهم تضعه في الكاونتر يعود إليك في الطابور.
+goal.stars15,One and a half stars,نجمة ونصف
+goal.stars15.desc,Reach 1.5 stars of reputation.,وصّل سمعتك إلى 1.5 نجمة.
+goal.stars15.say,People are talking about you in the souq. Keep the chicken fresh and they will keep talking.,الناس يتحدثون عنك في السوق. أبقِ الدجاج طازجًا وسيستمرون.
+goal.served200,Two hundred plates,مئتا طبق
+goal.served200.desc,Serve 200 customers in total.,قدّم لمئتي زبون إجمالًا.
+goal.served200.say,Two hundred! I remember my two-hundredth customer. He complained about the salad. Keep the veg fresh.,مئتان! أذكر زبوني المئتين. اشتكى من السلطة. أبقِ الخضار طازجة.
+goal.creek,Down to the Creek,إلى الخور
+goal.creek.desc,Set up a day at Creek Park.,افتح يومًا في حديقة الخور.
+goal.creek.say,The Creek crowd is patient but they feel the heat. Shade is money there.,زبائن الخور صبورون لكنهم يشعرون بالحر. الظل هناك مال.
+goal.grill3,Three grills hot,ثلاث شوايات حامية
+goal.grill3.desc,Take the Charcoal Grill to level 3.,ارفع شواية الفحم إلى المستوى 3.
+goal.grill3.say,Now the kitchen keeps up with the counter. That is the whole secret of this business.,الآن المطبخ يلاحق الكاونتر. هذا سر المهنة كلها.
+goal.stall,Market stall,بسطة السوق
+goal.stall.desc,Build the Market Stall stage.,ابنِ مرحلة بسطة السوق.
+goal.stall.say,"A stall! Now you can reach the Metro. And put a spit in there, shawarma sells itself.",بسطة! الآن تصل إلى المترو. وضع سيخًا فيها، الشاورما تبيع نفسها.
+goal.shawarma,Shawarma on the menu,الشاورما في القائمة
+goal.shawarma.desc,Install the Shawarma Spit and add Shawarma to the menu.,ركّب سيخ الشاورما وأضف الشاورما إلى القائمة.
+goal.shawarma.say,The smell alone brings them. My cousin ran a spit for thirty years on this smell.,الرائحة وحدها تجلبهم. ابن عمي شغّل سيخًا ثلاثين سنة على هذه الرائحة.
+goal.profit400,Four hundred a day,أربعمئة في اليوم
+goal.profit400.desc,Make AED 400 profit in one day.,حقق ربح 400 د.إ في يوم واحد.
+goal.profit400.say,"Four hundred clear! Put it back into the stand, not into your pocket, and it becomes four thousand.",أربعمئة صافية! أعدها إلى العربة لا إلى جيبك فتصير أربعة آلاف.
+goal.stars25,Two and a half stars,نجمتان ونصف
+goal.stars25.desc,Reach 2.5 stars of reputation.,وصّل سمعتك إلى 2.5 نجمة.
+goal.stars25.say,Downtown would take you now. Rents are high but so are the prices they pay.,داون تاون يقبلك الآن. الإيجارات عالية لكن الأسعار التي يدفعونها عالية أيضًا.
+goal.truck,On wheels,على عجلات
+goal.truck.desc,Build the Food Truck stage.,ابنِ مرحلة شاحنة الطعام.
+goal.truck.say,"A truck! The Mall, Global Village, the whole city. And a sweets counter, people pay for sugar.",شاحنة! المول والقرية العالمية والمدينة كلها. وركن حلويات، الناس يدفعون للسكر.
+goal.downtown,Big city,المدينة الكبيرة
+goal.downtown.desc,"Sell a day at Downtown, the Mall or Global Village.",بع يومًا في داون تاون أو المول أو القرية العالمية.
+goal.downtown.say,Look at that crowd. Keep the line moving and they will pay whatever the board says.,انظر إلى هذا الزحام. حرّك الطابور وسيدفعون ما تقوله اللوحة.
+goal.levels20,Twenty levels,عشرون مستوى
+goal.levels20.desc,Own 20 station levels in total.,امتلك 20 مستوى محطات إجمالًا.
+goal.levels20.say,"Twenty levels. You build like my late father: a little every day, never a loan.",عشرون مستوى. تبني مثل والدي رحمه الله: قليلًا كل يوم، وبلا قروض.
+goal.kiosk,A place of your own,مكان خاص بك
+goal.kiosk.desc,Build a Kiosk with a terrace at a location.,ابنِ كشكًا مع تراس في موقع.
+goal.kiosk.say,"Tables! Now they sit, they order tea, they bring their families. This is where it starts to grow on its own.",طاولات! الآن يجلسون ويطلبون الشاي ويحضرون عائلاتهم. من هنا يبدأ النمو وحده.
+goal.diners50,Fifty diners,خمسون جالسًا
+goal.diners50.desc,Seat 50 dine-in customers in one day.,أجلس 50 زبونًا للأكل في المكان في يوم واحد.
+goal.diners50.say,"Fifty at the tables. Keep them clean, nobody sits at a dirty table twice.",خمسون على الطاولات. أبقها نظيفة، لا أحد يجلس على طاولة متسخة مرتين.
+goal.served300,Three hundred in a day,ثلاثمئة في يوم
+goal.served300.desc,Serve 300 customers in one day.,قدّم لثلاثمئة زبون في يوم واحد.
+goal.served300.say,"Three hundred plates in a day. I am proud of you, really.",ثلاثمئة طبق في يوم. فخور بك، صدقًا.
+goal.levels60,Sixty levels,ستون مستوى
+goal.levels60.desc,Own 60 station levels in total.,امتلك 60 مستوى محطات إجمالًا.
+goal.levels60.say,You know every station better than I ever did. Time to think about a restaurant.,تعرف كل محطة أفضل مما عرفتها يومًا. حان وقت التفكير في مطعم.
+goal.stars45,Four and a half stars,أربع نجوم ونصف
+goal.stars45.desc,Reach 4.5 stars of reputation.,وصّل سمعتك إلى 4.5 نجمة.
+goal.stars45.say,Four and a half stars. People drive across the city for your mashawi now.,أربع نجوم ونصف. الناس يقطعون المدينة من أجل مشاويك الآن.

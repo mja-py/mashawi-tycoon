@@ -1,6 +1,7 @@
 class_name DaySim
 extends Node
-## Runs one business day: clock, passers-by, decisions, queue, sales, reactions.
+## Runs one business day: clock, passers-by, decisions, the counter -> kitchen -> seat
+## pipeline (Throughput), sales, reactions.
 
 signal clock_changed(hour: float)
 signal stats_changed(stats: Dictionary)
@@ -15,13 +16,14 @@ var hour: float = 10.0
 var end_hour: float = 22.0
 var running := false
 var stats: Dictionary = {}
-var queue: Array[Customer] = []
-var serve_timer := 0.0
+var tp: Throughput
 var _rng := RandomNumberGenerator.new()
 var _car_timer := 0.0
 var _ambient_timer := 0.0
 var _warned := {}
 var _stats_tick := 0.0
+var _hot_min: Dictionary = {}
+var _seat_of: Dictionary = {}   # customer -> seat dictionary from the plot
 
 func start(context: Dictionary, w: World) -> void:
 	world = w
@@ -31,11 +33,18 @@ func start(context: Dictionary, w: World) -> void:
 	hour = float(ctx["hours"][0])
 	end_hour = float(ctx["hours"][1])
 	stats = {"passers": 0, "served": 0, "revenue": 0.0, "cogs": 0.0, "sold": {}, "satisfaction_sum": 0.0,
-		"left_wait": 0, "sold_out": 0, "queue_full": 0, "lost_rival": 0, "too_pricey": 0}
-	queue.clear()
+		"left_wait": 0, "sold_out": 0, "queue_full": 0, "lost_rival": 0, "too_pricey": 0, "dine_in": 0, "queue": 0, "kitchen": 0, "seated": 0}
 	_warned.clear()
-	serve_timer = 0.0
+	_hot_min.clear()
+	_seat_of.clear()
 	_rng.randomize()
+	tp = Throughput.new()
+	ctx["visual"] = true
+	tp.setup(ctx, _rng)
+	tp.on_served = _on_served
+	tp.on_gave_up = _on_gave_up
+	tp.on_ordered = _on_ordered
+	tp.on_left_seat = _on_left_seat
 	running = true
 	_car_timer = 1.0
 	_ambient_timer = 2.0
@@ -51,7 +60,7 @@ func _process(delta: float) -> void:
 	world.set_time(hour, ctx["weather"])
 	clock_changed.emit(hour)
 	# passers-by
-	var per_hour := Economy.traffic_per_hour(loc, ctx["weather"], hour, ctx["has_awning"])
+	var per_hour := Economy.arrival_rate(loc, ctx["weather"], hour, ctx)
 	var expected := per_hour * delta / Data.REAL_SECONDS_PER_GAME_HOUR
 	# Poisson-ish: whole arrivals plus a fractional chance, so fast-forward isn't capped per frame.
 	var arrivals := int(expected) + (1 if _rng.randf() < expected - int(expected) else 0)
@@ -66,14 +75,26 @@ func _process(delta: float) -> void:
 	if _ambient_timer <= 0.0:
 		world.spawn_walker(1 if _rng.randf() < 0.5 else -1, false)
 		_ambient_timer = _rng.randf_range(3.0, 9.0) / maxf(0.4, float(loc["traffic"]))
-	# queue
-	_tick_queue(game_min)
+	# the pipeline
+	var before := tp.queue_payloads()
+	tp.tick(game_min, hour)
+	if before != tp.queue_payloads():
+		_reflow()
+	_serving_visual()
+	_bottleneck_watch(game_min)
 	_stats_tick += delta
 	if _stats_tick > 0.25:
 		_stats_tick = 0.0
+		stats["queue"] = tp.queue_len()
+		stats["kitchen"] = tp.waiting_payloads().size()
+		stats["seated"] = tp.seated.size()
 		stats_changed.emit(stats)
 	if hour >= end_hour:
 		_close()
+
+func _stop_chance(best: float, queue_len: int) -> float:
+	return Economy.stop_probability(float(ctx["popularity"]), best * float(ctx["appeal"]), float(ctx["boost"]), queue_len,
+		int(ctx["queue_cap"]), float(ctx["competition"]), float(ctx["promo_power"]))
 
 func _spawn_passer() -> void:
 	stats["passers"] = int(stats["passers"]) + 1
@@ -84,8 +105,7 @@ func _spawn_passer() -> void:
 		var best := 0.0
 		for cand in cands:
 			best = maxf(best, float(cand["value"]))
-		var p := Economy.stop_probability(Game.popularity, best, float(ctx["boost"]), queue.size(), int(ctx["queue_cap"]), float(ctx["competition"]), float(ctx["promo_power"]))
-		if _rng.randf() >= p:
+		if _rng.randf() >= _stop_chance(best, tp.queue_len()):
 			return
 		forced = true
 	var c := world.spawn_walker(1 if _rng.randf() < 0.5 else -1, true)
@@ -106,9 +126,9 @@ func _on_decision(c: Customer) -> void:
 			any_stock = true
 	if cands.is_empty():
 		return
-	var p := Economy.stop_probability(Game.popularity, best, float(ctx["boost"]), queue.size(), int(ctx["queue_cap"]), float(ctx["competition"]), float(ctx["promo_power"]))
-	var p_if_room := Economy.stop_probability(Game.popularity, best, float(ctx["boost"]), 0, int(ctx["queue_cap"]), float(ctx["competition"]), float(ctx["promo_power"]))
-	var p_no_rivals := Economy.stop_probability(Game.popularity, best, float(ctx["boost"]), 0, int(ctx["queue_cap"]))
+	var p := _stop_chance(best, tp.queue_len())
+	var p_if_room := _stop_chance(best, 0)
+	var p_no_rivals := Economy.stop_probability(float(ctx["popularity"]), best * float(ctx["appeal"]), float(ctx["boost"]), 0, int(ctx["queue_cap"]))
 	var r := _rng.randf()
 	if c.forced_stop:
 		r = 0.0
@@ -119,16 +139,20 @@ func _on_decision(c: Customer) -> void:
 			c.say(Data.pick_bubble("rival", _rng), Color(1.0, 0.75, 0.5))
 		_warn("rival", tr("ev.rival"))
 		return
-	if r < p or (c.forced_stop and queue.size() < int(ctx["queue_cap"])):
+	if r < p or (c.forced_stop and not tp.is_full()):
 		if not any_stock:
 			stats["sold_out"] = int(stats["sold_out"]) + 1
 			c.leave(Data.pick_bubble("sold_out", _rng), Color(0.9, 0.3, 0.2), true)
 			_warn("sold_out", tr("ev.sold_out_all"))
 			return
 		c.item = Economy.pick_weighted(cands, _rng)
-		queue.append(c)
-		c.go_to_slot(queue.size() - 1, world.queue_slot(queue.size() - 1))
-	elif r < p_if_room and queue.size() >= int(ctx["queue_cap"]):
+		if tp.enqueue(c, c.item):
+			var i := tp.queue_len() - 1
+			c.go_to_slot(i, world.queue_slot(i))
+		else:
+			stats["queue_full"] = int(stats["queue_full"]) + 1
+			c.say(Data.pick_bubble("queue_full", _rng), Color(0.9, 0.5, 0.2))
+	elif r < p_if_room and tp.is_full():
 		stats["queue_full"] = int(stats["queue_full"]) + 1
 		c.say(Data.pick_bubble("queue_full", _rng), Color(0.9, 0.5, 0.2))
 		_warn("queue_full", tr("ev.queue_full"))
@@ -142,58 +166,62 @@ func _on_decision(c: Customer) -> void:
 			"breeze": c.say(Data.pick_bubble("breeze", _rng), Color(0.8, 0.95, 1))
 
 func _on_gone(c: Customer) -> void:
-	queue.erase(c)
+	tp.remove(c)
+	_release_seat(c)
 
-func _tick_queue(game_min: float) -> void:
-	if queue.is_empty():
-		if world.cart:
-			world.cart.set_serving(false)
+## Someone in line ran out of patience (or the day ended).
+func _on_gave_up(payload, reason: String) -> void:
+	var c := payload as Customer
+	if c == null or not is_instance_valid(c):
 		return
-	var front := queue[0]
-	if front.state == Customer.State.QUEUED:
-		if world.cart:
-			world.cart.set_serving(true)
-		serve_timer += game_min
-		if serve_timer >= float(ctx["service_min"]):
-			serve_timer = 0.0
-			_serve(front)
-	# waiting patience
-	for i in range(queue.size() - 1, 0, -1):
-		var c := queue[i]
-		# only time spent standing in line counts (walking up takes "minutes" at this time scale)
-		if c.state != Customer.State.QUEUED:
-			continue
-		c.wait_min += game_min
-		if c.wait_min > float(ctx["patience_min"]):
-			queue.remove_at(i)
-			stats["left_wait"] = int(stats["left_wait"]) + 1
-			c.react("emote-no")
-			c.leave(Data.pick_bubble("too_slow", _rng), Color(0.9, 0.35, 0.2), true)
-			_warn("slow", tr("ev.slow"))
-			_reflow()
+	if reason == "closing":
+		c.leave(tr("ev.closing"), Color(0.9, 0.9, 0.9), false)
+		return
+	stats["left_wait"] = int(stats["left_wait"]) + 1
+	c.react("emote-no")
+	c.leave(Data.pick_bubble("too_slow", _rng), Color(0.9, 0.35, 0.2), true)
+	_warn("slow", tr("ev.slow"))
+
+## Order taken: step aside to the pickup spot while the kitchen cooks.
+func _on_ordered(payload, _station: String) -> void:
+	var c := payload as Customer
+	if c == null or not is_instance_valid(c):
+		return
+	var i := tp.waiting_payloads().find(c)
+	c.go_to_slot(100 + maxi(i, 0), world.pickup_slot(maxi(i, 0)))
 
 func _reflow() -> void:
-	for i in range(queue.size()):
-		var c := queue[i]
+	var line := tp.queue_payloads()
+	for i in range(line.size()):
+		var c := line[i] as Customer
+		if c == null or not is_instance_valid(c):
+			continue
 		if c.state == Customer.State.QUEUED or c.state == Customer.State.TO_SLOT:
 			if c.slot != i:
 				c.go_to_slot(i, world.queue_slot(i))
 
-func _serve(c: Customer) -> void:
-	queue.erase(c)
-	var price := float(Game.menu[c.item]["price"])
-	if not Game.sell(c.item, price):
+func _serving_visual() -> void:
+	if world.cart:
+		world.cart.set_serving(tp.queue_len() > 0 or not tp.waiting_payloads().is_empty())
+
+## Food handed over: sell, add-ons, satisfaction, then sit down or walk away.
+func _on_served(payload, item: String, wait_min: float, dine_in: bool) -> void:
+	var c := payload as Customer
+	var price := float(Game.menu[item]["price"])
+	if not Game.sell(item, price):
 		stats["sold_out"] = int(stats["sold_out"]) + 1
-		c.react("emote-no")
-		c.leave(Data.pick_bubble("sold_out", _rng), Color(0.9, 0.3, 0.2), true)
-		_warn("sold_out", tr("ev.sold_out_item") % tr(Data.MENU_ITEMS[c.item]["name"]))
-		_reflow()
+		if c != null and is_instance_valid(c):
+			c.react("emote-no")
+			c.leave(Data.pick_bubble("sold_out", _rng), Color(0.9, 0.3, 0.2), true)
+		_warn("sold_out", tr("ev.sold_out_item") % tr(Data.MENU_ITEMS[item]["name"]))
+		tp.remove(payload)
 		return
-	var total := price
-	var cogs := Game.unit_cost(c.item)
-	stats["sold"][c.item] = int(stats["sold"].get(c.item, 0)) + 1
-	# add-ons
-	for extra in _addons(c):
+	var spend := float(ctx.get("spend_mult", 1.0)) if dine_in else 1.0
+	var total := price * spend
+	var cogs := Game.unit_cost(item)
+	stats["sold"][item] = int(stats["sold"].get(item, 0)) + 1
+	var wants := c.wants if c != null and is_instance_valid(c) else "food"
+	for extra in _addons(wants, c, dine_in):
 		var ep := float(Game.menu[extra]["price"])
 		if Game.sell(extra, ep):
 			total += ep
@@ -202,25 +230,70 @@ func _serve(c: Customer) -> void:
 	stats["revenue"] = float(stats["revenue"]) + total
 	stats["cogs"] = float(stats["cogs"]) + cogs
 	stats["served"] = int(stats["served"]) + 1
-	var ratio := price / float(Data.MENU_ITEMS[c.item]["base_price"])
-	var wait_ratio := clampf(c.wait_min / float(ctx["patience_min"]), 0.0, 1.0)
-	var s := Economy.satisfaction(Game.quality(c.item), ratio, wait_ratio, loc, float(ctx["satisfaction_bonus"]))
+	if dine_in:
+		stats["dine_in"] = int(stats["dine_in"]) + 1
+	var ratio := price / float(Data.MENU_ITEMS[item]["base_price"])
+	var wait_ratio := clampf(wait_min / float(ctx["patience_min"]), 0.0, 1.0)
+	var s := Economy.satisfaction(Game.quality(item), ratio, wait_ratio, loc, float(ctx["satisfaction_bonus"]) + (0.05 if dine_in else 0.0))
 	stats["satisfaction_sum"] = float(stats["satisfaction_sum"]) + s
 	var key := Economy.bubble_for_satisfaction(s)
 	var col := Color(0.35, 0.85, 0.4) if key == "great" else (Color(1, 1, 1) if key == "ok" else Color(0.95, 0.5, 0.3))
 	var text := Data.pick_bubble(key, _rng)
 	if key == "great":
 		text += "  +" + Loc.money(total)
-	c.react("emote-yes" if key == "great" else "pick-up")
-	c.leave(text, col, true)
 	Sfx.play("coin", -10.0, randf_range(0.95, 1.1))
 	_check_stock_warnings()
-	_reflow()
+	if c == null or not is_instance_valid(c):
+		return
+	c.react("emote-yes" if key == "great" else "pick-up")
+	var seat := _take_seat(c) if dine_in else {}
+	if dine_in and not seat.is_empty():
+		c.say(text, col)
+		c.go_to_seat(seat)
+		if not c.arrived.is_connected(_on_sat):
+			c.arrived.connect(_on_sat)
+	else:
+		if dine_in:
+			tp.remove(c) # no visual seat: eat on the go
+		c.leave(text, col, true)
 
-func _addons(c: Customer) -> Array:
+func _on_sat(c: Customer) -> void:
+	if c.state == Customer.State.SEATED:
+		tp.seat_taken(c)
+
+func _take_seat(c: Customer) -> Dictionary:
+	if world.plot == null or not world.plot.has_method("free_seat"):
+		return {}
+	var seat: Dictionary = world.plot.free_seat()
+	if seat.is_empty():
+		return {}
+	world.plot.take_seat(int(seat["idx"]), c)
+	_seat_of[c] = seat
+	return seat
+
+func _release_seat(c: Customer) -> void:
+	if not _seat_of.has(c):
+		return
+	var seat: Dictionary = _seat_of[c]
+	_seat_of.erase(c)
+	if world.plot != null:
+		world.plot.release_seat(int(seat["idx"]))
+		world.plot.set_table_dirty(int(seat["table"]), true)
+
+## Done eating: the table is left dirty and the guest walks off.
+func _on_left_seat(payload) -> void:
+	var c := payload as Customer
+	if c == null or not is_instance_valid(c):
+		return
+	_release_seat(c)
+	c.react("emote-yes")
+	c.leave_from_seat(Data.pick_bubble("dine_in", _rng), Color(0.6, 0.9, 0.6))
+
+func _addons(wants: String, c, dine_in: bool) -> Array:
 	var out := []
-	if c.wants != "food":
+	if wants != "food":
 		return out
+	var bonus := 0.25 if dine_in else 0.0
 	var drink_p := 0.3
 	if ctx["weather"] == "hot":
 		drink_p = 0.65
@@ -232,7 +305,7 @@ func _addons(c: Customer) -> Array:
 			sides.append(id)
 	if not sides.is_empty():
 		var side: String = sides[_rng.randi_range(0, sides.size() - 1)]
-		if _rng.randf() < 0.4 * _addon_appeal(side):
+		if _rng.randf() < (0.4 + bonus) * _addon_appeal(side):
 			out.append(side)
 	var drinks := []
 	for id in ["soda", "laban", "karak"]:
@@ -240,7 +313,7 @@ func _addons(c: Customer) -> Array:
 			drinks.append(id)
 	if not drinks.is_empty():
 		var pick: String = drinks[_rng.randi_range(0, drinks.size() - 1)]
-		if _rng.randf() < drink_p * _addon_appeal(pick):
+		if _rng.randf() < (drink_p + bonus) * _addon_appeal(pick):
 			out.append(pick)
 	var sweets := []
 	for id in Data.MENU_ITEMS:
@@ -248,9 +321,9 @@ func _addons(c: Customer) -> Array:
 			sweets.append(id)
 	if not sweets.is_empty():
 		var sw: String = sweets[_rng.randi_range(0, sweets.size() - 1)]
-		if _rng.randf() < 0.35 * _addon_appeal(sw):
+		if _rng.randf() < (0.35 + bonus) * _addon_appeal(sw):
 			out.append(sw)
-			if _rng.randf() < 0.3:
+			if _rng.randf() < 0.3 and c != null and is_instance_valid(c):
 				c.say(Data.pick_bubble("sweet", _rng), Color(1.0, 0.85, 0.6))
 	return out
 
@@ -258,6 +331,20 @@ func _addons(c: Customer) -> Array:
 func _addon_appeal(id: String) -> float:
 	var ratio := float(Game.menu[id]["price"]) / float(Data.MENU_ITEMS[id]["base_price"])
 	return clampf(1.6 - ratio * 0.9, 0.0, 1.0)
+
+## A stage that stays saturated for 20 game-minutes earns one "upgrade it" warning.
+func _bottleneck_watch(game_min: float) -> void:
+	var cap := int(ctx["queue_cap"])
+	var hot := {"counter": tp.queue_len() >= cap - 1}
+	for s in tp.backlog:
+		hot[s] = tp.backlog[s].size() >= 4
+	if int(ctx.get("seats", 0)) > 0:
+		hot["seating"] = tp.seats_free() <= 0
+	for s in hot:
+		_hot_min[s] = (float(_hot_min.get(s, 0.0)) + game_min) if hot[s] else 0.0
+		if _hot_min[s] >= 20.0:
+			var name := tr("station.%s" % s) if Data.STATIONS.has(s) else tr("station.seating")
+			_warn("bottleneck_" + s, tr("ev.bottleneck") % name)
 
 func _check_stock_warnings() -> void:
 	for id in Data.MENU_ITEMS:
@@ -272,11 +359,15 @@ func _warn(key: String, text: String) -> void:
 
 func _close() -> void:
 	running = false
-	for c in queue:
+	tp.flush()
+	for c in _seat_of.keys():
 		if is_instance_valid(c):
-			c.leave(tr("ev.closing"), Color(0.9, 0.9, 0.9), false)
-	queue.clear()
+			_release_seat(c)
+			c.leave_from_seat(tr("ev.closing"), Color(0.9, 0.9, 0.9))
 	if world.cart:
 		world.cart.set_serving(false)
+	stats["left_wait"] = int(stats["left_wait"]) # already counted as they gave up
+	stats["util"] = tp.utilisation()
+	stats["max_queue"] = int(tp.stats["max_queue"])
 	stats_changed.emit(stats)
 	finished.emit(stats)

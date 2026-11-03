@@ -4,51 +4,179 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="apple-mobile-web-app-title" content="Mashawi">
 	<meta name="mobile-web-app-capable" content="yes">
-	<meta name="theme-color" content="#3e2210">
+	<meta name="format-detection" content="telephone=no">
+	<meta name="theme-color" content="#0b2129">
 	<title>$GODOT_PROJECT_NAME</title>
 	$GODOT_HEAD_INCLUDE
 	<style>
 		html, body { margin: 0; padding: 0; position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
-			background: #3e2210; color: #fff7e8; font-family: "Baloo Bhaijaan 2", "Segoe UI", Tahoma, sans-serif;
-			touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
-		#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+			background: #0b2129; color: #fbf4e4; font-family: "Baloo Bhaijaan 2", "Segoe UI", Tahoma, sans-serif;
+			touch-action: manipulation; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+		#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; opacity: 0; transition: opacity 0.5s ease; }
+		#canvas.on { opacity: 1; }
 		#canvas:focus { outline: none; }
-		.overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-			gap: 18px; background: #3e2210; z-index: 10; text-align: center; padding: 24px; box-sizing: border-box; }
-		.logo { font-size: clamp(34px, 7vw, 64px); font-weight: 800; color: #e8552f; letter-spacing: 0.5px; line-height: 1.1; }
-		.sub { color: #f7e4bf; opacity: 0.85; font-size: clamp(15px, 2.4vw, 20px); }
-		.bar { width: min(420px, 80vw); height: 14px; background: rgba(255,255,255,0.12); border-radius: 8px; overflow: hidden; }
-		.bar > div { height: 100%; width: 0%; background: #4a9f4f; transition: width 0.2s; }
-		.btn { appearance: none; border: 0; border-bottom: 4px solid #2f7a35; background: #4a9f4f; color: #fff7e8; font: 800 26px/1 inherit;
-			padding: 18px 48px; border-radius: 14px; cursor: pointer; display: none; }
-		.btn:active { transform: translateY(2px); border-bottom-width: 2px; }
-		.note { font-size: 15px; opacity: 0.7; }
+		/* invisible probe: its padding equals the phone's safe-area insets (notch, home bar) */
+		#safe { position: fixed; inset: 0; visibility: hidden; pointer-events: none;
+			padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+		/* overlays scroll (pan-y) when the content is taller than a short landscape phone; the
+		   inner column has auto margins so it stays centred whenever it fits */
+		/* ---- loading / rotate screens: the game's own title look (Dubai dusk, star lattice, skyline) ---- */
+		.overlay { position: fixed; inset: 0; display: flex; flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch;
+			touch-action: pan-y; z-index: 10; text-align: center; box-sizing: border-box;
+			background: radial-gradient(ellipse 90% 70% at 50% 110%, #5a2a3a 0%, #1a3843 45%, #0b2129 100%);
+			padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+		.overlay::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.35;
+			background-image: radial-gradient(circle, rgba(255,255,255,0.9) 0 1px, transparent 1.6px), radial-gradient(circle, rgba(255,255,255,0.6) 0 1px, transparent 1.6px);
+			background-size: 150px 110px, 95px 75px; background-position: 20px 10px, 50px 40px;
+			mask-image: linear-gradient(to bottom, #000 0, transparent 70%); -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 70%); }
+		.skyline { position: absolute; left: 0; right: 0; bottom: 0; height: min(34vh, 220px); width: 100%; pointer-events: none; color: #07161c; opacity: 0.95; }
+		.skyline svg { width: 100%; height: 100%; display: block; }
+		.glow { position: absolute; left: 0; right: 0; bottom: 0; height: 50vh; pointer-events: none;
+			background: radial-gradient(ellipse 60% 55% at 50% 100%, rgba(240,140,70,0.38), rgba(240,140,70,0) 70%); animation: glow 5s ease-in-out infinite alternate; }
+		@keyframes glow { from { opacity: 0.65; } to { opacity: 1; } }
+		.overlay > .col { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; margin: auto; width: 100%; }
+		.hero { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+		.logo { font-size: clamp(30px, 7vw, 64px); font-weight: 800; color: #f2c25a; letter-spacing: 0.5px; line-height: 1.05;
+			text-shadow: 0 2px 0 #8a5a12, 0 4px 0 #5a3a0a, 0 10px 24px rgba(0,0,0,0.45); animation: rise 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+		.sub { color: #f1e3c3; opacity: 0.8; font-size: clamp(13px, 2vw, 17px); letter-spacing: 4px; text-transform: uppercase; font-weight: 700;
+			animation: rise 0.7s 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+		@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: none; } }
+		.bar { position: relative; width: min(440px, 84vw); height: 10px; background: rgba(255,255,255,0.12); border-radius: 8px; overflow: hidden;
+			box-shadow: inset 0 1px 2px rgba(0,0,0,0.4); }
+		.bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, #e2b24a, #f5cf74); transition: width 0.25s ease-out; border-radius: 8px; }
+		.bar::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.3) 50%, transparent 70%);
+			background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
+		@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+		.bar.done::after { display: none; }
+		.bar.done > div { background: linear-gradient(90deg, #3f9a63, #5cc07f); }
+		#status-pct { font-size: 14px; opacity: 0.8; font-variant-numeric: tabular-nums; min-height: 1.2em; color: #f1e3c3; }
+		.note { font-size: 15px; opacity: 0.85; color: #fbf4e4; }
+		#tip { font-size: 13.5px; opacity: 0.65; max-width: min(560px, 90vw); line-height: 1.35; min-height: 2.7em; transition: opacity 0.3s; white-space: pre-line; }
+		#tip.swap { opacity: 0; }
+		.btn { appearance: none; border: 0; border-bottom: 4px solid #2a6f45; background: linear-gradient(#4aae70, #3f9a63); color: #fbf4e4; font: 800 26px/1 inherit;
+			padding: 16px 52px; border-radius: 14px; cursor: pointer; display: none; box-shadow: 0 8px 20px rgba(0,0,0,0.35); animation: breathe 1.8s ease-in-out infinite; }
+		.btn:active { transform: translateY(2px); border-bottom-width: 2px; animation: none; }
+		/* a pulsing glow (box-shadow only: the button itself never moves, so taps land) */
+		@keyframes breathe { 0%, 100% { box-shadow: 0 8px 20px rgba(0,0,0,0.35), 0 0 0 0 rgba(92,192,127,0.0); } 50% { box-shadow: 0 8px 20px rgba(0,0,0,0.35), 0 0 0 10px rgba(92,192,127,0.25); } }
+		.spin { display: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.2); border-top-color: #f5cf74; animation: spin 0.9s linear infinite; }
+		@keyframes spin { to { transform: rotate(360deg); } }
+		/* short landscape phone: hero on one side, install guide on the other */
+		@media (max-height: 500px) and (orientation: landscape) {
+			.overlay > .col { flex-direction: row; justify-content: center; align-items: center; gap: 18px; }
+			.hero { width: auto; flex: 0 1 46%; gap: 8px; }
+			#install-slot:empty { display: none; }
+			#install-slot { flex: 0 1 50%; }
+			.logo { font-size: 30px; } .sub { font-size: 12px; letter-spacing: 3px; } #tip { display: none; } .btn { font-size: 22px; padding: 12px 40px; }
+		}
+		@media (max-height: 360px) { .sub, .note { display: none; } }
+		/* ---- "Add to Home Screen" guide (iPhone/iPad, only outside the installed app) ---- */
+		#install { display: none; flex-direction: column; gap: 8px; width: min(600px, 100%); box-sizing: border-box;
+			background: rgba(7,22,28,0.55); border: 1px solid rgba(242,194,90,0.35); border-radius: 16px; padding: 10px 12px; text-align: start; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+		#install h2 { margin: 0; font-size: 17px; color: #f5cf74; font-weight: 800; line-height: 1.25; }
+		#install h2 .en { display: block; font-weight: 600; font-size: 14px; }
+		#install .steps { display: flex; gap: 6px; }
+		#install .step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
+			background: rgba(0,0,0,0.22); border-radius: 12px; padding: 8px 4px; font-size: 13px; line-height: 1.2; text-align: center; }
+		#install .step svg { width: 30px; height: 30px; flex: none; }
+		#install .step b { color: #fbf4e4; display: block; font-size: 14px; }
+		#install .num { width: 20px; height: 20px; border-radius: 10px; background: #e2b24a; color: #fff; font-weight: 800; font-size: 13px;
+			line-height: 20px; text-align: center; }
+		#install .en { display: block; direction: ltr; opacity: 0.75; font-size: 12px; }
+		#install .row { display: flex; gap: 10px; justify-content: space-between; align-items: center; }
+		#install .where { font-size: 12.5px; opacity: 0.85; margin: 0; line-height: 1.35; flex: 1 1 auto; }
+		#install .later { appearance: none; background: none; border: 1px solid rgba(255,255,255,0.3); color: #fbf4e4; border-radius: 10px;
+			padding: 8px 12px; font: 600 14px inherit; cursor: pointer; flex: none; }
+		#arrow-pad { display: none; height: 56px; flex: none; }
+		#installmini { display: none; appearance: none; background: none; border: 0; color: #f5cf74; font: 700 15px inherit; cursor: pointer;
+			text-decoration: underline; padding: 6px; }
+		/* pulsing arrow pointing at Safari's bottom toolbar (portrait only) */
+		#arrow { display: none; position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+			z-index: 30; width: 44px; height: 44px; color: #f5cf74; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+			animation: bounce 1.1s ease-in-out infinite; pointer-events: none; }
+		@keyframes bounce { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 12px); } }
+		#fs { position: fixed; top: max(6px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5; display: none;
+			width: 48px; height: 48px; border: 0; border-radius: 12px; background: rgba(11,33,41,0.6); color: #fbf4e4; font-size: 26px; line-height: 48px;
+			cursor: pointer; padding: 0; }
 		#rotate { display: none; z-index: 20; }
-		#rotate .phone { width: 54px; height: 96px; border: 5px solid #f7e4bf; border-radius: 12px; animation: turn 1.6s ease-in-out infinite; }
+		#rotate .phone { width: 54px; height: 96px; border: 5px solid #f1e3c3; border-radius: 12px; animation: turn 1.6s ease-in-out infinite; flex: none; }
 		@keyframes turn { 0%, 20% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
 		@media (orientation: portrait) and (max-width: 900px) { #rotate { display: flex; } }
 		.hidden { display: none !important; }
+		.fading { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
 	</style>
 </head>
 <body>
 	<canvas id="canvas" tabindex="0">Your browser does not support the canvas tag.</canvas>
+	<div id="safe"></div>
+	<button id="fs" title="Full screen" aria-label="Full screen">⛶</button>
 	<noscript><div class="overlay">Your browser does not support JavaScript.</div></noscript>
 
-	<div id="status" class="overlay">
-		<div class="logo">مشاوي تايكون</div>
-		<div class="sub">Mashawi Tycoon</div>
-		<div class="bar"><div id="status-progress"></div></div>
-		<div id="status-notice" class="note">جارٍ التحميل... / Loading...</div>
-		<button id="play" class="btn">▶ العب / Play</button>
-	</div>
+	<!-- shared markup for the install guide; moved between the loading screen and the portrait screen -->
+	<template id="install-tpl">
+		<div id="install">
+			<h2>ثبّت اللعبة على الشاشة الرئيسية: ملء الشاشة وتقدمك محفوظ<span class="en">Install it on your Home Screen: full screen, progress kept</span></h2>
+			<div class="steps">
+				<div class="step"><span class="num">1</span>
+					<svg viewBox="0 0 24 24" fill="none" stroke="#4aa3ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M7 11H5v10h14V11h-2"/></svg>
+					<span><b>المشاركة</b><span class="en">Share</span></span></div>
+				<div class="step"><span class="num">2</span>
+					<svg viewBox="0 0 24 24" fill="none" stroke="#fbf4e4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+					<span><b>إضافة إلى الشاشة الرئيسية</b><span class="en">Add to Home Screen</span></span></div>
+				<div class="step"><span class="num">3</span>
+					<svg viewBox="0 0 24 24" fill="none" stroke="#5cb57d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+					<span><b>إضافة</b> ثم افتحها من الشاشة الرئيسية<span class="en">Add, then open it from there</span></span></div>
+			</div>
+			<div class="row">
+				<p class="where" id="where"></p>
+				<button class="later" id="later">لاحقًا / Later</button>
+			</div>
+		</div>
+	</template>
 
-	<div id="rotate" class="overlay">
+	<template id="sky-tpl"><div class="glow"></div><div class="skyline" aria-hidden="true"><svg viewBox="0 0 1200 220" preserveAspectRatio="none"><path fill="currentColor" d="M0 220V150h40v-20h20v20h30V120h25v30h30v-45h15v45h40V105h20v15h20v-15h20v15h40V95h10V60l8-12 8 12v35h12v25h30v-30h40v30h25v-70h8l4-20 4 20h8v70h30V90h20v-10h20v10h20v40h30V110h12v-40l5-10 5 10v40h12v20h35V90h40v40h30v-20h20v20h30V85h25v45h20v-20h30v20h30V70c30-30 60-30 90 0v60h35v-15h20v15h30v-25h15V60l5-10 5 10v45h15v25h30V100h20v30h40v-10h20v10h40v-40h30v40h30v-20h20v20h30V115h20v-20h20v20h20v105z"/></svg></div></template>
+	<div id="status" class="overlay"><div class="col">
+		<div class="hero">
+			<div class="logo">مشاوي تايكون</div>
+			<div class="sub">Mashawi Tycoon</div>
+			<div class="bar" id="status-bar"><div id="status-progress"></div></div>
+			<div id="status-pct"></div>
+			<div id="status-notice" class="note">جارٍ تحميل اللعبة... / Loading the game...</div>
+			<div id="spin" class="spin"></div>
+			<div id="tip"></div>
+			<button id="play" class="btn">▶ العب / Play</button>
+			<button id="installmini">⤒ كيف أثبّت اللعبة؟ / How do I install?</button>
+		</div>
+		<div id="install-slot"></div>
+	</div></div>
+
+	<div id="rotate" class="overlay"><div class="col">
 		<div class="phone"></div>
-		<div class="logo" style="font-size:30px">أدر هاتفك</div>
+		<div class="logo" style="font-size:26px">أدر هاتفك للعب</div>
 		<div class="sub">Rotate your phone to play</div>
-	</div>
+		<div id="rotate-slot"></div>
+		<div id="arrow-pad"></div>
+	</div></div>
+	<svg id="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16"/><path d="M5 13l7 7 7-7"/></svg>
 
+	<script>
+	// Cap the canvas at 2 device pixels per CSS pixel: 3x phones (iPhone) would otherwise
+	// push 2.25x more pixels for no visible gain in a chunky low-poly game.
+	(function () {
+		const real = window.devicePixelRatio || 1;
+		if (real > 2) {
+			try { Object.defineProperty(window, 'devicePixelRatio', { get: function () { return 2; }, configurable: true }); } catch (e) {}
+		}
+	}());
+	// Safe-area insets (notch, home indicator) in canvas pixels, read by the game's HUD.
+	window.godotSafeInsets = function () {
+		const s = getComputedStyle(document.getElementById('safe'));
+		const d = window.devicePixelRatio || 1;
+		return [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft].map(function (v) { return (parseFloat(v) || 0) * d; }).join(',');
+	};
+	</script>
 	<script src="$GODOT_URL"></script>
 	<script>
 	const GODOT_CONFIG = $GODOT_CONFIG;
@@ -57,33 +185,204 @@
 		const statusOverlay = document.getElementById('status');
 		const progress = document.getElementById('status-progress');
 		const notice = document.getElementById('status-notice');
+		const pct = document.getElementById('status-pct');
+		const bar = document.getElementById('status-bar');
+		const tip = document.getElementById('tip');
+		// rotating hints while the engine downloads (Arabic / English)
+		const TIPS = [
+			'ابدأ بعربة صغيرة في الفهيدي، وارفع مستوى الكاونتر عندما يطول الطابور.\nStart small in Al Fahidi; level up the counter when the line gets long.',
+			'كل محطة لها مستويات: الشواية، الدونر، الكرك، الحلويات، الإضاءة، المقاعد...\nEvery station has levels: grill, doner, karak, sweets, lights, seating...',
+			'انتبه لعنق الزجاجة في التقرير: هو أول ما يجب تطويره.\nWatch the bottleneck in the report: that is the first thing to upgrade.',
+			'الكشك والمطعم ثابتان في مكانهما؛ العربة والشاحنة تتنقل معك.\nKiosks and restaurants stay put; the cart and truck travel with you.',
+			'العم سعيد يكافئك على كل هدف تنجزه.\nUncle Saeed pays a reward for every goal you finish.',
+			'السعر المرتفع يملأ الصندوق اليوم ويفرّغ الطابور غداً.\nHigh prices fill the till today and empty the line tomorrow.',
+		];
+		let tipIndex = Math.floor(Math.random() * TIPS.length);
+		function showTip() { tip.textContent = TIPS[tipIndex % TIPS.length]; tipIndex += 1; tip.classList.remove('swap'); }
+		showTip();
+		const tipTimer = setInterval(function () { tip.classList.add('swap'); setTimeout(showTip, 320); }, 3200);
+		const fromCache = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+		const spin = document.getElementById('spin');
+		// skyline + sunset glow behind both overlays
+		['status', 'rotate'].forEach(function (id) {
+			const o = document.getElementById(id);
+			const t = document.getElementById('sky-tpl').content;
+			o.insertBefore(t.cloneNode(true), o.firstChild);
+		});
+		if (fromCache) { notice.textContent = 'يفتح من جهازك / Opening from your device'; }
+		else { pct.textContent = 'أول مرة: تنزيل نحو 14 م.ب، ثم تفتح من جهازك دون اتصال / First visit downloads ~14 MB, then it opens from this device, even offline'; }
 		const play = document.getElementById('play');
 		const rotate = document.getElementById('rotate');
+		const fsBtn = document.getElementById('fs');
+		const arrow = document.getElementById('arrow');
+		const installMini = document.getElementById('installmini');
+		const doc = document.documentElement;
 		let started = false;
 
+		// ---- remote log: on a LAN address (phone testing) or ?dev=--log, errors and milestones
+		// are POSTed to /log so the session can be read on the serving machine. ----
+		const devFlags = new URLSearchParams(location.search).get('dev') || '';
+		const remoteLog = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname) || devFlags.indexOf('--log') >= 0;
+		const logQueue = [];
+		let logTimer = 0;
+		function rlog(msg) {
+			if (!remoteLog) { return; }
+			logQueue.push(String(msg).slice(0, 500));
+			if (!logTimer) { logTimer = setTimeout(flushLog, 300); }
+		}
+		function flushLog() {
+			logTimer = 0;
+			if (!logQueue.length) { return; }
+			const body = logQueue.splice(0, logQueue.length).join('\n');
+			try { if (!(navigator.sendBeacon && navigator.sendBeacon('/log', body))) { fetch('/log', { method: 'POST', body: body, keepalive: true }).catch(function () {}); } } catch (e) {}
+		}
+		if (remoteLog) {
+			window.addEventListener('error', function (e) { rlog('ERROR ' + e.message + ' @' + (e.filename || '') + ':' + (e.lineno || 0)); });
+			window.addEventListener('unhandledrejection', function (e) { rlog('REJECTION ' + (e.reason && e.reason.message ? e.reason.message : e.reason)); });
+			const origErr = console.error.bind(console);
+			console.error = function () { rlog('console.error ' + Array.prototype.map.call(arguments, String).join(' ')); origErr.apply(console, arguments); };
+			const origWarn = console.warn.bind(console);
+			console.warn = function () { rlog('console.warn ' + Array.prototype.map.call(arguments, String).join(' ')); origWarn.apply(console, arguments); };
+			rlog('page ' + navigator.userAgent + ' ' + window.innerWidth + 'x' + window.innerHeight + ' dpr=' + window.devicePixelRatio + ' standalone=' + (navigator.standalone === true));
+			window.addEventListener('godot-ready', function () { rlog('godot-ready ' + window.innerWidth + 'x' + window.innerHeight); });
+			window.addEventListener('resize', function () { rlog('resize ' + window.innerWidth + 'x' + window.innerHeight); });
+			document.addEventListener('visibilitychange', function () { rlog('visibility ' + document.visibilityState); });
+			let lastState = '';
+			setInterval(function () { const s = JSON.stringify(window.godotState || null); if (s !== lastState) { lastState = s; rlog('state ' + s); } }, 1000);
+			window.addEventListener('pagehide', flushLog);
+		}
+
 		function fail(err) {
+			rlog('FAIL ' + ((err instanceof Error) ? (err.message + ' ' + err.stack) : String(err)));
 			console.error(err);
-			notice.textContent = (err instanceof Error) ? err.message : String(err);
+			notice.textContent = 'تعذّر تشغيل اللعبة / Cannot run the game: ' + ((err instanceof Error) ? err.message : String(err));
 			play.style.display = 'none';
 		}
 
-		const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+		// The engine (its AudioWorklet) needs a secure context: https, or localhost. A plain http
+		// LAN address can never run it, so say that plainly instead of the engine's generic line.
+		const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED }).map(function (m) {
+			return /Secure Context/i.test(m) ? 'يجب فتح اللعبة عبر https / open the game over https (this address is plain http)' : m;
+		});
 		if (missing.length !== 0) {
-			fail('This browser cannot run the game:\n' + missing.join('\n'));
+			fail(missing.join(', '));
 			return;
 		}
 
+		// ---- platform ----------------------------------------------------------
+		const ua = navigator.userAgent;
+		const isIPhone = /iPhone|iPod/.test(ua);
+		const isIPad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+		const isIOS = isIPhone || isIPad;
+		const iosBrowser = /CriOS/.test(ua) ? 'chrome' : (/FxiOS/.test(ua) ? 'firefox' : 'safari');
+		const standalone = window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true;
+		let inIframe = false;
+		try { inIframe = window.self !== window.top; } catch (e) { inIframe = true; }
+		// iOS has no install prompt API: the only way to full screen (and reliable saves) is
+		// Share -> Add to Home Screen, so we walk the player through it before they start.
+		const wantInstallGuide = isIOS && !standalone && !inIframe;
+		window.godotInstallGuide = wantInstallGuide; // read by the browser tests
+
+		// ---- full screen -------------------------------------------------------
+		// iPhone Safari has no page fullscreen (webkitFullscreenEnabled is true there but only works for
+		// <video>); the "Add to Home Screen" app is the only way to lose the Safari bar.
+		const fsEnabled = !isIOS && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+		function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+		function requestFullscreen() {
+			if (!fsEnabled || isFullscreen()) { return Promise.resolve(); }
+			try {
+				const p = doc.requestFullscreen ? doc.requestFullscreen({ navigationUI: 'hide' }) : doc.webkitRequestFullscreen();
+				return (p && p.then) ? p.catch(function () {}) : Promise.resolve();
+			} catch (e) { return Promise.resolve(); }
+		}
+		function lockLandscape() {
+			try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch(function () {}); } } catch (e) {}
+		}
+		function updateFsButton() {
+			// Shown only once the game runs outside fullscreen (e.g. after Esc), never in the installed app.
+			fsBtn.style.display = (started && fsEnabled && !standalone && !isFullscreen()) ? 'block' : 'none';
+		}
+		document.addEventListener('fullscreenchange', updateFsButton);
+		document.addEventListener('webkitfullscreenchange', updateFsButton);
+		fsBtn.addEventListener('click', function () { requestFullscreen().then(lockLandscape); document.getElementById('canvas').focus(); });
+
+		// ---- install guide -----------------------------------------------------
+		let guideDismissed = false;
+		try { guideDismissed = localStorage.getItem('installHintSeen') === '1'; } catch (e) {}
+		let guide = null;
+		function buildGuide() {
+			if (guide) { return guide; }
+			guide = document.getElementById('install-tpl').content.firstElementChild.cloneNode(true);
+			const where = guide.querySelector('#where');
+			if (iosBrowser === 'chrome') {
+				where.innerHTML = 'في كروم: زر المشاركة أعلى الشاشة بجانب شريط العنوان. <span class="en">Chrome: Share is at the top, next to the address bar.</span>';
+			} else if (iosBrowser === 'firefox') {
+				where.innerHTML = 'في فايرفوكس: قائمة ⋯ ثم المشاركة. <span class="en">Firefox: the ⋯ menu, then Share.</span>';
+			} else {
+				where.innerHTML = 'في سفاري: زر المشاركة (مربع مع سهم) في الشريط أسفل الشاشة. <span class="en">Safari: the Share button (box with an arrow) in the bottom bar.</span>';
+			}
+			guide.querySelector('#later').addEventListener('click', function () {
+				guideDismissed = true;
+				try { localStorage.setItem('installHintSeen', '1'); } catch (e) {}
+				placeGuide();
+			});
+			return guide;
+		}
+		function isPortraitPhone() { return window.matchMedia('(orientation: portrait) and (max-width: 900px)').matches; }
+		function placeGuide() {
+			if (!wantInstallGuide) { arrow.style.display = 'none'; return; }
+			const g = buildGuide();
+			const portrait = isPortraitPhone();
+			// portrait: the guide is the main content of the rotate screen; landscape: it sits under Play
+			const slot = document.getElementById(portrait ? 'rotate-slot' : 'install-slot');
+			const show = !started && (!guideDismissed || portrait);
+			if (g.parentNode !== slot) { slot.appendChild(g); }
+			g.style.display = show ? 'flex' : 'none';
+			installMini.style.display = (!started && guideDismissed && !portrait) ? 'inline-block' : 'none';
+			const showArrow = show && portrait && iosBrowser === 'safari';
+			arrow.style.display = showArrow ? 'block' : 'none';
+			document.getElementById('arrow-pad').style.display = showArrow ? 'block' : 'none';
+		}
+		installMini.addEventListener('click', function () { guideDismissed = false; placeGuide(); });
+
+		// ---- service worker: cached engine on later visits, reload when a new build is out ----
+		if ('serviceWorker' in navigator && GODOT_CONFIG.serviceWorker) {
+			navigator.serviceWorker.register(GODOT_CONFIG.serviceWorker).then(function (reg) {
+				function applyUpdate() {
+					// A new build waiting while this page is still on the loading screen: switch now.
+					if (reg.waiting && navigator.serviceWorker.controller && !started) { reg.waiting.postMessage('update'); }
+				}
+				applyUpdate();
+				reg.addEventListener('updatefound', function () {
+					const w = reg.installing;
+					if (w) { w.addEventListener('statechange', applyUpdate); }
+				});
+				reg.update().catch(function () {});
+			}).catch(function (e) { console.warn('service worker', e); });
+		}
+
+		// ---- engine -------------------------------------------------------------
 		const exe = GODOT_CONFIG.executable;
 		const pack = GODOT_CONFIG.mainPack || (exe + '.pck');
+		// serviceWorker: '' because the shell registers it itself above (the engine's own attempt
+		// would raise an unhandled rejection on a self-signed LAN certificate).
 		const engine = new Engine(Object.assign({}, GODOT_CONFIG, {
+			serviceWorker: '',
 			onProgress: function (current, total) {
-				if (current > 0 && total > 0) { progress.style.width = Math.round(100 * current / total) + '%'; }
+				if (current > 0 && total > 0) {
+					const p = Math.round(100 * current / total);
+					progress.style.width = p + '%';
+					pct.textContent = p + '%' + (fromCache ? '' : '  ·  ' + 'أول مرة: نحو 14 م.ب، ثم تفتح دون اتصال / first visit ~14 MB, then offline');
+				}
 			},
 		}));
 		// Download everything now; start the engine only on a tap so iOS unlocks audio.
 		const loaded = Promise.all([engine.init(exe), engine.preloadFile(pack, pack)]);
 		loaded.then(function () {
+			rlog('engine files loaded');
 			progress.style.width = '100%';
+			bar.classList.add('done');
+			pct.textContent = fromCache ? 'محفوظة على الجهاز، تعمل دون اتصال / Stored on this device, works offline' : 'تم التنزيل، تفتح من جهازك في المرة القادمة / Downloaded; next time it opens from this device';
 			notice.textContent = 'جاهز / Ready';
 			play.style.display = 'inline-block';
 		}, fail);
@@ -91,27 +390,56 @@
 		function start() {
 			if (started) { return; }
 			started = true;
+			rlog('play tapped');
 			play.style.display = 'none';
+			placeGuide();
 			notice.textContent = 'جارٍ التشغيل... / Starting...';
-			try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch(function () {}); } } catch (e) {}
+			pct.textContent = '';
+			spin.style.display = 'block';
+			// The tap is a user gesture: go full screen where the browser allows it (desktop, Android).
+			requestFullscreen().then(lockLandscape);
 			loaded.then(function () {
-				return engine.start({ args: ['--main-pack', pack] });
+				// ?dev=--fps%20--dbg_input forwards dev flags to the game (see scripts/core/dev_tools.gd).
+				const args = ['--main-pack', pack];
+				const dev = new URLSearchParams(location.search).get('dev');
+				if (dev) { args.push('--'); dev.split(' ').forEach(function (a) { if (a) { args.push(a); } }); }
+				return engine.start({ args: args });
 			}).then(function () {
+				rlog('engine started');
 				document.getElementById('canvas').focus();
+				updateFsButton();
 			}, fail);
 		}
 		play.addEventListener('click', start);
-		window.addEventListener('godot-ready', function () { statusOverlay.classList.add('hidden'); });
+		let hidden = false;
+		function hideStatus() {
+			if (hidden) { return; }
+			hidden = true;
+			// iOS Safari changes the viewport when its toolbar collapses on the Play tap; make sure the
+			// engine has resized the canvas to the final size before the overlay goes, or the game
+			// shows up small and then jumps to full size.
+			clearInterval(tipTimer);
+			window.dispatchEvent(new Event('resize'));
+			requestAnimationFrame(function () { requestAnimationFrame(function () {
+				window.dispatchEvent(new Event('resize'));
+				document.getElementById('canvas').classList.add('on');
+				statusOverlay.classList.add('fading');
+				setTimeout(function () { statusOverlay.classList.add('hidden'); }, 300);
+			}); });
+		}
+		if (window.visualViewport) { window.visualViewport.addEventListener('resize', function () { if (started) { window.dispatchEvent(new Event('resize')); } }); }
+		window.addEventListener('godot-ready', hideStatus);
 		// Safety net: hide the overlay a few seconds after start even if the event never comes.
-		play.addEventListener('click', function () { setTimeout(function () { statusOverlay.classList.add('hidden'); }, 6000); });
+		play.addEventListener('click', function () { setTimeout(hideStatus, 6000); });
 
 		// Portrait guard for phones (JS mirror of the CSS media query, for old WebViews).
 		function checkOrientation() {
-			const portrait = window.matchMedia('(orientation: portrait) and (max-width: 900px)').matches;
-			rotate.style.display = portrait ? 'flex' : 'none';
+			rotate.style.display = isPortraitPhone() ? 'flex' : 'none';
+			placeGuide();
 		}
 		window.addEventListener('resize', checkOrientation);
 		window.addEventListener('orientationchange', checkOrientation);
+		if (window.visualViewport) { window.visualViewport.addEventListener('resize', checkOrientation); }
 		checkOrientation();
 	}());
 	</script>

@@ -1,13 +1,14 @@
 class_name Customer
 extends Node3D
 ## A passer-by who may become a customer. Walks along the sidewalk, decides at the
-## cart, queues, buys, reacts, leaves. Pure visuals + movement; DaySim decides.
+## stand, queues, buys, maybe sits down to eat, reacts, leaves. Pure visuals + movement;
+## DaySim decides.
 
 signal reached_decision(customer: Customer)
 signal arrived(customer: Customer)
 signal gone(customer: Customer)
 
-enum State { WALK, TO_SLOT, QUEUED, LEAVE, DONE }
+enum State { WALK, TO_SLOT, QUEUED, TO_SEAT, SEATED, LEAVE, DONE }
 
 const SCALE := 0.62
 const WALK_SPEED := 0.8
@@ -26,6 +27,8 @@ var forced_stop := false
 var item: String = ""
 var wait_min: float = 0.0
 var slot: int = -1
+var seat: Dictionary = {}
+var _path: Array = []
 var _bubble_tween: Tween
 
 func setup(model_name: String, direction: int, start: Vector3, end_x: float, decide_x: float) -> void:
@@ -58,14 +61,52 @@ func face_cart() -> void:
 	if model:
 		model.rotation.y = PI
 
-func go_to_slot(index: int, pos: Vector3) -> void:
-	slot = index
-	target = pos
-	state = State.TO_SLOT
+func _walk_towards(pos: Vector3) -> void:
 	if model:
 		ModelLib.play_loop(model, "walk", 1.6)
 		var d := pos - position
-		model.rotation.y = atan2(d.x, d.z)
+		if d.length() > 0.001:
+			model.rotation.y = atan2(d.x, d.z)
+
+func go_to_slot(index: int, pos: Vector3) -> void:
+	slot = index
+	target = pos
+	_path = []
+	state = State.TO_SLOT
+	_walk_towards(pos)
+
+## Walk to a seat ({idx, table, pos, facing, approach, y_off}) and sit down there.
+func go_to_seat(s: Dictionary) -> void:
+	seat = s
+	_path = [s["pos"]]
+	target = s.get("approach", s["pos"])
+	state = State.TO_SEAT
+	_walk_towards(target)
+
+func _sit_down() -> void:
+	state = State.SEATED
+	position = seat["pos"]
+	if model:
+		model.rotation.y = float(seat.get("facing", PI))
+		model.position.y = float(seat.get("y_off", 0.0))
+		ModelLib.play_loop(model, "sit")
+	arrived.emit(self)
+
+## Stand up from the table and walk off along the sidewalk.
+func leave_from_seat(text: String = "", color: Color = Color.WHITE) -> void:
+	if text != "":
+		say(text, color)
+	if model:
+		model.position.y = 0.0
+	var approach: Vector3 = seat.get("approach", position) if not seat.is_empty() else position
+	seat = {}
+	_path = [Vector3(approach.x, 0, World.WALK_Z)]
+	target = approach
+	state = State.TO_SEAT
+	_leaving_after_path = true
+	_walk_towards(target)
+
+var _leaving_after_path := false
 
 func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false) -> void:
 	if text != "":
@@ -74,6 +115,11 @@ func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false) ->
 		if model:
 			ModelLib.play_loop(model, "idle")
 		await get_tree().create_timer(0.55).timeout
+	_start_leaving()
+
+func _start_leaving() -> void:
+	if state == State.DONE:
+		return
 	state = State.LEAVE
 	target = Vector3(exit_x, 0, position.z)
 	if model:
@@ -94,7 +140,7 @@ func say(text: String, color: Color = Color.WHITE) -> void:
 	_bubble_tween.tween_callback(func(): bubble.visible = false)
 
 func react(anim: String) -> void:
-	if model:
+	if model and state != State.SEATED:
 		ModelLib.play_once(model, anim, "idle")
 
 func _process(delta: float) -> void:
@@ -116,6 +162,21 @@ func _process(delta: float) -> void:
 				if model:
 					ModelLib.play_loop(model, "idle")
 				arrived.emit(self)
+			else:
+				position += d.normalized() * minf(speed * 1.1 * delta, d.length())
+		State.TO_SEAT:
+			var d := target - position
+			d.y = 0
+			if d.length() < 0.03:
+				position = target
+				if not _path.is_empty():
+					target = _path.pop_front()
+					_walk_towards(target)
+				elif _leaving_after_path:
+					_leaving_after_path = false
+					_start_leaving()
+				else:
+					_sit_down()
 			else:
 				position += d.normalized() * minf(speed * 1.1 * delta, d.length())
 		State.LEAVE:

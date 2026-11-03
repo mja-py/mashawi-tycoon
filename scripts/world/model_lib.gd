@@ -63,7 +63,24 @@ static func play_once(root: Node, anim: String, then: String = "idle") -> void:
 		ap.queue(then)
 		ap.get_animation(then).loop_mode = Animation.LOOP_LINEAR
 
+## Shared flat material per (colour, emission). Callers must not mutate the
+## result; use flat_material_unique() when the material is changed later.
+static var _mats := {}
+static var _meshes := {}
+static var _model_meshes := {}
+
 static func flat_material(color: Color, emission: float = 0.0) -> StandardMaterial3D:
+	var key := material_key(color, emission)
+	var m: StandardMaterial3D = _mats.get(key)
+	if m == null:
+		m = flat_material_unique(color, emission)
+		_mats[key] = m
+	return m
+
+static func material_key(color: Color, emission: float = 0.0) -> String:
+	return "%d|%.2f" % [color.to_rgba32(), maxf(emission, 0.0)]
+
+static func flat_material_unique(color: Color, emission: float = 0.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
 	m.roughness = 0.85
@@ -73,11 +90,86 @@ static func flat_material(color: Color, emission: float = 0.0) -> StandardMateri
 		m.emission_energy_multiplier = emission
 	return m
 
+static func _k(v: float) -> String:
+	return "%.4f" % v
+
+## Shared primitive meshes keyed by rounded size (never mutate them).
+static func box_mesh(size: Vector3) -> BoxMesh:
+	var key := "box|%s|%s|%s" % [_k(size.x), _k(size.y), _k(size.z)]
+	var mesh: BoxMesh = _meshes.get(key)
+	if mesh == null:
+		mesh = BoxMesh.new()
+		mesh.size = size
+		_meshes[key] = mesh
+	return mesh
+
+static func cylinder_mesh(radius: float, height: float, segs: int = 16) -> CylinderMesh:
+	var key := "cyl|%s|%s|%d" % [_k(radius), _k(height), segs]
+	var mesh: CylinderMesh = _meshes.get(key)
+	if mesh == null:
+		mesh = CylinderMesh.new()
+		mesh.top_radius = radius
+		mesh.bottom_radius = radius
+		mesh.height = height
+		mesh.radial_segments = segs
+		_meshes[key] = mesh
+	return mesh
+
+static func plane_mesh(size: Vector2) -> PlaneMesh:
+	var key := "plane|%s|%s" % [_k(size.x), _k(size.y)]
+	var mesh: PlaneMesh = _meshes.get(key)
+	if mesh == null:
+		mesh = PlaneMesh.new()
+		mesh.size = size
+		_meshes[key] = mesh
+	return mesh
+
+## Every mesh of a model as [Mesh, Transform3D relative to the model root],
+## with surface override materials baked into a duplicated mesh. Cached.
+static func meshes_of(name: String) -> Array:
+	if _model_meshes.has(name):
+		return _model_meshes[name]
+	var out := []
+	var ps := scene(name)
+	if ps != null:
+		var root := ps.instantiate() as Node3D
+		_collect_meshes(root, Transform3D.IDENTITY, out, true)
+		root.free()
+	_model_meshes[name] = out
+	return out
+
+## The first mesh of a model (see meshes_of), or null.
+static func mesh_of(name: String) -> Mesh:
+	var all := meshes_of(name)
+	return all[0][0] if not all.is_empty() else null
+
+static func _collect_meshes(n: Node, xf: Transform3D, out: Array, is_root: bool) -> void:
+	var here := xf
+	if n is Node3D and not is_root:
+		here = xf * (n as Node3D).transform
+	if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+		var mi := n as MeshInstance3D
+		var mesh: Mesh = mi.mesh
+		var needs := mi.material_override != null
+		for s in range(mesh.get_surface_count()):
+			if mi.get_surface_override_material(s) != null:
+				needs = true
+		if needs and mesh is ArrayMesh:
+			var am := (mesh as ArrayMesh).duplicate() as ArrayMesh
+			for s in range(am.get_surface_count()):
+				var mat: Material = mi.material_override
+				if mat == null:
+					mat = mi.get_surface_override_material(s)
+				if mat != null:
+					am.surface_set_material(s, mat)
+			mesh = am
+		out.append([mesh, here])
+	for c in n.get_children():
+		_collect_meshes(c, here, out, false)
+
 static func box(parent: Node, size: Vector3, pos: Vector3, color: Color, emission: float = 0.0) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
+	mi.mesh = box_mesh(size)
 	mi.material_override = flat_material(color, emission)
 	mi.position = pos
 	parent.add_child(mi)
@@ -85,12 +177,7 @@ static func box(parent: Node, size: Vector3, pos: Vector3, color: Color, emissio
 
 static func cylinder(parent: Node, radius: float, height: float, pos: Vector3, color: Color, emission: float = 0.0) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = height
-	mesh.radial_segments = 16
-	mi.mesh = mesh
+	mi.mesh = cylinder_mesh(radius, height)
 	mi.material_override = flat_material(color, emission)
 	mi.position = pos
 	parent.add_child(mi)
@@ -98,9 +185,7 @@ static func cylinder(parent: Node, radius: float, height: float, pos: Vector3, c
 
 static func plane(parent: Node, size: Vector2, pos: Vector3, color: Color) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
-	var mesh := PlaneMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
+	mi.mesh = plane_mesh(size)
 	mi.material_override = flat_material(color)
 	mi.position = pos
 	parent.add_child(mi)
