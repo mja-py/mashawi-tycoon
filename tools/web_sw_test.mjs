@@ -1,6 +1,6 @@
 // Checks the PWA service worker: loads the web export twice in one Chrome profile; the 2nd visit must be
 // controlled by the worker with the engine files in its cache.   node tools/web_sw_test.mjs http://localhost:8080/
-import { launchChrome, watchConsole, check, finish } from './web_test_lib.mjs';
+import { launchChrome, watchConsole, armReady, waitReady, check, finish } from './web_test_lib.mjs';
 const url = process.argv[2] || 'http://localhost:8080/';
 const browser = await launchChrome();
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -24,7 +24,17 @@ for (let i = 1; i <= 2; i++) {
   if (i === 2) {
     // the 40 MB wasm may still be caching during visit 1; by the 2nd visit everything must be there
     check(sw.cached.some(f => f.endsWith('.wasm')) && sw.cached.some(f => f.endsWith('.pck')), 'visit 2: wasm and pck cached');
+    check(sw.cached.includes('loading-art.webp'), 'visit 2: loading artwork cached');
     check(sw.controller, 'visit 2: page controlled by the service worker');
+    await armReady(page);
+    await ctx.setOffline(true);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('#play', { state: 'visible', timeout: 30000 });
+    check(await page.locator('#loading-art').evaluate(img => img.complete && img.naturalWidth > 0), 'offline reload: loading artwork displays and Play becomes ready');
+    await page.click('#play');
+    await waitReady(page, 60000);
+    check(await page.evaluate(() => !!window.godotState), 'offline reload: game starts after tapping Play');
+    await ctx.setOffline(false);
   }
   check(sw.insets === '0,0,0,0', 'safe insets read as zero on desktop');
   const errs = con.errors();
