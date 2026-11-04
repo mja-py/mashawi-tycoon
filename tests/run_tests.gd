@@ -23,8 +23,39 @@ func _ready() -> void:
 	_test_pricing(game)
 	_test_save_validation(game)
 	_test_migration(game)
+	_test_daily_stock(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
+
+func _test_daily_stock(game) -> void:
+	game.new_game()
+	game.weather = "sunny"
+	game.forecast = "sunny"
+	var before: Dictionary = game.inventory.duplicate(true)
+	var plan: Dictionary = game.daily_stock_plan()
+	check(float(plan["cost"]) > 0 and game.inventory == before and game.money == Data.START_MONEY, "daily quote does not change stock or money")
+	game.money = 1.0
+	check(not game.stock_for_today() and game.inventory == before and game.money == 1.0, "unaffordable daily order buys nothing")
+	game.money = Data.START_MONEY
+	check(game.stock_for_today() and game.food_on_sale(), "daily stock makes a fresh game playable in one tap")
+	check(is_equal_approx(game.money, Data.START_MONEY - float(plan["cost"])), "daily order charges exactly the displayed quote")
+	var stocked_money: float = game.money
+	check(not game.stock_for_today() and game.money == stocked_money, "repeated daily stock tap cannot buy surplus")
+	game.new_game()
+	game.location = "creek"
+	plan = game.daily_stock_plan()
+	game.money = float(plan["cost"]) + float(game.loc()["rent"]) - 1.0
+	check(not game.stock_for_today(), "daily stock keeps rent aside")
+	game.new_game()
+	game.plot()["stage"] = "flagship"
+	for id in Data.STATIONS:
+		game.plot()["stations"][id] = 4
+	for id in game.menu:
+		game.menu[id]["unlocked"] = true
+		game.menu[id]["enabled"] = true
+	game.money = 1000000.0
+	check(game.stock_for_today() and game.inventory["cake"] > 0 and game.inventory["fries"] > 0, "daily stock covers unlocked sides and sweets at a large restaurant")
+	game.new_game()
 
 func _test_economy() -> void:
 	var entry := {"recipe": {"meat": 2, "veg": 2, "sauce": 1}, "level": 0}

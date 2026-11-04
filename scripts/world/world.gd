@@ -26,7 +26,7 @@ const ROAD_ROT := 0.0
 
 var camera: Camera3D
 ## Orthographic camera size per plot stage (wider plots need more room).
-const STAGE_CAM := [4.4, 4.4, 4.6, 5.0, 5.3, 5.6]
+const STAGE_CAM := [3.6, 3.9, 4.4, 5.0, 5.3, 5.6]
 var _cam_base := Vector3.ZERO
 var _cam_tween: Tween
 var _drift := false
@@ -65,7 +65,7 @@ func _setup_sandstorm() -> void:
 	mat.initial_velocity_max = 9.0
 	mat.gravity = Vector3(0, -1.5, 0)
 	_sand.process_material = mat
-	_sand.amount = 500
+	_sand.amount = 140 if OS.has_feature("web") else 300
 	_sand.lifetime = 0.9
 	_sand.position = Vector3(-7.0, 1.6, -0.5)
 	_sand.visibility_aabb = AABB(Vector3(-10, -6, -8), Vector3(20, 8, 16))
@@ -77,6 +77,7 @@ func _setup_sandstorm() -> void:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mesh.material = m
 	_sand.draw_pass_1 = mesh
+	_sand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_sand.emitting = false
 	_sand.visible = false
 	add_child(_sand)
@@ -89,7 +90,7 @@ func _setup_camera() -> void:
 	camera.far = 60.0
 	camera.rotation_degrees = Vector3(-33, 14, 0)
 	add_child(camera)
-	var target := Vector3(0.2, 0.3, -0.85)
+	var target := Vector3(0.0, 0.38, -1.05)
 	camera.position = target + camera.transform.basis.z * 22.0
 	_cam_base = camera.position
 	camera.current = true
@@ -213,7 +214,11 @@ func _clear_of_gap(x: float, half: float = 0.0, margin: float = 0.0) -> bool:
 func _side_prop(model: String, pos: Vector3, rot: float = 0.0, scale: float = 1.0) -> void:
 	if _gap > 0.0 and absf(pos.x) < _gap + 1.0 and pos.z > -2.6 and pos.z < -0.8:
 		return
-	ModelLib.spawn(model, _level, pos, rot, scale)
+	_batch.add_model(model, Transform3D(Basis(Vector3.UP, deg_to_rad(rot)).scaled(Vector3.ONE * scale), pos))
+
+## Static imported scenery shares geometry and materials across the whole street.
+func _scenery(model: String, pos: Vector3, rot: float = 0.0, scale: float = 1.0) -> void:
+	_batch.add_model(model, Transform3D(Basis(Vector3.UP, deg_to_rad(rot)).scaled(Vector3.ONE * scale), pos))
 
 func _pick(arr: Array) -> String:
 	return arr[_rng.randi_range(0, arr.size() - 1)]
@@ -223,15 +228,16 @@ func _pick_any(arr: Array) -> Variant:
 
 func _build_ground(layout: String) -> void:
 	var sidewalk := "roads/tile-low"
+	var paving := ModelLib.flat_material(Color("c9b99e") if layout in ["fahidi", "gv"] else Color("b9c4bf"))
 	var grass := Color(0.45, 0.66, 0.32)
 	var sand := Color(0.91, 0.82, 0.58)
 	var road_basis := Basis(Vector3.UP, deg_to_rad(ROAD_ROT))
 	for x in range(-HALF_W, HALF_W + 1):
 		_batch.add_model("roads/road-straight", Transform3D(road_basis, Vector3(x, 0, 0)))
-		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -1)))
-		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, 1)))
+		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -1)), paving)
+		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, 1)), paving)
 		if layout in ["fahidi", "metro", "downtown", "gv", "mall"]:
-			_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -2)))
+			_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -2)), paving)
 	# big base plane so nothing shows the void
 	var base_col := grass
 	if layout in ["jbr", "fahidi"]:
@@ -245,7 +251,7 @@ func _build_ground(layout: String) -> void:
 		ModelLib.plane(_level, Vector2(40, 3), Vector3(0, 0.005, 2.9), Color(0.9, 0.83, 0.65))
 
 func _lamp(x: float, z: float, rot: float, model: String = "roads/light-curved") -> void:
-	var n := ModelLib.spawn(model, _level, Vector3(x, 0, z), rot)
+	_scenery(model, Vector3(x, 0, z), rot)
 	var l := OmniLight3D.new()
 	l.position = Vector3(x, 0.66, z + (0.18 if rot == 0.0 else -0.18))
 	l.light_color = Color(1.0, 0.85, 0.6)
@@ -283,7 +289,7 @@ func _fitted_row(models: Array, front_z: float, scale: float = 1.0, gap: float =
 			dims = BUILDING_DIMS.get(m, [1.0, 1.0])
 			w = float(dims[0]) * scale
 			d = float(dims[1]) * scale
-		ModelLib.spawn("buildings/" + m, _level, Vector3(x + w / 2.0, 0, front_z - d / 2.0), BUILDING_ROT, scale)
+		_batch.add_model("buildings/" + m, Transform3D(Basis(Vector3.UP, deg_to_rad(BUILDING_ROT)).scaled(Vector3.ONE * scale), Vector3(x + w / 2.0, 0, front_z - d / 2.0)))
 		x += w + gap
 
 func _skyline(models: Array, z: float, scale: float) -> void:
@@ -308,7 +314,9 @@ func _palms_along(z: float, count: int, spread: float = 7.5, min_x_gap: float = 
 		var x := -spread + (i + 0.5) * (2.0 * spread / count) + _rng.randf_range(-0.3, 0.3)
 		if absf(x) < min_x_gap or (z < 0.0 and not _clear_of_gap(x, 0.3)):
 			continue
-		ModelLib.spawn(_pick(PALMS), _level, Vector3(x, 0, z + _rng.randf_range(-0.1, 0.1)), _rng.randf() * 360, _rng.randf_range(0.65, 0.9))
+		var pos := Vector3(x, 0, z + _rng.randf_range(-0.1, 0.1))
+		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * _rng.randf_range(0.65, 0.9))
+		_batch.add_model(_pick(PALMS), Transform3D(basis, pos))
 
 # ---------------------------------------------------------------- locations
 
@@ -325,9 +333,9 @@ func _build_fahidi() -> void:
 	_side_prop("kaykit/bench", Vector3(2.6, 0, -1.3), 0, 1.5)
 	_side_prop("nature/pot_large", Vector3(4.4, 0, -1.3), 0, 0.8)
 	_palms_along(1.45, 6, 7.0, 0.0)
-	ModelLib.spawn("kaykit/bench", _level, Vector3(0.6, 0, 1.4), 180, 1.5)
+	_scenery("kaykit/bench", Vector3(0.6, 0, 1.4), 180, 1.5)
 	for x in [-6.0, -3.5, 1.5, 4.0, 6.5]:
-		ModelLib.spawn("nature/plant_bushSmall", _level, Vector3(x, 0, 2.3), _rng.randf() * 360, 0.6)
+		_scenery("nature/plant_bushSmall", Vector3(x, 0, 2.3), _rng.randf() * 360, 0.6)
 
 func _build_creek() -> void:
 	# Creek Park: lawn, palms and the creek behind
@@ -337,7 +345,7 @@ func _build_creek() -> void:
 	var fx := -HALF_W - 0.5
 	while fx <= HALF_W + 0.5:
 		if absf(fx) > maxf(1.9, _gap + 0.5):
-			ModelLib.spawn("nature/fence_simple", _level, Vector3(fx, 0, -1.85), 0)
+			_scenery("nature/fence_simple", Vector3(fx, 0, -1.85), 0)
 		fx += 1.0
 	var placed: Array[Vector3] = []
 	var tries := 0
@@ -356,18 +364,18 @@ func _build_creek() -> void:
 			continue
 		placed.append(Vector3(x, 0, z))
 		if _rng.randf() < 0.65:
-			ModelLib.spawn(_pick(PALMS), _level, Vector3(x, 0, z), _rng.randf() * 360, _rng.randf_range(0.7, 1.0))
+			_scenery(_pick(PALMS), Vector3(x, 0, z), _rng.randf() * 360, _rng.randf_range(0.7, 1.0))
 		else:
-			ModelLib.spawn(_pick(["nature/tree_oak", "nature/tree_fat", "nature/tree_detailed"]), _level, Vector3(x, 0, z), _rng.randf() * 360, _rng.randf_range(0.6, 0.85))
+			_scenery(_pick(["nature/tree_oak", "nature/tree_fat", "nature/tree_detailed"]), Vector3(x, 0, z), _rng.randf() * 360, _rng.randf_range(0.6, 0.85))
 	for i in range(18):
 		var m := _pick(["nature/plant_bush", "nature/plant_bushSmall", "nature/flower_redA", "nature/flower_yellowA", "nature/flower_purpleA", "nature/grass_large"])
 		var fp := Vector3(_rng.randf_range(-7.5, 7.5), 0, _rng.randf_range(-2.4, -1.95))
 		var rot := _rng.randf() * 360
 		var sc := _rng.randf_range(0.5, 0.75)
 		if _clear_of_gap(fp.x, 0.2):
-			ModelLib.spawn(m, _level, fp, rot, sc)
+			_scenery(m, fp, rot, sc)
 	for i in range(4):
-		ModelLib.spawn(_pick(["kaykit/rock_single_A", "kaykit/rock_single_B"]), _level, Vector3(_rng.randf_range(-8.0, 8.0), 0, _rng.randf_range(-4.5, -2.3)), _rng.randf() * 360, 0.8)
+		_scenery(_pick(["kaykit/rock_single_A", "kaykit/rock_single_B"]), Vector3(_rng.randf_range(-8.0, 8.0), 0, _rng.randf_range(-4.5, -2.3)), _rng.randf() * 360, 0.8)
 	for bx in [-3.4, 3.6]:
 		_side_prop("kaykit/bench", Vector3(bx, 0, -1.3), 0, 1.5)
 	_side_prop("kaykit/bush", Vector3(-2.4, 0, -1.3), 0, 1.3)
@@ -395,14 +403,14 @@ func _build_metro() -> void:
 	for sx in [-1.9, 1.9]:
 		if _clear_of_gap(sx * 2.0, 0.7):
 			_gulf_building(Vector3(sx * 2.0, 0, FRONT_Z - 0.6), 1.4, 1.2, 1.2, GulfArch.WHITE_WASH, false)
-	ModelLib.spawn("roads/road-sign-street", _level, Vector3(-2.5, 0, -0.62), 0)
-	ModelLib.spawn("roads/traffic-light", _level, Vector3(5.5, 0, -0.62), 0)
-	ModelLib.spawn("roads/traffic-light", _level, Vector3(-6.2, 0, 0.62), 180)
+	_scenery("roads/road-sign-street", Vector3(-2.5, 0, -0.62), 0)
+	_scenery("roads/traffic-light", Vector3(5.5, 0, -0.62), 0)
+	_scenery("roads/traffic-light", Vector3(-6.2, 0, 0.62), 180)
 	_lamp(2.6, -0.62, 0, "roads/light-square")
 	_lamp(-5.0, -0.62, 0, "roads/light-square")
 	_lamp(0.8, 0.62, 180, "roads/light-square")
-	ModelLib.spawn("cars/taxi", _level, Vector3(3.6, 0, 0.3), 90, 0.21)
-	ModelLib.spawn("cars/taxi", _level, Vector3(4.4, 0, 0.3), 90, 0.21)
+	_scenery("cars/taxi", Vector3(3.6, 0, 0.3), 90, 0.21)
+	_scenery("cars/taxi", Vector3(4.4, 0, 0.3), 90, 0.21)
 	_side_prop("kaykit/bench", Vector3(-3.6, 0, -1.3), 0, 1.5)
 	_palms_along(1.45, 5, 6.5, 1.0)
 
@@ -413,14 +421,14 @@ func _build_jbr() -> void:
 	ModelLib.plane(_level, Vector2(40, 0.25), Vector3(0, 0.015, -3.4), Color(0.85, 0.93, 0.95))
 	for i in range(8):
 		var x := -8.0 + i * 2.2 + _rng.randf_range(-0.3, 0.3)
-		ModelLib.spawn("buildings/" + _pick(SKYSCRAPERS), _level, Vector3(x, 0, -12.5), 0, 1.4)
+		_scenery("buildings/" + _pick(SKYSCRAPERS), Vector3(x, 0, -12.5), 0, 1.4)
 	_palms_along(-2.0, 9, 7.5, 1.0)
 	for i in range(6):
-		ModelLib.spawn(_pick(["buildings/detail-parasol-a", "buildings/detail-parasol-b"]), _level,
+		_scenery(_pick(["buildings/detail-parasol-a", "buildings/detail-parasol-b"]),
 			Vector3(_rng.randf_range(-7.0, 7.0), 0, _rng.randf_range(-3.2, -2.5)), _rng.randf() * 360, 1.0)
 	_lamp(-3.0, -0.62, 0)
 	_lamp(3.0, -0.62, 0)
-	ModelLib.spawn("kaykit/bench", _level, Vector3(-1.5, 0, 1.4), 180, 1.5)
+	_scenery("kaykit/bench", Vector3(-1.5, 0, 1.4), 180, 1.5)
 	_palms_along(1.45, 4, 6.0, 1.0)
 
 func _build_downtown() -> void:
@@ -431,12 +439,12 @@ func _build_downtown() -> void:
 	_lamp(4.2, -0.62, 0, "roads/light-curved-double")
 	_lamp(-1.6, 0.62, 180, "roads/light-square")
 	_lamp(2.0, 0.62, 180, "roads/light-square")
-	ModelLib.spawn("roads/traffic-light", _level, Vector3(6.0, 0, -0.62), 0)
+	_scenery("roads/traffic-light", Vector3(6.0, 0, -0.62), 0)
 	_side_prop("suburban/planter", Vector3(-2.6, 0, -1.3), 0)
 	_side_prop("kaykit/bench", Vector3(2.6, 0, -1.3), 0, 1.5)
-	ModelLib.spawn("kaykit/bench", _level, Vector3(-4.4, 0, 1.4), 180, 1.5)
+	_scenery("kaykit/bench", Vector3(-4.4, 0, 1.4), 180, 1.5)
 	_palms_along(1.45, 5, 6.5, 1.0)
-	ModelLib.spawn("cars/taxi", _level, Vector3(-4.0, 0, 0.3), 90, 0.21)
+	_scenery("cars/taxi", Vector3(-4.0, 0, 0.3), 90, 0.21)
 
 func _build_mall() -> void:
 	# Mall food court: marble floor, shop fronts, planters and skylight columns
@@ -461,10 +469,10 @@ func _build_mall() -> void:
 		k += 1
 	for cx in [-6.0, -2.0, 2.0, 6.0]:
 		_batch.add_cyl(0.08, 1.9, Color(0.88, 0.88, 0.86), _at(Vector3(cx, 0.95, -0.62)))
-		ModelLib.spawn("nature/pot_large", _level, Vector3(cx + 0.5, 0, 1.4), 0, 0.8)
-		ModelLib.spawn("nature/tree_palmShort", _level, Vector3(cx + 0.5, 0.12, 1.4), 0, 0.5)
+		_scenery("nature/pot_large", Vector3(cx + 0.5, 0, 1.4), 0, 0.8)
+		_scenery("nature/tree_palmShort", Vector3(cx + 0.5, 0.12, 1.4), 0, 0.5)
 	for bx in [-4.2, 4.4]:
-		ModelLib.spawn("kaykit/bench", _level, Vector3(bx, 0, 1.4), 180, 1.5)
+		_scenery("kaykit/bench", Vector3(bx, 0, 1.4), 180, 1.5)
 
 func _build_gv() -> void:
 	# Global Village: souk stalls, lanterns and Gulf facades
@@ -539,15 +547,17 @@ func set_time(hour: float, weather_id: String) -> void:
 	var night_sky := Color(0.07, 0.08, 0.17)
 	var e := env.environment
 	e.background_color = sky.lerp(night_sky, 1.0 - day_factor)
-	e.ambient_light_color = e.background_color.lightened(0.3)
-	e.ambient_light_energy = lerpf(0.35, 0.75, day_factor)
+	# Compatibility/WebGL has no filmic tonemapping. Keep whites below clipping so
+	# plaster, paving and food retain their colour on Safari as well as native.
+	e.ambient_light_color = Color("bccbd0").lerp(Color("617696"), 1.0 - day_factor)
+	e.ambient_light_energy = lerpf(0.32, 0.52, day_factor)
 	var warm := Color(1.0, 0.95, 0.88)
 	var dusk := Color(1.0, 0.65, 0.4)
 	var night := Color(0.55, 0.6, 0.9)
 	var dusk_t := clampf((hour - 17.0) / 2.5, 0.0, 1.0)
 	var night_t := clampf((hour - 19.5) / 2.0, 0.0, 1.0)
 	sun.light_color = warm.lerp(dusk, dusk_t).lerp(night, night_t)
-	sun.light_energy = float(w["light"]) * lerpf(0.18, 1.0, day_factor)
+	sun.light_energy = float(w["light"]) * lerpf(0.18, 0.78 if OS.has_feature("web") else 1.0, day_factor)
 	sun.rotation_degrees.x = lerpf(-52.0, -20.0, dusk_t)
 	var lamps_on := day_factor < 0.6 or weather_id == Data.BAD_WEATHER
 	var sandstorm := weather_id == Data.BAD_WEATHER

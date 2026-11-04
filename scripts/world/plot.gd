@@ -9,7 +9,7 @@ extends Node3D
 const PLOT_POS := Vector3(0.0, 0.0, -1.62)
 ## Half-width of the hole the street rows leave for the plot, per stage.
 ## The truck (stage 2) needs a short gap too, or its body sits inside the houses.
-const GAP := [0.0, 0.0, 0.9, 2.4, 3.0, 3.6]
+const GAP := [1.05, 1.65, 1.8, 2.4, 3.0, 3.6]
 const SEAT_CAP := [0, 0, 0, 10, 12, 16]
 const FIXED := 3
 const MAX_SMOKE := 3
@@ -319,10 +319,31 @@ func _label(parent: Node3D, pos: Vector3, key: String, size: int, px: float, col
 
 func _build_stage(n: Node3D) -> void:
 	match stage:
-		0: pass
+		0: _build_cart_court(n)
 		1: _build_stall(n)
 		2: _build_truck(n)
 		_: _build_kiosk(n)
+
+## A little souk courtyard gives the first cart its own silhouette and a clear queue.
+## All decoration is batched; the pavement stays level with the pedestrian path.
+func _build_cart_court(n: Node3D) -> void:
+	var b := MeshBatch.new()
+	b.add_box(Vector3(2.02, 0.025, 1.35), Color("d5ba91"), _at(Vector3(0, 0.004, 0.05)))
+	for x in range(-4, 5):
+		for z in range(5):
+			var col := Color("c6a47c") if (x + z) % 2 == 0 else Color("dfc7a2")
+			b.add_box(Vector3(0.216, 0.008, 0.24), col, _at(Vector3(x * 0.223, 0.021, -0.47 + z * 0.25)))
+	for sx in [-0.91, 0.91]:
+		b.add_box(Vector3(0.24, 0.25, 0.27), Color("b56849"), _at(Vector3(sx, 0.13, -0.34)))
+		b.add_box(Vector3(0.27, 0.035, 0.3), PlotBuilders.CREAM, _at(Vector3(sx, 0.26, -0.34)))
+		for i in range(3):
+			b.add_cyl(0.075, 0.14 if i == 1 else 0.1, Color("3e8271") if i == 1 else Color("65935d"), _at(Vector3(sx - 0.065 + i * 0.065, 0.32, -0.34)), 0.0, 6)
+		PlotBuilders.post(b, Vector3(sx, 0, -0.55), 1.34, PlotBuilders.WOOD, 0.025)
+	_bulbs.append(PlotBuilders.string_lights(n, b, Vector3(-0.91, 1.34, -0.55), Vector3(0.91, 1.34, -0.55), 9, 0.16))
+	# Small pavement inlay leads the eye to the serving counter, clear of the walking lane.
+	for sx in [-0.18, 0.18]:
+		b.add_box(Vector3(0.055, 0.009, 0.14), PlotBuilders.GOLD, _at(Vector3(sx, 0.027, 0.62)))
+	b.flush(n)
 
 ## Stage 1: canopy on four posts over the wheel-less stand, A-board and props.
 func _build_stall(n: Node3D) -> void:

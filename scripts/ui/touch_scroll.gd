@@ -95,6 +95,9 @@ func _move(pos: Vector2) -> void:
 
 func _release() -> void:
 	_touching = false
+	# Holding still before lifting a finger should stop the list, not revive an old flick.
+	if Time.get_ticks_msec() - _last_ms > 120:
+		_speed = 0.0
 	if _dragging:
 		_dragging = false
 		propagate_notification(NOTIFICATION_SCROLL_END)

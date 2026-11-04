@@ -97,6 +97,9 @@ func _build() -> void:
 		if rng.randf() < 0.5:
 			# beard
 			ModelLib.box(_head, Vector3(0.24, 0.06, 0.03), Vector3(0, 0.03, 0.125), Color(0.15, 0.1, 0.08))
+	# Each joint still animates independently; its rigid face/clothing details share draws.
+	ModelLib.batch_primitives(_body, [_head, _arm_l, _arm_r])
+	ModelLib.batch_primitives(_head)
 
 func _arm(pos: Vector3, robe: Color, skin: Color) -> Node3D:
 	var pivot := Node3D.new()
@@ -107,6 +110,8 @@ func _arm(pos: Vector3, robe: Color, skin: Color) -> Node3D:
 	var sm := SphereMesh.new()
 	sm.radius = 0.04
 	sm.height = 0.08
+	sm.radial_segments = 8
+	sm.rings = 4
 	hand.mesh = sm
 	hand.material_override = ModelLib.flat_material(skin)
 	hand.position = Vector3(0, -0.32, 0)

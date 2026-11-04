@@ -45,6 +45,7 @@ func _build() -> void:
 	var wood := Color(0.50, 0.33, 0.18)
 	var gold := Color(0.85, 0.66, 0.25)
 	var dark := Color(0.16, 0.14, 0.13)
+	var teal := Color("164d52")
 	# wheels
 	for sx in [-0.5, 0.5]:
 		var w := ModelLib.cylinder(_body, 0.11, 0.06, Vector3(sx, 0.11, 0.12), dark)
@@ -53,7 +54,7 @@ func _build() -> void:
 	_skirt = ModelLib.box(_body, Vector3(1.06, 0.14, 0.5), Vector3(0, 0.07, 0), wood.darkened(0.2))
 	_skirt.visible = false
 	# chassis + counter
-	_chassis.append(ModelLib.box(_body, Vector3(1.1, 0.42, 0.55), Vector3(0, 0.34, 0), red))
+	_chassis.append(ModelLib.box(_body, Vector3(1.1, 0.42, 0.55), Vector3(0, 0.34, 0), teal))
 	# food truck body (vehicle upgrade) sits behind the counter
 	_truck = Node3D.new()
 	_truck.visible = false
@@ -67,6 +68,17 @@ func _build() -> void:
 	ModelLib.box(_body, Vector3(1.2, 0.04, 0.66), Vector3(0, 0.57, 0), wood)
 	ModelLib.box(_body, Vector3(1.22, 0.02, 0.03), Vector3(0, 0.585, 0.33), gold)
 	ModelLib.box(_body, Vector3(1.12, 0.03, 0.02), Vector3(0, 0.42, 0.285), gold)
+	# Teak slats, brass corners and a tiny skewer seal make the cart recognisable
+	# without textures, normal maps or extra downloads.
+	for x in [-0.48, -0.36, -0.24, 0.24, 0.36, 0.48]:
+		ModelLib.box(_body, Vector3(0.012, 0.22, 0.014), Vector3(x, 0.28, 0.283), teal.lightened(0.18))
+	for x in [-0.53, 0.53]:
+		ModelLib.box(_body, Vector3(0.025, 0.36, 0.025), Vector3(x, 0.3, 0.284), gold)
+	var seal := ModelLib.cylinder(_body, 0.09, 0.012, Vector3(0, 0.29, 0.29), gold)
+	seal.rotation.x = PI / 2
+	for i in range(3):
+		ModelLib.box(_body, Vector3(0.034, 0.025, 0.012), Vector3(-0.042 + i * 0.042, 0.29, 0.304), red)
+	ModelLib.box(_body, Vector3(0.145, 0.009, 0.012), Vector3(0, 0.29, 0.307), cream)
 	# posts and roof (hidden when selling from a truck, which brings its own)
 	_roof = Node3D.new()
 	_body.add_child(_roof)
@@ -76,6 +88,8 @@ func _build() -> void:
 	var roof := ModelLib.box(_roof, Vector3(1.25, 0.05, 0.72), Vector3(0, 1.2, 0.0), red)
 	roof.rotation.x = deg_to_rad(6)
 	PlotBuilders.stripes(roof, 1.25, 0.72)
+	for i in range(7):
+		ModelLib.box(_roof, Vector3(0.17, 0.065, 0.025), Vector3(-0.54 + i * 0.18, 1.14, 0.36), red if i % 2 == 0 else cream)
 	# big awning (upgrade)
 	_awning_big = Node3D.new()
 	_body.add_child(_awning_big)
@@ -118,12 +132,14 @@ func _build() -> void:
 	ct.curve = curve
 	pm.alpha_curve = ct
 	smoke.process_material = pm
-	smoke.amount = 26
+	smoke.amount = 12
 	smoke.lifetime = 1.8
 	smoke.position = Vector3(0.12, 0.7, -0.05)
 	var sm := SphereMesh.new()
 	sm.radius = 0.035
 	sm.height = 0.07
+	sm.radial_segments = 8
+	sm.rings = 4
 	var smat := StandardMaterial3D.new()
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	smat.albedo_color = Color(0.85, 0.85, 0.85, 0.35)
@@ -131,6 +147,7 @@ func _build() -> void:
 	smat.vertex_color_use_as_albedo = true
 	sm.material = smat
 	smoke.draw_pass_1 = sm
+	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_body.add_child(smoke)
 	for i in range(4):
 		var sk := ModelLib.spawn("food/skewer" if i % 2 == 0 else "food/skewer-vegetables", _body, Vector3(0.12, 0.69, -0.16 + i * 0.075), 0, 0.5)
@@ -195,6 +212,11 @@ func _build() -> void:
 	if _helper:
 		_helper.rotation.y = deg_to_rad(-35)
 	_helper.visible = false
+	# The small decorative pieces are rigid; roofs/upgrades retain their own batches
+	# so hiding them never leaves stray geometry floating in the truck or stall.
+	ModelLib.batch_primitives(_body, [_roof, _awning_big, _speaker, _fridge, _spit] + _chassis + _wheels, false)
+	for group in [_roof, _awning_big, _speaker, _fridge]:
+		ModelLib.batch_primitives(group)
 
 func _spawn_person(model: String, pos: Vector3) -> Node3D:
 	var n := ModelLib.spawn(model, self, pos, 0, CHAR_SCALE)

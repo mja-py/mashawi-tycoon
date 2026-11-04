@@ -25,7 +25,7 @@ static func building(parent: Node3D, rng: RandomNumberGenerator, batch: MeshBatc
 	b.position = pos
 	parent.add_child(b)
 	var dark := tone.darkened(0.25)
-	ModelLib.box(b, Vector3(w, h, d), Vector3(0, h / 2.0, 0), tone)
+	batch.add_box(Vector3(w, h, d), tone, _at(pos + Vector3(0, h / 2.0, 0)))
 	# parapet with crenellations
 	for sx in [-1.0, 1.0]:
 		batch.add_box(Vector3(0.05, 0.08, d), dark, _at(pos + Vector3(sx * (w / 2.0 - 0.025), h + 0.04, 0)))

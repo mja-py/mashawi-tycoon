@@ -5,9 +5,13 @@ extends Node
 var _cache := {}
 var _weather := {}
 
-func model_icon(model: String, size: int = 128, zoom: float = 1.0) -> Texture2D:
-	if _cache.has(model):
-		return _cache[model]
+func dish_icon(id: String) -> Texture2D:
+	return model_icon(Data.MENU_ITEMS[id]["model"], 192, 1.0, true)
+
+func model_icon(model: String, size: int = 128, zoom: float = 1.0, plated: bool = false) -> Texture2D:
+	var key := ("dish:" if plated else "model:") + model
+	if _cache.has(key):
+		return _cache[key]
 	var vp := SubViewport.new()
 	vp.size = Vector2i(size, size)
 	vp.transparent_bg = true
@@ -23,32 +27,52 @@ func model_icon(model: String, size: int = 128, zoom: float = 1.0) -> Texture2D:
 		var aabb := _scene_aabb(n)
 		var center := aabb.get_center()
 		var extent := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
+		if plated:
+			# Present the existing food on a cafeteria plate. No extra downloaded art.
+			var scale_factor := 0.66 / maxf(extent, 0.01)
+			n.scale = Vector3.ONE * scale_factor
+			n.position = Vector3(-center.x, -aabb.position.y, -center.z) * scale_factor + Vector3(0, 0.035, 0)
+			ModelLib.cylinder(root, 0.47, 0.025, Vector3.ZERO, Color("bc9c72"))
+			ModelLib.cylinder(root, 0.44, 0.026, Vector3(0, 0.013, 0), Color("f2e3c3"))
+			center = Vector3(0, aabb.size.y * scale_factor * 0.35, 0)
+			extent = 1.0
 		var cam := Camera3D.new()
 		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 		cam.size = extent * 1.25 / zoom
-		cam.rotation_degrees = Vector3(-28, 35, 0)
+		cam.rotation_degrees = Vector3(-43 if plated else -28, 35, 0)
 		root.add_child(cam)
 		cam.position = center + cam.transform.basis.z * (extent * 4.0)
 		cam.current = true
 		var light := DirectionalLight3D.new()
 		light.rotation_degrees = Vector3(-45, -30, 0)
-		light.light_energy = 1.2
+		light.light_energy = 0.85 if plated else 1.2
 		root.add_child(light)
 		var env := WorldEnvironment.new()
 		var e := Environment.new()
 		e.background_mode = Environment.BG_CLEAR_COLOR
 		e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 		e.ambient_light_color = Color(0.9, 0.9, 0.95)
-		e.ambient_light_energy = 0.9
+		e.ambient_light_energy = 0.55 if plated else 0.9
 		env.environment = e
 		root.add_child(env)
-		tex = vp.get_texture()
-		# stop re-rendering after a few frames
-		get_tree().create_timer(0.5).timeout.connect(func(): vp.render_target_update_mode = SubViewport.UPDATE_DISABLED)
+		# Keep a tiny bitmap, not a viewport + model + camera for every menu icon.
+		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+		img.fill(Color.TRANSPARENT)
+		tex = ImageTexture.create_from_image(img)
+		_finish_icon.call_deferred(vp, tex)
 	else:
 		tex = PlaceholderTexture2D.new()
-	_cache[model] = tex
+		vp.queue_free()
+	_cache[key] = tex
 	return tex
+
+func _finish_icon(vp: SubViewport, tex: ImageTexture) -> void:
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := vp.get_texture().get_image()
+	if img and not img.is_empty():
+		tex.set_image(img)
+	vp.queue_free()
 
 func _scene_aabb(n: Node) -> AABB:
 	var result := AABB()

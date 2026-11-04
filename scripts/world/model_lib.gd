@@ -190,3 +190,28 @@ static func plane(parent: Node, size: Vector2, pos: Vector3, color: Color) -> Me
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
+
+## Collapse rigid primitive details by material, retaining the transform hierarchy
+## for animated joints and independently hidden upgrades. Shared meshes stay intact.
+static func batch_primitives(root: Node3D, skip: Array = [], shadows: bool = true) -> void:
+	var batch := MeshBatch.new()
+	_batch_primitives(root, Transform3D.IDENTITY, batch, skip, true)
+	for mi in batch.flush(root):
+		if not shadows:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+static func _batch_primitives(n: Node, xf: Transform3D, batch: MeshBatch, skip: Array, is_root: bool = false) -> void:
+	if n in skip:
+		return
+	var here := xf
+	if n is Node3D and not is_root:
+		here = xf * (n as Node3D).transform
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		var mat := mi.material_override as StandardMaterial3D
+		if mat and mi.mesh is BoxMesh:
+			var emission := mat.emission_energy_multiplier if mat.emission_enabled else 0.0
+			batch.add_box((mi.mesh as BoxMesh).size, mat.albedo_color, here, emission)
+			mi.mesh = null
+	for child in n.get_children():
+		_batch_primitives(child, here, batch, skip)

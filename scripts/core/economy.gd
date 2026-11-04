@@ -386,3 +386,39 @@ static func goal_progress(goal: Dictionary, snap: Dictionary) -> float:
 ## Rough number of customers to expect today, for the supplies screen.
 static func expected_customers(ctx: Dictionary) -> int:
 	return int(round(throughput_estimate(ctx)["served"]))
+
+## Cheapest combination of whole packs covering a deficit. Avoid filling a small
+## shortage with a large bulk pack that costs more and spoils overnight.
+static func supply_packs(packs: Array, deficit: int) -> Dictionary:
+	if deficit <= 0:
+		return {"cost": 0.0, "counts": []}
+	var largest := 0
+	for p in packs:
+		largest = maxi(largest, int(p[0]))
+	var limit := deficit + largest
+	var costs := PackedFloat64Array()
+	var choices := PackedInt32Array()
+	costs.resize(limit)
+	costs.fill(INF)
+	choices.resize(limit)
+	choices.fill(-1)
+	costs[0] = 0.0
+	for qty in range(1, limit):
+		for i in range(packs.size()):
+			var prev := qty - int(packs[i][0])
+			if prev >= 0 and costs[prev] + float(packs[i][1]) < costs[qty]:
+				costs[qty] = costs[prev] + float(packs[i][1])
+				choices[qty] = i
+	var best := deficit
+	for qty in range(deficit, limit):
+		if costs[qty] < costs[best]:
+			best = qty
+	var counts := []
+	counts.resize(packs.size())
+	counts.fill(0)
+	var total := costs[best]
+	while best > 0 and choices[best] >= 0:
+		var idx := choices[best]
+		counts[idx] += 1
+		best -= int(packs[idx][0])
+	return {"cost": total, "counts": counts}

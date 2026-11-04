@@ -73,7 +73,8 @@ func _process(delta: float) -> void:
 		_car_timer = _rng.randf_range(2.5, 7.0) / maxf(0.4, float(loc["traffic"]))
 	_ambient_timer -= delta
 	if _ambient_timer <= 0.0:
-		world.spawn_walker(1 if _rng.randf() < 0.5 else -1, false)
+		if world.walkers < World.MAX_WALKERS:
+			world.spawn_walker(1 if _rng.randf() < 0.5 else -1, false)
 		_ambient_timer = _rng.randf_range(3.0, 9.0) / maxf(0.4, float(loc["traffic"]))
 	# the pipeline
 	var before := tp.queue_payloads()

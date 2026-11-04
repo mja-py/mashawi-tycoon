@@ -8,6 +8,10 @@ var sim: DaySim
 var hud: Node
 var phase: Phase = Phase.TITLE
 var speed := 1.0
+var _quality_time := 0.0
+var _quality_frames := 0
+var _quality_warmup := 4.0
+var _web_visibility_callback: JavaScriptObject
 
 func _ready() -> void:
 	world = World.new()
@@ -24,12 +28,46 @@ func _ready() -> void:
 	_apply_dev_flags()
 	if OS.has_feature("web"):
 		_apply_web_quality()
+		_web_visibility_callback = JavaScriptBridge.create_callback(_on_web_visibility)
+		JavaScriptBridge.get_interface("window").godotSetPaused = _web_visibility_callback
+		JavaScriptBridge.eval("if (window.godotSyncVisibility) window.godotSyncVisibility()")
 		# tells the HTML shell to drop its loading overlay
 		JavaScriptBridge.eval("window.dispatchEvent(new Event('godot-ready'))")
 
-## WebGL on Retina phones: the 3D view renders at 3/4 of the canvas (never less) and the UI
-## stays at full resolution. 1x and 2x desktop screens keep full resolution. `?dev=--scale3d=1`
-## forces full size for comparison.
+func _on_web_visibility(args: Array) -> void:
+	# A phone call, app switch or portrait rotate guard must not spend the day
+	# while the player cannot see or control the stand.
+	if not args.is_empty():
+		get_tree().paused = bool(args[0])
+		_publish_state()
+
+## Sustained slow frames lower only the 3D resolution; menus/text stay crisp.
+## Use real frame time: the player's simulation speed must not change this decision.
+func _process(_delta: float) -> void:
+	if not OS.has_feature("web") or DevTools.has("scale3d"):
+		return
+	var dt := get_process_delta_time() / maxf(Engine.time_scale, 0.01)
+	if _quality_warmup > 0.0:
+		_quality_warmup -= dt
+		return
+	# Ignore tab suspension and one-off long frames from opening a menu.
+	if dt > 0.2:
+		_quality_time = 0.0
+		_quality_frames = 0
+		return
+	_quality_time += dt
+	_quality_frames += 1
+	if _quality_time < 3.0:
+		return
+	var fps := _quality_frames / _quality_time
+	var vp := get_viewport()
+	if fps < 42.0:
+		vp.scaling_3d_scale = maxf(0.6, vp.scaling_3d_scale - 0.05)
+	_quality_time = 0.0
+	_quality_frames = 0
+
+## WebGL starts at 75-100% resolution, then can step down to 60% on slow devices.
+## The UI stays at full resolution. `?dev=--scale3d=1` disables adaptation for comparisons.
 func _apply_web_quality() -> void:
 	if DevTools.has("scale3d"):
 		return
@@ -152,8 +190,9 @@ func _publish_state() -> void:
 	if not OS.has_feature("web"):
 		return
 	var names := ["title", "prep", "day", "report"]
-	JavaScriptBridge.eval("window.godotState = {phase: '%s', hasSave: %s, day: %d, money: %d, panel: '%s'}" % [
-		names[phase], "true" if Game.has_save() else "false", Game.day, int(Game.money), hud.current_panel if hud else ""])
+	JavaScriptBridge.eval("window.godotState = {phase: '%s', hasSave: %s, day: %d, money: %d, panel: '%s', paused: %s, menuItem: '%s'}" % [
+		names[phase], "true" if Game.has_save() else "false", Game.day, int(Game.money), hud.current_panel if hud else "",
+		"true" if get_tree().paused else "false", hud.selected_dish if hud else ""])
 
 func show_title() -> void:
 	phase = Phase.TITLE
@@ -175,7 +214,6 @@ func continue_game() -> void:
 ## Title -> prep behind a short curtain (the street is rebuilt for the saved place).
 func _enter_prep(then: Callable) -> void:
 	var go := func():
-		world.set_location(Game.location)
 		show_prep()
 		if then.is_valid():
 			then.call()

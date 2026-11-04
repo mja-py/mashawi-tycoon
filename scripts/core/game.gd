@@ -443,6 +443,74 @@ func buy_pack(ingredient: String, pack_index: int) -> bool:
 	changed.emit()
 	return true
 
+## One-tap daily top-up. Forecast, menu, recipes and existing stock all count;
+## the quote is read-only and the whole purchase succeeds or nothing is bought.
+func daily_stock_plan() -> Dictionary:
+	var ctx := sim_context()
+	ctx["weather"] = forecast
+	var customers := Economy.expected_customers(ctx)
+	var items: Array = ctx["offer"]
+	var sums := {"food": 0.0, "drink": 0.0, "side": 0.0, "sweet": 0.0}
+	var counts := {"food": 0, "drink": 0, "side": 0, "sweet": 0}
+	for item in items:
+		if item_available(item["id"]):
+			sums[item["kind"]] += float(item["value"])
+			counts[item["kind"]] += 1
+	var ds := Economy.drink_share(forecast)
+	var bonus := 0.25 * float(ctx["dine_in_share"])
+	var drink_p := 0.65 if forecast == "hot" else (0.2 if forecast == "breeze" else 0.3)
+	var needs := {}
+	for item in items:
+		if not item_available(item["id"]):
+			continue
+		var kind: String = item["kind"]
+		if float(sums.get(kind, 0.0)) <= 0.0:
+			continue
+		var share := 0.0
+		if kind in ["food", "drink"]:
+			share = (ds if kind == "drink" else 1.0 - ds) * float(item["value"]) / float(sums[kind])
+		# Add-ons follow DaySim's uniform pick and its price-dependent appeal.
+		if kind != "food":
+			var base_price := float(Data.MENU_ITEMS[item["id"]]["base_price"])
+			var appeal := clampf(1.6 - float(item["price"]) / base_price * 0.9, 0.0, 1.0)
+			var chance := drink_p if kind == "drink" else (0.4 if kind == "side" else 0.35)
+			if counts["food"] > 0:
+				share += (1.0 - ds) * (chance + bonus) * appeal / int(counts[kind])
+		var portions := ceili(customers * share * 1.1)
+		var recipe := Economy.portion_ingredients(item["id"], menu[item["id"]])
+		for ing in recipe:
+			needs[ing] = int(needs.get(ing, 0)) + portions * int(recipe[ing])
+	var orders := []
+	var cost := 0.0
+	for ing in needs:
+		var deficit := int(needs[ing]) - int(inventory.get(ing, 0))
+		if deficit <= 0:
+			continue
+		var quote := Economy.supply_packs(Data.INGREDIENTS[ing]["packs"], deficit)
+		cost += float(quote["cost"])
+		for i in range(quote["counts"].size()):
+			if int(quote["counts"][i]) > 0:
+				orders.append([ing, i, int(quote["counts"][i])])
+	return {"cost": cost, "orders": orders, "customers": customers}
+
+func stock_for_today() -> bool:
+	var plan := daily_stock_plan()
+	var cost := float(plan["cost"])
+	# Leave the day's unavoidable bills in the till.
+	if cost <= 0.0 or cost > maxf(0.0, money - float(loc()["rent"]) - daily_wages()):
+		return false
+	money -= cost
+	for order in plan["orders"]:
+		var ing: String = order[0]
+		var pack: Array = Data.INGREDIENTS[ing]["packs"][order[1]]
+		var have := int(inventory.get(ing, 0))
+		var qty := int(pack[0]) * int(order[2])
+		avg_cost[ing] = (have * ingredient_cost(ing) + float(pack[1]) * int(order[2])) / float(have + qty)
+		inventory[ing] = have + qty
+	notify.emit(tr("ui.stock_done"), "good")
+	changed.emit()
+	return true
+
 ## [lowest, highest] price allowed for an item where the stand is today.
 func price_range(item_id: String) -> Array:
 	return Economy.price_range(item_id, loc(), stage_def())

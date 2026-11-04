@@ -1,6 +1,6 @@
 keys,en,ar
 ui.title,MASHAWI TYCOON,مشاوي تايكون
-ui.subtitle,Build the best mashawi stand in Dubai.,ابنِ أفضل عربة مشاوي في دبي.
+ui.subtitle,Your little grill. A Dubai favourite.,شوايتك الصغيرة. نكهة دبي المفضلة.
 ui.new_game,New Game,لعبة جديدة
 ui.continue,Continue,متابعة
 ui.lang_toggle,العربية,English
@@ -96,7 +96,7 @@ ev.sold_out_item,You're sold out of %s!,نفد %s!
 ev.out_of,Out of %s!,نفد %s!
 ev.closing,Closing already?,تغلقون بهذه السرعة؟
 ui.w_title,Welcome to Dubai!,مرحبًا بك في دبي!
-ui.w1,"1.  Buy supplies for about as many customers as you expect. Meat spoils overnight, so buy fresh every day.",1.  اشترِ مؤنًا بقدر الزبائن المتوقعين. اللحم يفسد خلال الليل، فاشترِ طازجًا كل يوم.
+ui.w1,"1. Tap Supplies, then Stock today. It tops up your menu ingredients and keeps money aside for rent and wages.",1. افتح المؤن واضغط مؤن اليوم. تكمل مكونات قائمتك مع الاحتفاظ بالإيجار والأجور.
 ui.w2,2.  Keep Chicken Tikka ON the menu. Set a fair price: customers compare quality to price.,2.  أبقِ تكة الدجاج في القائمة. ضع سعرًا عادلًا: الزبائن يقارنون الجودة بالسعر.
 ui.w3,3.  Reputation grows with happy customers. More stars unlock busier places.,3.  السمعة تنمو مع الزبائن السعداء. النجوم تفتح أماكن أكثر ازدحامًا.
 ui.w4,"4.  Build stations (counter, grill, lights...) level by level, follow the Goals tab, and grow from a cart to a restaurant.",4.  ابنِ المحطات (الكاونتر، الشواية، الإضاءة...) مستوى بعد مستوى، تابع تبويب الأهداف، وكبّر من عربة إلى مطعم.
@@ -448,3 +448,16 @@ goal.levels60.say,You know every station better than I ever did. Time to think a
 goal.stars45,Four and a half stars,أربع نجوم ونصف
 goal.stars45.desc,Reach 4.5 stars of reputation.,وصّل سمعتك إلى 4.5 نجمة.
 goal.stars45.say,Four and a half stars. People drive across the city for your mashawi now.,أربع نجوم ونصف. الناس يقطعون المدينة من أجل مشاويك الآن.
+ui.stock_today,Stock today · %s,مؤن اليوم · %s
+ui.stock_ready,Stocked for today,مؤن اليوم جاهزة
+ui.stock_hint,Top up for the forecast crowd with a small buffer. Uses your current stock and keeps rent and wages aside.,تكملة المؤن حسب الزبائن المتوقعين مع احتياط بسيط. تراعي مخزونك وتحتفظ بالإيجار والأجور.
+ui.stock_done,Fresh supplies ready. Open your stand!,المؤن الطازجة جاهزة. افتح محلك!
+ui.m_back,All dishes,كل الأطباق
+ui.m_serving,On the menu,نقدّمه اليوم
+ui.m_resting,Off the menu,خارج القائمة اليوم
+ui.m_new_dish,Not on your menu yet,طبق جديد لمحلك
+ui.m_discover,A new flavour for your stand,نكهة جديدة لمحلك
+ui.m_edit_dish,Price & recipe,السعر والوصفة
+ui.m_view_dish,Meet this dish,تعرّف على الطبق
+ui.m_house_recipe,Your house recipe,خلطة المحل
+ui.m_make_special,Make it your speciality,خلّه طبقك المميز

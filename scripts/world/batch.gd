@@ -29,10 +29,10 @@ func add_cyl(radius: float, height: float, color: Color, xform: Transform3D, emi
 		ModelLib.flat_material(color, emission), _scaled(xform, Vector3(radius, height, radius)))
 
 ## A Kenney model by short name, drawn with its own (imported) materials.
-func add_model(name: String, xform: Transform3D) -> void:
+func add_model(name: String, xform: Transform3D, material: Material = null) -> void:
 	var parts := ModelLib.meshes_of(name)
 	for i in range(parts.size()):
-		_add("model|%s|%d" % [name, i], parts[i][0], null, xform * (parts[i][1] as Transform3D))
+		_add("model|%s|%d|%s" % [name, i, str(material.get_rid()) if material else ""], parts[i][0], material, xform * (parts[i][1] as Transform3D))
 
 func is_empty() -> bool:
 	return _order.is_empty()

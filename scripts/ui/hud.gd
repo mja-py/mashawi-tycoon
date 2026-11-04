@@ -26,6 +26,7 @@ var ticker_label: Label
 var panel_dim: PanelContainer
 var panel: PanelContainer
 var panel_title: Label
+var stock_button: Button
 const TouchScroll := preload("res://scripts/ui/touch_scroll.gd")
 
 var panel_scroll: ScrollContainer
@@ -36,6 +37,7 @@ var panel_chips: HBoxContainer
 ## Cards of the open panel are laid out in a grid: two columns on wide screens.
 var panel_grid: GridContainer
 var menu_group := "food"
+var selected_dish := ""
 var current_panel := ""
 ## Width (logical px) from which panels show two columns of cards.
 const TWO_COLUMNS_FROM := 1100.0
@@ -136,10 +138,31 @@ func _build_fps_overlay() -> void:
 	root.add_child(_fps_label)
 
 func _process(_delta: float) -> void:
+	if OS.has_feature("web") and DevTools.has("uitest") and Engine.get_process_frames() % 15 == 0:
+		_publish_menu_targets()
 	if _fps_label and Engine.get_process_frames() % 15 == 0:
 		_fps_label.text = "%d fps  %d draws  %dx%d" % [Engine.get_frames_per_second(),
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 			DisplayServer.window_get_size().x, DisplayServer.window_get_size().y]
+
+## Dev-only geometry for real browser taps across phone sizes and RTL/LTR layouts.
+func _menu_target(b: Button, id: String) -> Button:
+	if DevTools.has("uitest"):
+		b.set_meta("menu_target", id)
+	return b
+
+func _publish_menu_targets() -> void:
+	var targets := {}
+	var vp := root.get_viewport_rect().size
+	for node in panel.find_children("*", "Button", true, false):
+		var b := node as Button
+		if not b.is_visible_in_tree() or not b.has_meta("menu_target"):
+			continue
+		var center := b.get_global_rect().get_center()
+		if panel_scroll.is_ancestor_of(b) and not panel_scroll.get_global_rect().encloses(b.get_global_rect()):
+			continue
+		targets[b.get_meta("menu_target")] = {"x": center.x / vp.x, "y": center.y / vp.y, "disabled": b.disabled}
+	JavaScriptBridge.eval("window.godotMenuTargets = " + JSON.stringify(targets))
 
 ## Keep bars and panels out of notches / rounded corners on phones.
 func _apply_safe_area() -> void:
@@ -374,6 +397,12 @@ func _build_panel() -> void:
 	panel_title = _label(tr("ui.supplies"), "Heading")
 	panel_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(panel_title)
+	stock_button = _button("", "Primary", Vector2(180, 60))
+	stock_button.visible = false
+	stock_button.pressed.connect(func():
+		if Game.stock_for_today():
+			Sfx.play("confirm"))
+	head.add_child(stock_button)
 	var close := _button(tr("ui.close"), "Ghost", Vector2(110, 48))
 	close.pressed.connect(close_panel)
 	head.add_child(close)
@@ -435,24 +464,15 @@ func _build_title() -> void:
 	v.add_theme_constant_override("separation", 14)
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	p.add_child(v)
-	# sunset band behind the logo (terracotta fading to gold), logo with a dark outline
+	# The title reads like the painted name above a neighbourhood cafeteria.
 	var band := PanelContainer.new()
 	band.theme_type_variation = "Plain"
 	v.add_child(band)
-	var grad := TextureRect.new()
-	grad.texture = UiTheme.sunset()
-	grad.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	grad.stretch_mode = TextureRect.STRETCH_SCALE
-	grad.modulate = Color(1, 1, 1, 0.55)
-	grad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	band.add_child(grad)
 	var logo := _label(tr("ui.title"), "Title", HORIZONTAL_ALIGNMENT_CENTER)
 	logo.add_theme_font_size_override("font_size", 64)
-	logo.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+	logo.add_theme_color_override("font_color", UiTheme.INK)
 	logo.add_theme_color_override("font_outline_color", UiTheme.NIGHT_DARK)
-	logo.add_theme_constant_override("outline_size", 10)
-	logo.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.45))
-	logo.add_theme_constant_override("shadow_offset_y", 4)
+	logo.add_theme_constant_override("outline_size", 0)
 	band.add_child(logo)
 	v.add_child(_divider())
 	v.add_child(_label(tr("ui.subtitle"), "Muted", HORIZONTAL_ALIGNMENT_CENTER))
@@ -571,7 +591,7 @@ func show_report(r: Dictionary) -> void:
 	if bn != "" and bn != "arrivals":
 		var bl := _label(tr("ui.r_bottleneck") % _station_name(bn), "Small")
 		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		bl.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+		bl.add_theme_color_override("font_color", UiTheme.GOLD)
 		bl.add_theme_font_override("font", UiTheme.bold())
 		v1.add_child(bl)
 	# the sold list can get long, so it gets its own wrapped line under the table
@@ -767,6 +787,8 @@ func _toggle_panel(id: String) -> void:
 		open_panel(id)
 
 func open_panel(id: String) -> void:
+	if current_panel != id:
+		selected_dish = ""
 	Sfx.play("open")
 	current_panel = id
 	for k in tabs:
@@ -822,6 +844,7 @@ func _rebuild_panel(animate: bool = false) -> void:
 		panel_body.remove_child(c)
 		c.queue_free()
 	panel_grid = null
+	stock_button.visible = current_panel == "supplies"
 	panel_chips.visible = current_panel == "menu"
 	for c in panel_chips.get_children():
 		panel_chips.remove_child(c)
@@ -853,6 +876,11 @@ func _needed_ingredients() -> Array:
 	return ordered
 
 func _fill_supplies() -> void:
+	var plan := Game.daily_stock_plan()
+	var cost := float(plan["cost"])
+	stock_button.text = tr("ui.stock_today") % Loc.money(cost) if cost > 0.0 else tr("ui.stock_ready")
+	stock_button.disabled = cost <= 0.0 or cost > maxf(0.0, Game.money - float(Game.loc()["rent"]) - Game.daily_wages())
+	stock_button.tooltip_text = tr("ui.stock_hint")
 	var hint := tr("ui.s_hint") % int(Game.spoil_rate("chicken") * 100)
 	if Game.station_level("coldbox") < 3:
 		hint += tr("ui.s_hint_fridge") % int(float(Data.STATIONS["coldbox"]["spoil_meat"][1]) * 100)
@@ -890,7 +918,7 @@ func _fill_supplies() -> void:
 		for i in range(packs.size()):
 			var text := "%s  ·  %s" % [Loc.ltr("+%d" % int(packs[i][0])), Loc.money(float(packs[i][1]))]
 			var b := _buy_button(text, float(packs[i][1]), Game.buy_pack.bind(ing, i), 0, "")
-			b.custom_minimum_size = Vector2(0, 50)
+			b.custom_minimum_size = Vector2(0, 60)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			row.add_child(b)
 
@@ -907,16 +935,28 @@ func _quality_text(q: float) -> String:
 		return tr("ui.q_poor")
 	return tr("ui.q_awful")
 
+func _select_dish(id: String) -> void:
+	selected_dish = id
+	panel_scroll.scroll_vertical = 0
+	_rebuild_panel()
+	if main:
+		main._publish_state()
+
 func _fill_menu() -> void:
-	_hint(tr("ui.m_hint"))
-	# one group at a time (filter chips under the title) keeps the list short on phones
-	var groups := []
+	if selected_dish != "" and Data.MENU_ITEMS.has(selected_dish):
+		var back := _button(tr("ui.m_back"), "Ghost", Vector2(200, 52))
+		_menu_target(back, "back_dishes")
+		back.pressed.connect(func(): _select_dish(""))
+		panel_chips.add_child(back)
+		_menu_detail(selected_dish)
+		return
 	for group in Data.MENU_GROUPS:
-		groups.append(group[0])
-	if not groups.has(menu_group):
-		menu_group = groups[0]
-	for group in Data.MENU_GROUPS:
-		var b := _button(tr(group[1]), "Filter", Vector2(0, 48))
+		var count := 0
+		for id in Data.MENU_ITEMS:
+			if Data.MENU_ITEMS[id]["kind"] == group[0]:
+				count += 1
+		var b := _button("%s  ·  %d" % [tr(group[1]), count], "Filter", Vector2(0, 52))
+		_menu_target(b, "category_" + String(group[0]))
 		b.toggle_mode = true
 		b.button_pressed = group[0] == menu_group
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -924,98 +964,129 @@ func _fill_menu() -> void:
 		b.pressed.connect(func():
 			Sfx.play("switch")
 			menu_group = gid
-			panel_scroll.scroll_vertical = 0
-			_rebuild_panel(true))
+			_select_dish(""))
 		panel_chips.add_child(b)
 	for id in Data.MENU_ITEMS:
 		if Data.MENU_ITEMS[id]["kind"] == menu_group:
 			_menu_card(id)
 
-## Compact card: name + switch row, price row (with range, quality and next upgrade),
-## and for grilled items a third row with the recipe steppers.
+## The menu is a selection of dishes, not a wall of recipe controls.
 func _menu_card(id: String) -> void:
 	var def: Dictionary = Data.MENU_ITEMS[id]
 	var m: Dictionary = Game.menu[id]
-	# the icon sits in the name row (not beside the card) so the price and recipe rows get the full width
-	var v := _item_card(null, "", tr(def["desc"]) if not m["unlocked"] else "", 48)
-	v.add_theme_constant_override("separation", 6)
-	# name row with the on/off switch (and the quality bar once unlocked)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 10)
-	v.add_child(head)
-	v.move_child(head, 0)
-	head.add_child(_icon(Icons.model_icon(def["model"]), 40))
-	var name := _label(tr(def["name"]), "Heading")
-	name.add_theme_font_size_override("font_size", 23)
-	head.add_child(name)
+	var card := _card()
+	_cards_grid().add_child(card)
+	panel_grid.columns = 2 if panel.custom_minimum_size.x >= 850 else 1
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	card.add_child(v)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 14)
+	v.add_child(h)
+	var image := _icon(Icons.dish_icon(id), 124)
+	image.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(image)
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", 3)
+	h.add_child(text)
+	var title := _label(tr(def["name"]), "Heading")
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_child(title)
+	var status := tr("ui.m_serving") if m["unlocked"] and m["enabled"] else (tr("ui.m_resting") if m["unlocked"] else tr("ui.m_new_dish"))
+	if not m["unlocked"] and not Game.item_available(id):
+		status = tr("ui.locked_by") % tr(Data.STATIONS[Game.required_station(def)]["name"])
+		image.modulate.a = 0.5
+	var state_label := _label(status, "Small")
+	state_label.add_theme_color_override("font_color", UiTheme.GOOD if m["unlocked"] and m["enabled"] else UiTheme.MUTED)
+	text.add_child(state_label)
+	if m["unlocked"]:
+		text.add_child(_label(Loc.money(float(m["price"])), "Big"))
+	else:
+		text.add_child(_label(tr("ui.m_discover"), "Muted"))
+	var select := _button(tr("ui.m_edit_dish") if m["unlocked"] else tr("ui.m_view_dish"), "Ghost", Vector2(0, 56))
+	_menu_target(select, "select_" + id)
+	select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	select.pressed.connect(func():
+		Sfx.play("open")
+		_select_dish(id))
+	v.add_child(select)
+
+func _menu_sheet() -> VBoxContainer:
+	var card := _card()
+	panel_body.add_child(card)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	card.add_child(v)
+	return v
+
+## One dish at a time. Buying, selling, price and recipe have separate readable rows.
+func _menu_detail(id: String) -> void:
+	var def: Dictionary = Data.MENU_ITEMS[id]
+	var m: Dictionary = Game.menu[id]
+	var intro := _menu_sheet()
+	var hero := HBoxContainer.new()
+	hero.add_theme_constant_override("separation", 18)
+	intro.add_child(hero)
+	hero.add_child(_icon(Icons.dish_icon(id), 112))
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hero.add_child(info)
+	info.add_child(_label(tr(def["name"]), "Heading"))
+	info.add_child(_label(tr(def["desc"]), "Muted"))
 	if not m["unlocked"]:
 		if not Game.item_available(id):
-			_card_action(v, _locked_button(tr("ui.locked_by") % tr(Data.STATIONS[Game.required_station(def)]["name"]), 220))
+			intro.add_child(_locked_button(tr("ui.locked_by") % tr(Data.STATIONS[Game.required_station(def)]["name"])))
 		else:
-			_card_action(v, _buy_button(tr("ui.m_add") % Loc.money(float(def["unlock_cost"])), float(def["unlock_cost"]), Game.unlock_item.bind(id), 220))
+			intro.add_child(_menu_target(_buy_button(tr("ui.m_add") % Loc.money(float(def["unlock_cost"])), float(def["unlock_cost"]), Game.unlock_item.bind(id)), "unlock"))
 		return
-	var q := Game.quality(id)
-	var bar := ProgressBar.new()
-	bar.min_value = 0.3
-	bar.max_value = 1.3
-	bar.value = q
-	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(70, 10)
-	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	head.add_child(bar)
-	var qual := _label(tr("ui.m_quality") % _quality_text(q), "Small")
-	qual.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	qual.autowrap_mode = TextServer.AUTOWRAP_OFF
-	qual.clip_text = true
-	head.add_child(qual)
-	head.add_child(_toggle_button(m["enabled"], tr("ui.m_on"), tr("ui.m_off"), func(on: bool): Game.set_enabled(id, on)))
-	# price row: stepper, allowed range, next enhancement
-	var pr := HBoxContainer.new()
-	pr.add_theme_constant_override("separation", 8)
-	v.add_child(pr)
+	info.add_child(_label(tr("ui.m_quality") % _quality_text(Game.quality(id)), "Small"))
+	var toggle := _toggle_button(m["enabled"], tr("ui.m_on"), tr("ui.m_off"), func(on: bool): Game.set_enabled(id, on))
+	toggle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hero.add_child(_menu_target(toggle, "on_sale"))
+	var pricing := _menu_sheet()
+	var price_row := HBoxContainer.new()
+	price_row.add_theme_constant_override("separation", 12)
+	pricing.add_child(price_row)
 	var r := Game.price_range(id)
 	var price := float(m["price"])
-	_stepper(pr, tr("ui.m_price"), Loc.money(price), 92, "Big",
-		func(d: int): Game.set_price(id, float(Game.menu[id]["price"]) + d), Vector2(52, 48),
-		price > float(r[0]), price < float(r[1]))
-	var range_l := _label(tr("ui.m_range_cost") % [Loc.ltr("%d-%d" % [int(r[0]), int(r[1])]), Loc.money(Game.unit_cost(id))], "Muted")
-	range_l.autowrap_mode = TextServer.AUTOWRAP_OFF
-	range_l.add_theme_font_size_override("font_size", 15)
-	range_l.size_flags_horizontal = 0
-	pr.add_child(range_l)
+	var price_buttons := _stepper(price_row, tr("ui.m_price"), Loc.money(price), 130, "Big",
+		func(d: int): Game.set_price(id, float(Game.menu[id]["price"]) + d), Vector2(64, 60), price > float(r[0]), price < float(r[1]))
+	_menu_target(price_buttons[0], "price_down")
+	_menu_target(price_buttons[1], "price_up")
+	pricing.add_child(_label(tr("ui.m_range_cost") % [Loc.ltr("%d–%d" % [int(r[0]), int(r[1])]), Loc.money(Game.unit_cost(id))], "Muted"))
+	if def["recipe"]:
+		var recipe := _menu_sheet()
+		recipe.add_child(_label(tr("ui.m_house_recipe"), "Heading"))
+		var flow := HFlowContainer.new()
+		flow.add_theme_constant_override("h_separation", 24)
+		flow.add_theme_constant_override("v_separation", 10)
+		recipe.add_child(flow)
+		for key in Data.RECIPE_SLIDERS:
+			var group := VBoxContainer.new()
+			group.custom_minimum_size.x = 240
+			flow.add_child(group)
+			var s: Dictionary = Data.RECIPE_SLIDERS[key]
+			group.add_child(_label(tr(s["name"]), "Muted"))
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+			group.add_child(row)
+			var cur := int(m["recipe"][key])
+			var recipe_buttons := _stepper(row, "", str(cur), 50, "Big",
+				func(d: int): Game.set_recipe(id, key, int(Game.menu[id]["recipe"][key]) + d), Vector2(60, 56),
+				cur > int(s["min"]), cur < int(s["max"]))
+			_menu_target(recipe_buttons[0], "recipe_" + key + "_down")
+			_menu_target(recipe_buttons[1], "recipe_" + key + "_up")
 	var enh: Array = def["enhance"]
 	var level := int(m["level"])
 	if level < enh.size():
+		var upgrade := _menu_sheet()
+		upgrade.add_child(_label(tr("ui.m_make_special"), "Heading"))
 		var nxt: Dictionary = enh[level]
-		# takes whatever width is left; long upgrade names get an ellipsis instead of pushing the row
-		var eb := _buy_button("%s  ·  %s" % [tr(nxt["name"]), Loc.money(float(nxt["cost"]))], float(nxt["cost"]), Game.enhance_item.bind(id), 0, "")
-		eb.custom_minimum_size = Vector2(120, 48)
-		eb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		eb.clip_text = true
-		eb.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		eb.add_theme_font_size_override("font_size", 17)
-		pr.add_child(eb)
+		upgrade.add_child(_menu_target(_buy_button("%s  ·  %s" % [tr(nxt["name"]), Loc.money(float(nxt["cost"]))], float(nxt["cost"]), Game.enhance_item.bind(id)), "enhance"))
 	else:
-		var full := _label(tr("ui.m_full"), "Money")
-		full.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		full.autowrap_mode = TextServer.AUTOWRAP_OFF
-		pr.add_child(full)
-	# recipe
-	if def["recipe"]:
-		var rr := HBoxContainer.new()
-		rr.add_theme_constant_override("separation", 12)
-		v.add_child(rr)
-		for key in Data.RECIPE_SLIDERS:
-			var g := HBoxContainer.new()
-			g.add_theme_constant_override("separation", 4)
-			g.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			g.alignment = BoxContainer.ALIGNMENT_CENTER
-			rr.add_child(g)
-			var s: Dictionary = Data.RECIPE_SLIDERS[key]
-			var cur := int(m["recipe"][key])
-			_stepper(g, tr(s["name"]), str(cur), 26, "Heading",
-				func(d: int): Game.set_recipe(id, key, int(Game.menu[id]["recipe"][key]) + d), Vector2(48, 44),
-				cur > int(s["min"]), cur < int(s["max"]))
+		intro.add_child(_label(tr("ui.m_full"), "Money"))
+
 
 func _fill_place() -> void:
 	_hint(tr("ui.p_hint"))
@@ -1049,7 +1120,7 @@ func _fill_place() -> void:
 		if built >= Game.FIXED_FROM_TIER:
 			var bdef := Data.stage_def(built)
 			var bc := _chip(tr("ui.p_built") % tr(bdef["name"]), Icons.model_icon(bdef["icon"]), true)
-			bc.get_child(0).get_child(1).add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+			bc.get_child(0).get_child(1).add_theme_color_override("font_color", UiTheme.GOLD)
 			chips.add_child(bc)
 		if Game.plots.has(id):
 			chips.add_child(_chip(tr("ui.p_local") % Loc.ltr("%.1f" % (float(Game.plots[id]["reputation"]) * 5.0)), null, true))
@@ -1312,7 +1383,8 @@ func _buy_button(text: String, cost: float, action: Callable, width: float = 170
 
 ## label  [-]  value  [+]   with on_delta.call(-1 / +1). The buttons grey out at the ends.
 func _stepper(parent: Container, label: String, value: String, value_w: float, variation: String, on_delta: Callable,
-		btn: Vector2 = Vector2(56, 52), can_dec: bool = true, can_inc: bool = true) -> void:
+		btn: Vector2 = Vector2(56, 52), can_dec: bool = true, can_inc: bool = true) -> Array[Button]:
+	var buttons: Array[Button] = []
 	var nl := _label(label, "Muted")
 	nl.size_flags_horizontal = 0
 	nl.autowrap_mode = TextServer.AUTOWRAP_OFF
@@ -1331,6 +1403,8 @@ func _stepper(parent: Container, label: String, value: String, value_w: float, v
 			Sfx.play("tick")
 			on_delta.call(d))
 		parent.add_child(b)
+		buttons.append(b)
+	return buttons
 
 # ================================================================= motion
 
@@ -1420,13 +1494,13 @@ func _money_pop(gain: bool) -> void:
 	_money_tween.parallel().tween_method(func(k: float):
 		money_label.add_theme_color_override("font_color", (UiTheme.GOOD if gain else UiTheme.BAD).lerp(UiTheme.GOLD_LIGHT, k)), 0.0, 1.0, 0.5)
 
-## Faint eight-pointed-star lattice tiled behind a panel's content (one extra draw call).
+## Faint woven-paper texture behind panels (one cached texture / draw call).
 func _lattice_bg(p: PanelContainer) -> void:
 	var t := TextureRect.new()
 	t.texture = UiTheme.lattice()
 	t.stretch_mode = TextureRect.STRETCH_TILE
 	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	t.modulate = Color(1, 1, 1, 0.07)
+	t.modulate = Color(UiTheme.MUTED, 0.035)
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.add_child(t)
 
@@ -1440,6 +1514,7 @@ func _banner(text: String) -> void:
 		root.add_child(banner)
 		banner_label = _label("", "Title", HORIZONTAL_ALIGNMENT_CENTER)
 		banner_label.add_theme_font_size_override("font_size", 40)
+		banner_label.add_theme_color_override("font_color", UiTheme.IVORY)
 		banner_label.custom_minimum_size = Vector2(420, 0)
 		banner.add_child(banner_label)
 	banner_label.text = text
