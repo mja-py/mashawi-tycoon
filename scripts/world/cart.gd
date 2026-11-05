@@ -27,7 +27,7 @@ var stall := false
 ## Called with set_serving(on) so the Plot can animate its own crew (kiosk and up).
 var serving_hook: Callable
 var _roof: Node3D
-var _vehicle := ""
+var _truck := false
 var _upgrades: Dictionary = {}
 var _grill_glow: MeshInstance3D
 var _serving := false
@@ -97,8 +97,8 @@ func _build() -> void:
 	if roast:
 		_spit_rotor = roast.find_child("SpitRotor", true, false) as Node3D
 	# heater behind the spit
-	ModelLib.box(_body, Vector3(0.1, 0.42, 0.14), Vector3(-0.33, 0.82, -0.2), dark)
-	ModelLib.box(_body, Vector3(0.06, 0.34, 0.02), Vector3(-0.33, 0.82, -0.125), Color(1.0, 0.45, 0.1), 2.0)
+	ModelLib.box(_spit, Vector3(0.1, 0.42, 0.14), Vector3(0, 0.23, -0.15), dark)
+	ModelLib.box(_spit, Vector3(0.06, 0.34, 0.02), Vector3(0, 0.23, -0.075), Color(1.0, 0.45, 0.1), 2.0)
 	# charcoal grill (mangal) with glowing coals and smoke
 	ModelLib.box(_body, Vector3(0.42, 0.08, 0.3), Vector3(0.12, 0.63, -0.05), dark)
 	_grill_glow = ModelLib.box(_body, Vector3(0.38, 0.01, 0.26), Vector3(0.12, 0.672, -0.05), Color(1.0, 0.4, 0.05), 1.5)
@@ -165,8 +165,8 @@ func _build() -> void:
 	add_child(_neon)
 	_neon_light = OmniLight3D.new()
 	_neon_light.light_color = Color(1.0, 0.4, 0.7)
-	_neon_light.light_energy = 1.6
-	_neon_light.omni_range = 2.2
+	_neon_light.light_energy = 0.60
+	_neon_light.omni_range = 1.40
 	_neon_light.position = Vector3(0, 1.5, 0.5)
 	_neon_light.visible = false
 	add_child(_neon_light)
@@ -180,8 +180,10 @@ func _build() -> void:
 	_fridge = Node3D.new()
 	_body.add_child(_fridge)
 	# beside the counter on the pavement (behind the cart it would sink into a shop front)
-	ModelLib.box(_fridge, Vector3(0.34, 0.6, 0.34), Vector3(-0.85, 0.3, -0.05), Color(0.92, 0.94, 0.96))
-	ModelLib.box(_fridge, Vector3(0.02, 0.2, 0.03), Vector3(-0.67, 0.35, 0.1), dark)
+	ModelLib.box(_fridge, Vector3(0.33, 0.52, 0.34), Vector3(-0.85, 0.26, -0.18), Color("90a5a2"))
+	ModelLib.box(_fridge, Vector3(0.30, 0.41, 0.025), Vector3(-0.85, 0.285, 0.006), Color("c0ccc5"))
+	ModelLib.box(_fridge, Vector3(0.022, 0.16, 0.028), Vector3(-0.75, 0.33, 0.023), dark)
+	ModelLib.box(_fridge, Vector3(0.26, 0.038, 0.020), Vector3(-0.85, 0.046, 0.006), dark)
 	_fridge.visible = false
 	# seating (upgrade)
 	_seating = Node3D.new()
@@ -215,10 +217,10 @@ func preview_crew(active: bool) -> void:
 func server() -> Node3D:
 	return _vendor
 
-func apply_vehicle(vehicle: String) -> void:
-	if vehicle == _vehicle:
+func set_truck(on: bool) -> void:
+	if on == _truck:
 		return
-	_vehicle = vehicle
+	_truck = on
 	_refresh_frame()
 	_place_neon()
 	_update_width()
@@ -231,7 +233,7 @@ func set_neon(on: bool) -> void:
 	_place_neon()
 
 func _place_neon() -> void:
-	if _vehicle != "":
+	if _truck:
 		_neon.position = (FoodTruck.SIGN + Vector3.BACK * 0.009) * FoodTruck.SCALE / CART_SCALE
 		_neon.font_size = 66
 		_neon.pixel_size = 0.0026 * FoodTruck.SCALE / CART_SCALE
@@ -250,14 +252,13 @@ func _place_neon() -> void:
 
 ## Wheels / roof / skirt for the current vehicle and stall mode.
 func _refresh_frame() -> void:
-	var is_truck := _vehicle != ""
-	_body.visible = not is_truck
-	_roof.visible = not is_truck and not stall
+	_body.visible = not _truck
+	_roof.visible = not _truck and not stall
 	for c in _chassis:
-		c.visible = not is_truck
+		c.visible = not _truck
 	for w in _wheels:
-		w.visible = not is_truck and not stall
-	_skirt.visible = stall and not is_truck
+		w.visible = not _truck and not stall
+	_skirt.visible = stall and not _truck
 
 func set_stall(on: bool) -> void:
 	stall = on
@@ -271,17 +272,16 @@ func _update_width() -> void:
 	var wide := 1.25 if _upgrades.has("cart2") else 1.0
 	_body.scale.x = wide
 	if _vendor:
-		_vendor.position = FoodTruck.VENDOR * FoodTruck.SCALE / CART_SCALE if _vehicle != "" else Vector3(-(0.62 * wide + 0.22), 0.004, 0.12)
+		_vendor.position = FoodTruck.VENDOR * FoodTruck.SCALE / CART_SCALE if _truck else Vector3(-(0.62 * wide + 0.22), 0.004, 0.12)
 	if _helper:
-		_helper.position = FoodTruck.HELPER * FoodTruck.SCALE / CART_SCALE if _vehicle != "" else Vector3(0.62 * wide + 0.24, 0.004, 0.12)
-	if _fridge:
-		_fridge.position.x = -(0.62 * wide + 0.3) + 0.85 - 0.62
+		_helper.position = FoodTruck.HELPER * FoodTruck.SCALE / CART_SCALE if _truck else Vector3(0.62 * wide + 0.24, 0.004, 0.12)
 
 func apply_upgrades(upgrades: Dictionary) -> void:
 	_upgrades = upgrades
 	_awning_big.visible = upgrades.has("awning")
 	_speaker.visible = upgrades.has("speaker")
 	_fridge.visible = upgrades.has("fridge") or upgrades.has("fridge2")
+	_spit.visible = not upgrades.has("doner")
 	_seating.visible = upgrades.has("seating")
 	if _helper:
 		_helper.visible = upgrades.has("helper")
@@ -303,5 +303,5 @@ func set_serving(on: bool) -> void:
 		ModelLib.play_loop(_helper, "idle")
 
 func _process(delta: float) -> void:
-	if _spit_rotor and _body.visible:
+	if _spit_rotor and _body.visible and _spit.visible:
 		_spit_rotor.rotate_y(delta * 0.65)

@@ -360,7 +360,7 @@ func plot_state() -> Dictionary:
 		"site": {"layout": loc()["layout"], "location": location}}
 
 ## Legacy visual flags for the cart (until the Plot node replaces it).
-func legacy_visual() -> Dictionary:
+func cart_upgrades() -> Dictionary:
 	var up := {}
 	if station_level("counter") >= 2:
 		up["cart2"] = true
@@ -376,7 +376,9 @@ func legacy_visual() -> Dictionary:
 		up["sweets"] = true
 	if station_level("grill") >= 4:
 		up["helper"] = true
-	return {"upgrades": up, "vehicle": "truck" if stage_tier() >= 2 else "cart"}
+	if station_available("doner") and station_level("doner") >= 1:
+		up["doner"] = true
+	return up
 
 # ---------------------------------------------------------------- goals
 

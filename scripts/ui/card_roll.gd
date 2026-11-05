@@ -30,7 +30,7 @@ func _ready() -> void:
 	surface.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	surface.clip_contents = true
 	add_child(surface)
-	surface.resized.connect(_layout_cards)
+	surface.resized.connect(_layout_cards, CONNECT_DEFERRED)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.layout_direction = Control.LAYOUT_DIRECTION_LTR
@@ -72,12 +72,16 @@ func configure(count: int, index: int, factory: Callable) -> void:
 	_factory = factory
 	_rtl = -1.0 if is_layout_rtl() else 1.0
 	_show_index()
+	_layout_cards.call_deferred()
 
 func choose(index: int, action: Callable) -> void:
 	if index == _index:
 		action.call()
 	else:
 		move_to(index)
+
+func selected_index() -> int:
+	return _index
 
 func is_focused_control(control: Control) -> bool:
 	return not surface.is_ancestor_of(control) or (_cards.has(_index) and _cards[_index].is_ancestor_of(control))
@@ -120,7 +124,12 @@ func _layout_cards() -> void:
 		if not _cards.has(i):
 			var card: Control = _factory.call(i)
 			_cards[i] = card
+			card.minimum_size_changed.connect(_layout_cards, CONNECT_DEFERRED)
 			surface.add_child(card)
+	if _cards.has(_index):
+		var focused: Control = _cards[_index]
+		if focused.get_index() != surface.get_child_count() - 1:
+			surface.move_child(focused, -1)
 	for i in _cards.keys():
 		var card: Control = _cards[i]
 		var offset := (float(i) - _cursor) * _rtl

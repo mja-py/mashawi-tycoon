@@ -32,7 +32,39 @@ func _draw() -> void:
 				var center := Vector2(x, size.y * 0.52 + (i % 2) * 17 - 9)
 				draw_colored_polygon(PackedVector2Array([center + Vector2(0, -6), center + Vector2(5, 0), center + Vector2(0, 6), center + Vector2(-5, 0)]), Color(PALE, 0.42))
 		return
+	if subject == "ingredient" or subject == "equipment" or subject.begins_with("campaign:"):
+		_draw_shop_card()
+		return
 	_draw_place()
+
+func _draw_shop_card() -> void:
+	var base := Color("335e59")
+	var accent := Color("a9c7a6")
+	if subject == "ingredient":
+		base = Color("89583d")
+		accent = Color("e0b47e")
+	elif subject.begins_with("campaign:"):
+		base = {"fliers": Color("844c3c"), "posters": Color("734e65"),
+			"social": Color("355c70"), "radio": Color("555c40")}.get(subject.trim_prefix("campaign:"), base)
+		accent = Color("e8bd83")
+	draw_rect(Rect2(Vector2.ZERO, size), base)
+	var center := size * Vector2(0.5, 0.49)
+	var radius := size.y * 0.67
+	draw_circle(center, radius, base.lightened(0.16), true, -1.0, true)
+	draw_arc(center, radius - 5.0, 0.0, TAU, 48, Color(accent, 0.52), 1.6, true)
+	var inset := minf(size.x * 0.05, 20.0)
+	for y in [inset, size.y - inset]:
+		for x in [inset, size.x - inset]:
+			var corner := Vector2(x, y)
+			var inward := Vector2(signf(center.x - x), signf(center.y - y))
+			draw_polyline(PackedVector2Array([corner + Vector2(inward.x * 22.0, 0),
+				corner, corner + Vector2(0, inward.y * 14.0)]), accent, 1.3, true)
+	for side in [-1.0, 1.0]:
+		for i in range(3):
+			var point := center + Vector2(side * (radius + 14 + i * 12), i * 7 - 7)
+			var diamond := 5.0 - i
+			_poly([point + Vector2(0, -diamond), point + Vector2(diamond, 0),
+				point + Vector2(0, diamond), point + Vector2(-diamond, 0)], Color(accent, 0.75))
 
 func _rect(x: float, y: float, w: float, h: float, color: Color) -> void:
 	draw_rect(Rect2(x, y, w, h), color)

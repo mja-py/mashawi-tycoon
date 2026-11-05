@@ -1,6 +1,5 @@
-// Drag-to-scroll regression test for the web export (touch via CDP, or mouse with the "mouse" arg).
-// Opens the supplies panel directly (?dev=--phase=prep --panel=supplies), taps the first pack button
-// (money 1500 -> 1490), then drags starting on that same button: the list must scroll, nothing must be bought.
+// Drag-to-browse regression for supplies (touch via CDP, or mouse with the "mouse" arg).
+// Swipe directly from a pack button. The next card should appear without a purchase.
 //   node tools/web_touch_test.mjs http://localhost:8080/ /tmp/out [mouse]
 import { launchChrome, watchConsole, armReady, waitReady, waitPhase, state, check, finish, outDir } from './web_test_lib.mjs';
 const url = process.argv[2] || 'http://localhost:8080/'; const out = outDir(process.argv[3] || '/tmp/web_touch'); const useMouse = process.argv[4] === 'mouse';
@@ -9,7 +8,7 @@ const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, de
 const page = await ctx.newPage();
 const con = watchConsole(page);
 await armReady(page);
-await page.goto(url + '?dev=' + encodeURIComponent('--phase=prep --panel=supplies'), { waitUntil: 'load' });
+await page.goto(url + '?dev=' + encodeURIComponent('--phase=prep --panel=supplies --uitest --lang=ar'), { waitUntil: 'load' });
 await page.waitForSelector('#play', { state: 'visible', timeout: 120000 });
 await page.tap('#play');
 await waitReady(page);
@@ -18,43 +17,57 @@ await page.waitForTimeout(2500);
 const cdp = await ctx.newCDPSession(page);
 async function touch(type, x, y) { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] }); }
 async function tap(x, y) { if (useMouse) { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(80); await page.mouse.up(); } else { await touch('touchStart', x, y); await page.waitForTimeout(80); await touch('touchEnd', x, y); } await page.waitForTimeout(1200); }
-async function drag(x, y0, y1, steps, ms) {
-  if (useMouse) { await page.mouse.move(x, y0); await page.mouse.down(); for (let i = 1; i <= steps; i++) { await page.mouse.move(x, y0 + (y1 - y0) * i / steps); await page.waitForTimeout(ms); } await page.mouse.up(); return; }
-  await touch('touchStart', x, y0);
-  for (let i = 1; i <= steps; i++) { await touch('touchMove', x, y0 + (y1 - y0) * i / steps); await page.waitForTimeout(ms); }
-  await touch('touchEnd', x, y1);
+async function drag(x, y, distance) {
+  if (useMouse) {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+  } else {
+    await touch('touchStart', x, y);
+  }
+  for (let i = 1; i <= 12; i++) {
+    const step = x + distance * i / 12;
+    if (useMouse) await page.mouse.move(step, y);
+    else await touch('touchMove', step, y);
+    await page.waitForTimeout(40);
+  }
+  if (useMouse) await page.mouse.up();
+  else await touch('touchEnd');
+  await page.waitForTimeout(550);
+}
+async function target(id) {
+  await page.waitForFunction(id => !!window.godotMenuTargets?.[id], id, { timeout: 10000 });
+  const t = await page.evaluate(id => window.godotMenuTargets[id], id);
+  return { x: t.x * 844, y: t.y * 390 };
+}
+async function hit(id) {
+  const t = await target(id);
+  await tap(t.x, t.y);
 }
 await page.screenshot({ path: `${out}/3_supplies.png` });
-const s0 = await state(page);
-check(s0 && s0.money === 1500, `starts with AED 1500 (${JSON.stringify(s0)})`);
-// bread card is the first card (top-right in RTL); its "+20 · 10" button is the right-most of its row
-const BTN = { x: 760, y: 258 };
-await tap(BTN.x, BTN.y);
-const s1 = await state(page);
-check(s1 && s1.money === 1490, `tapping a pack button buys it: 1500 -> 1490 (${JSON.stringify(s1)})`);
-await page.screenshot({ path: `${out}/4_bought.png` });
-await drag(BTN.x, BTN.y, 90, 12, 40); // drag that STARTS on the buy button: must scroll, must not buy
-await page.waitForTimeout(1500);
-const s2 = await state(page);
-check(s2 && s2.money === 1490, `drag starting on a button does not buy (${JSON.stringify(s2)})`);
-await page.screenshot({ path: `${out}/5_dragged_from_button.png` });
-await drag(422, 150, 330, 10, 40); // drag back down over text
-await page.waitForTimeout(1500);
-await page.screenshot({ path: `${out}/6_dragged_back.png` });
-// mouse-wheel / trackpad scrolling over an open panel must scroll it, never close it (the wheel
-// event bubbles through the panel to the backdrop, which used to close on any button press)
-await tap(695, 360); // menu tab
-const s3 = await state(page);
-check(s3 && s3.panel === 'menu', `menu tab opens the menu panel (${JSON.stringify(s3)})`);
-for (let i = 0; i < 6; i++) { await page.mouse.move(422, 200); await page.mouse.wheel(0, 240); await page.waitForTimeout(60); }
+check((await state(page)).money === 1500, 'starts with AED 1500');
+await hit('pack_bread_0');
+check((await state(page)).money === 1490, 'a tap purchases one bread pack');
+const bread = await target('pack_bread_0');
+await drag(bread.x, bread.y, 165);
+await target('pack_chicken_0');
+check((await state(page)).money === 1490, 'dragging from a buy button advances the carousel without a purchase');
+await page.screenshot({ path: `${out}/4_swiped.png` });
+const chicken = await target('pack_chicken_2');
+await drag(chicken.x, chicken.y, -165);
+await target('pack_bread_0');
+check((await state(page)).money === 1490, 'reverse swipe returns to bread without a purchase');
+await hit('tab_menu');
+await hit('select_chicken_tikka');
+for (let i = 0; i < 6; i++) {
+  await page.mouse.move(422, 200);
+  await page.mouse.wheel(0, 240);
+  await page.waitForTimeout(60);
+}
 await page.mouse.wheel(0, -2000);
 await page.waitForTimeout(600);
-const s4 = await state(page);
-check(s4 && s4.panel === 'menu', `wheel scrolling keeps the menu open (${JSON.stringify(s4)})`);
-await page.screenshot({ path: `${out}/7_menu_after_wheel.png` });
-await tap(44, 72); // the Close button (top-left of the panel in RTL)
-const s5 = await state(page);
-check(s5 && s5.panel === '', `Close button closes the panel (${JSON.stringify(s5)})`);
+check((await state(page)).menuItem === 'chicken_tikka', 'wheel scrolling keeps the recipe sheet open');
+await hit('close_panel');
+check((await state(page)).panel === '', 'Close dismisses the panel');
 const errs = con.errors();
 check(errs.length === 0, `no console errors (${errs.length})`);
 errs.slice(0, 5).forEach(l => console.log('    ', l.slice(0, 200)));

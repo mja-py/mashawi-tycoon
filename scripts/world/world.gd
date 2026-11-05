@@ -669,34 +669,30 @@ func _rival_stalls() -> void:
 
 func set_time(hour: float, weather_id: String) -> void:
 	var w: Dictionary = Data.WEATHER[weather_id]
-	var day_factor := 1.0
-	if hour > 17.0:
-		day_factor = clampf(1.0 - (hour - 17.0) / 5.0, 0.12, 1.0)
+	var dusk := smoothstep(16.75, 18.75, hour)
+	var night := smoothstep(18.25, 21.0, hour)
+	var day_factor := 1.0 - night
 	var sky: Color = w["sky"]
-	var night_sky := Color(0.07, 0.08, 0.17)
 	var e := env.environment
-	e.background_color = sky.lerp(night_sky, 1.0 - day_factor)
+	e.background_color = sky.lerp(Color("f0a372"), dusk).lerp(Color("242d50"), night)
 	# Compatibility/WebGL has no filmic tonemapping. Keep whites below clipping so
 	# plaster, paving and food retain their colour on Safari as well as native.
-	e.ambient_light_color = Color("bccbd0").lerp(Color("617696"), 1.0 - day_factor)
-	e.ambient_light_energy = lerpf(0.32, 0.52, day_factor)
+	e.ambient_light_color = Color("bccbd0").lerp(Color("94a7cf"), night)
+	e.ambient_light_energy = lerpf(0.37, 0.52, day_factor)
 	var warm := Color(1.0, 0.95, 0.88)
-	var dusk := Color(1.0, 0.65, 0.4)
-	var night := Color(0.55, 0.6, 0.9)
-	var dusk_t := clampf((hour - 17.0) / 2.5, 0.0, 1.0)
-	var night_t := clampf((hour - 19.5) / 2.0, 0.0, 1.0)
-	sun.light_color = warm.lerp(dusk, dusk_t).lerp(night, night_t)
-	sun.light_energy = float(w["light"]) * lerpf(0.18, 0.78 if OS.has_feature("web") else 1.0, day_factor)
-	sun.rotation_degrees.x = lerpf(-52.0, -20.0, dusk_t)
-	var lamps_on := day_factor < 0.6 or weather_id == Data.BAD_WEATHER
+	sun.light_color = warm.lerp(Color("ff9d68"), dusk).lerp(Color("8ca8e3"), night)
+	sun.light_energy = float(w["light"]) * lerpf(0.23, 0.78 if OS.has_feature("web") else 1.0, day_factor)
+	sun.rotation_degrees.x = lerpf(lerpf(-52.0, -20.0, dusk), -40.0, night)
 	var sandstorm := weather_id == Data.BAD_WEATHER
+	var lamps_on := hour >= 18.5 or sandstorm
 	if _sand.visible != sandstorm:
 		_sand.visible = sandstorm
 		_sand.emitting = sandstorm
 	for l in _lamps:
-		l.visible = lamps_on
+		if l.visible != lamps_on:
+			l.visible = lamps_on
 	if plot:
-		plot.set_night(day_factor < 0.6 or sandstorm)
+		plot.set_night(lamps_on)
 
 # ---------------------------------------------------------------- spawning
 
@@ -816,9 +812,7 @@ func apply_visual() -> void:
 	if location_id != "":
 		frame_stage(_stage_at(location_id), true)
 	if cart:
-		var v: Dictionary = Game.legacy_visual()
-		cart.apply_upgrades(v["upgrades"])
-		cart.apply_vehicle(v["vehicle"])
+		cart.apply_upgrades(Game.cart_upgrades())
 	if plot != null:
 		plot.apply(_plot_state_for(location_id))
 

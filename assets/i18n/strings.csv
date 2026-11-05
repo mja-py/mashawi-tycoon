@@ -465,3 +465,5 @@ ui.m_house_recipe,Your house recipe,خلطة المحل
 ui.m_make_special,Make it your speciality,خلّه طبقك المميز
 scene.pickup,Pickup,الاستلام
 scene.order,Order,الطلب
+ui.stock_outlook,Stock outlook,نظرة على المؤن
+ui.all_cards,All cards,كل البطاقات

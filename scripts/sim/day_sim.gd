@@ -43,6 +43,7 @@ func start(context: Dictionary, w: World) -> void:
 	stats = {"passers": 0, "served": 0, "revenue": 0.0, "cogs": 0.0, "sold": {}, "satisfaction_sum": 0.0,
 		"left_wait": 0, "sold_out": 0, "queue_full": 0, "lost_rival": 0, "too_pricey": 0, "dine_in": 0, "queue": 0, "kitchen": 0, "seated": 0}
 	_warned.clear()
+	_stats_tick = 0.0
 	_hot_min.clear()
 	_seat_of.clear()
 	_handoff_left = 0.0
@@ -118,6 +119,7 @@ func _process(delta: float) -> void:
 	if _stats_tick > 0.25:
 		_stats_tick = 0.0
 		if finishing:
+			world.set_time(minf(hour, end_hour), ctx["weather"])
 			clock_changed.emit(hour)
 		stats["queue"] = tp.queue_len()
 		stats["kitchen"] = pickup.size()
@@ -480,7 +482,8 @@ func _close() -> void:
 		world.cart.set_serving(false)
 	if finishing:
 		world.clear_virtual_walkers()
-		clock_changed.emit(end_hour)
+	world.set_time(end_hour, ctx["weather"])
+	clock_changed.emit(end_hour)
 	stats["left_wait"] = int(stats["left_wait"]) # already counted as they gave up
 	stats["util"] = tp.utilisation()
 	stats["max_queue"] = int(tp.stats["max_queue"])

@@ -28,6 +28,7 @@ var panel_dim: PanelContainer
 var panel: PanelContainer
 var panel_title: Label
 var stock_button: Button
+var stock_outlook_button: Button
 const TouchScroll := preload("res://scripts/ui/touch_scroll.gd")
 const CardRoll := preload("res://scripts/ui/card_roll.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
@@ -44,6 +45,9 @@ var menu_group := "food"
 var selected_dish := ""
 var _browse_dish := ""
 var _browse_place := ""
+var _browse_prep := {}
+var _prep_detail := ""
+var _build_group := "front"
 var _roll_ids: Array[String] = []
 var current_panel := ""
 ## Width (logical px) from which panels show two columns of cards.
@@ -161,7 +165,9 @@ func _menu_target(b: Button, id: String) -> Button:
 func _publish_menu_targets() -> void:
 	var targets := {}
 	var vp := root.get_viewport_rect().size
-	for node in panel.find_children("*", "Button", true, false):
+	var buttons := panel.find_children("*", "Button", true, false)
+	buttons.append_array(prep_bar.find_children("*", "Button", true, false))
+	for node in buttons:
 		var b := node as Button
 		if not b.is_visible_in_tree() or not b.has_meta("menu_target"):
 			continue
@@ -335,6 +341,7 @@ func _build_prep_bar() -> void:
 	prep_bar.add_child(h)
 	for id in PANELS:
 		var b := _button("", "Tab", Vector2(108, 64))
+		_menu_target(b, "tab_" + id)
 		b.tooltip_text = tr(PANELS[id])
 		b.toggle_mode = true
 		b.pressed.connect(func(): _toggle_panel(id))
@@ -354,6 +361,7 @@ func _build_prep_bar() -> void:
 		face.add_child(caption)
 	h.add_child(_spacer())
 	var open := _button(tr("ui.open_shop"), "Primary", Vector2(220, 64))
+	_menu_target(open, "open_shop")
 	open.pressed.connect(_on_open_shop)
 	h.add_child(open)
 
@@ -419,13 +427,19 @@ func _build_panel() -> void:
 	panel_title = _label(tr("ui.supplies"), "Heading")
 	panel_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(panel_title)
+	stock_outlook_button = _menu_target(_button(tr("ui.stock_outlook"), "Ghost", Vector2(0, 48)), "stock_outlook")
+	stock_outlook_button.visible = false
+	stock_outlook_button.pressed.connect(_open_prep_detail.bind("outlook"))
+	head.add_child(stock_outlook_button)
 	stock_button = _button("", "Primary", Vector2(180, 60))
+	_menu_target(stock_button, "stock_today")
 	stock_button.visible = false
 	stock_button.pressed.connect(func():
 		if Game.stock_for_today():
 			Sfx.play("confirm"))
 	head.add_child(stock_button)
 	var close := _button(tr("ui.close"), "Ghost", Vector2(110, 48))
+	_menu_target(close, "close_panel")
 	close.pressed.connect(close_panel)
 	head.add_child(close)
 	panel_chips = HBoxContainer.new()
@@ -446,7 +460,9 @@ func _build_panel() -> void:
 		if current_panel == "menu":
 			_browse_dish = _roll_ids[index]
 		elif current_panel == "place":
-			_browse_place = _roll_ids[index])
+			_browse_place = _roll_ids[index]
+		else:
+			_browse_prep[current_panel] = _roll_ids[index])
 	v.add_child(panel_roll)
 
 func _build_report() -> void:
@@ -830,6 +846,7 @@ func _toggle_panel(id: String) -> void:
 func open_panel(id: String) -> void:
 	if current_panel != id:
 		selected_dish = ""
+		_prep_detail = ""
 	Sfx.play("open")
 	current_panel = id
 	for k in tabs:
@@ -886,8 +903,9 @@ func _rebuild_panel(animate: bool = false) -> void:
 		c.queue_free()
 	panel_grid = null
 	stock_button.visible = current_panel == "supplies"
-	panel_chips.visible = current_panel == "menu"
-	panel_roll.visible = current_panel == "place" or (current_panel == "menu" and selected_dish.is_empty())
+	stock_outlook_button.visible = stock_button.visible and _prep_detail.is_empty()
+	panel_chips.visible = current_panel in ["menu", "build"] or not _prep_detail.is_empty()
+	panel_roll.visible = current_panel in ["place", "menu", "supplies", "build", "promote"] and selected_dish.is_empty() and _prep_detail.is_empty()
 	panel_scroll.visible = not panel_roll.visible
 	for c in panel_chips.get_children():
 		panel_chips.remove_child(c)
@@ -924,6 +942,13 @@ func _fill_supplies() -> void:
 	stock_button.text = tr("ui.stock_today") % Loc.money(cost) if cost > 0.0 else tr("ui.stock_ready")
 	stock_button.disabled = cost <= 0.0 or cost > maxf(0.0, Game.money - float(Game.loc()["rent"]) - Game.daily_wages())
 	stock_button.tooltip_text = tr("ui.stock_hint")
+	if not _prep_detail.is_empty():
+		_prep_back()
+		_supply_outlook()
+		return
+	_configure_prep_roll(_needed_ingredients(), _supply_roll_card)
+
+func _supply_outlook() -> void:
 	var hint := tr("ui.s_hint") % int(Game.spoil_rate("chicken") * 100)
 	if Game.station_level("coldbox") < 3:
 		hint += tr("ui.s_hint_fridge") % int(float(Data.STATIONS["coldbox"]["spoil_meat"][1]) * 100)
@@ -943,27 +968,45 @@ func _fill_supplies() -> void:
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel_body.add_child(summary)
 	_hint(tr("ui.s_expect") % [Loc.ltr("%d-%d" % [int(expect * 0.8), int(expect * 1.2)]), tr(Data.WEATHER[Game.forecast]["name"])])
-	for ing in _needed_ingredients():
-		var def: Dictionary = Data.INGREDIENTS[ing]
-		var v := _item_card(Icons.model_icon(def["model"]), tr(def["name"]), "", 48)
-		var stock := tr("ui.s_stock") % [int(Game.inventory.get(ing, 0)), tr(def["unit"])]
-		var spoil := Game.spoil_rate(ing)
-		if spoil >= 0.3:
-			stock += "   ·   " + tr("ui.s_spoils") % int(spoil * 100)
-		elif spoil > 0.0:
-			stock += "   ·   " + tr("ui.s_loses") % int(spoil * 100)
-		v.add_child(_label(stock, "Muted"))
-		# the three pack sizes in one row under the text, so a card stays two rows tall
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		v.add_child(row)
-		var packs: Array = def["packs"]
-		for i in range(packs.size()):
-			var text := "%s  ·  %s" % [Loc.ltr("+%d" % int(packs[i][0])), Loc.money(float(packs[i][1]))]
-			var b := _buy_button(text, float(packs[i][1]), Game.buy_pack.bind(ing, i), 0, "")
-			b.custom_minimum_size = Vector2(0, 60)
-			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_child(b)
+
+func _supply_roll_card(index: int) -> PanelContainer:
+	var id := _roll_ids[index]
+	var def: Dictionary = Data.INGREDIENTS[id]
+	var stock := "%d %s" % [int(Game.inventory.get(id, 0)), tr(def["unit"])]
+	var card := _model_roll_card("ingredient", def["model"], tr(def["name"]), stock)
+	var body := card.get_child(0)
+	var spoil := Game.spoil_rate(id)
+	if spoil > 0.0:
+		var note := _label(tr("ui.s_spoils" if spoil >= 0.3 else "ui.s_loses") % int(spoil * 100.0), "Muted")
+		note.add_theme_font_size_override("font_size", 16)
+		body.add_child(note)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	body.add_child(row)
+	var packs: Array = def["packs"]
+	for i in range(packs.size()):
+		var cost := float(packs[i][1])
+		var text := "%s\n%s" % [Loc.ltr("+%d" % int(packs[i][0])), Loc.money(cost)]
+		var buy := _buy_button(text, cost, func() -> bool:
+			return index == panel_roll.selected_index() and Game.buy_pack(id, i), 0, "Primary")
+		buy.add_theme_font_size_override("font_size", 16)
+		buy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(_menu_target(buy, "pack_%s_%d" % [id, i]))
+	return card
+
+func _configure_prep_roll(ids: Array, factory: Callable) -> void:
+	_roll_ids.assign(ids)
+	panel_roll.configure(_roll_ids.size(), _roll_ids.find(_browse_prep.get(current_panel, "")), factory)
+
+func _open_prep_detail(id: String) -> void:
+	_prep_detail = id
+	panel_scroll.scroll_vertical = 0
+	_rebuild_panel(true)
+
+func _prep_back() -> void:
+	var back := _menu_target(_button(tr("ui.all_cards"), "Ghost", Vector2(0, 48)), "back_cards")
+	back.pressed.connect(_open_prep_detail.bind(""))
+	panel_chips.add_child(back)
 
 func _quality_text(q: float) -> String:
 	if q >= 1.1:
@@ -1023,7 +1066,7 @@ func _fill_menu() -> void:
 	panel_roll.configure(_roll_ids.size(), _roll_ids.find(_browse_dish), _dish_roll_card)
 
 ## Give most of the card to the art, with a short caption below.
-func _roll_card(art_id: String, title: String, value: String) -> PanelContainer:
+func _roll_card(art_id: String, title: String, value: String, art_height: float = 94.0) -> PanelContainer:
 	var card := _card()
 	var frame := UiTheme.flat(UiTheme.CARD, 13, Color("a58258"), 2, 3)
 	frame.set_content_margin_all(8.0)
@@ -1033,7 +1076,7 @@ func _roll_card(art_id: String, title: String, value: String) -> PanelContainer:
 	card.add_child(body)
 	var art := MenuArt.new(art_id)
 	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	art.custom_minimum_size.y = 94
+	art.custom_minimum_size.y = art_height
 	body.add_child(art)
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 8)
@@ -1056,14 +1099,25 @@ func _dish_roll_card(index: int) -> PanelContainer:
 	var m: Dictionary = Game.menu[id]
 	var value := Loc.money(float(m["price"])) if m["unlocked"] else Loc.money(float(def["unlock_cost"]))
 	var card := _roll_card("dish:" + String(def["kind"]), tr(def["name"]), value)
-	var body := card.get_child(0)
-	var art := body.get_child(0)
-	var plate := _icon(Icons.dish_icon(id), 0)
-	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	art.add_child(plate)
+	_roll_art_icon(card, Icons.dish_icon(id))
 	var caption := tr("ui.m_edit_dish") if m["unlocked"] else tr("ui.m_view_dish")
-	var action := _menu_target(Button.new(), "select_" + id)
+	_roll_open(card, index, "select_" + id, caption, _select_dish.bind(id))
+	return card
+
+func _model_roll_card(kind: String, model: String, title: String, value: String) -> PanelContainer:
+	var card := _roll_card(kind, title, value, 62.0 if kind == "ingredient" else 94.0)
+	_roll_art_icon(card, Icons.model_icon(model, 160))
+	return card
+
+func _roll_art_icon(card: PanelContainer, texture: Texture2D) -> void:
+	var art := card.get_child(0).get_child(0)
+	var icon := _icon(texture, 0)
+	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.add_child(icon)
+
+func _roll_open(card: PanelContainer, index: int, target: String, caption: String, select: Callable) -> void:
+	var action := _menu_target(Button.new(), target)
 	action.flat = true
 	action.focus_mode = Control.FOCUS_NONE
 	action.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -1071,10 +1125,8 @@ func _dish_roll_card(index: int) -> PanelContainer:
 	action.pressed.connect(func():
 		panel_roll.choose(index, func():
 			Sfx.play("open")
-			_browse_dish = id
-			_select_dish(id)))
+			select.call()))
 	card.add_child(action)
-	return card
 
 func _menu_sheet() -> VBoxContainer:
 	var card := _card()
@@ -1187,12 +1239,66 @@ func _station_name(id: String) -> String:
 	return tr("station.seating") if id == "seating" else id
 
 func _fill_build() -> void:
+	if not _prep_detail.is_empty():
+		_prep_back()
+		if _prep_detail in ["stage", "next_stage"]:
+			_build_stage_detail()
+		else:
+			_station_card(_prep_detail, Economy.throughput_estimate(Game.sim_context()))
+		return
+	var available := {}
+	for id in Data.STATIONS:
+		var def: Dictionary = Data.STATIONS[id]
+		if def.get("virtual", false) or def.get("later", false) or not Game.station_available(id):
+			continue
+		var group: String = def["group"]
+		if not available.has(group):
+			available[group] = []
+		available[group].append(id)
+	var front: Array = ["stage"]
+	if Game.stage_lock_reason().is_empty():
+		front.append("next_stage")
+	front.append_array(available.get("front", []))
+	available["front"] = front
+	for group in Data.STATION_GROUPS:
+		var id: String = group[0]
+		if not available.has(id):
+			continue
+		var tab := _menu_target(_button(tr(group[1]), "Filter", Vector2(0, 48)), "build_group_" + id)
+		tab.toggle_mode = true
+		tab.button_pressed = id == _build_group
+		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tab.pressed.connect(func():
+			Sfx.play("switch")
+			_build_group = id
+			_rebuild_panel())
+		panel_chips.add_child(tab)
+	_configure_prep_roll(available.get(_build_group, front), _build_roll_card)
+
+func _build_roll_card(index: int) -> PanelContainer:
+	var id := _roll_ids[index]
+	var def := {}
+	var value := ""
+	match id:
+		"stage":
+			def = Game.stage_def()
+			value = tr("ui.b_fixed" if Game.is_fixed() else "ui.b_mobile")
+		"next_stage":
+			def = Game.next_stage_def()
+			value = Loc.money(float(def["cost"]))
+		_:
+			def = Data.STATIONS[id]
+			value = tr("ui.b_level") % [Game.station_level(id), Game.station_cap(id)]
+	var title := tr(def["name"])
+	var card := _model_roll_card("equipment", def["icon"], title, value)
+	_roll_open(card, index, "inspect_" + id, title, _open_prep_detail.bind(id))
+	return card
+
+func _build_stage_detail() -> void:
 	var sd := Game.stage_def()
 	var nxt := Game.next_stage_def()
 	var ctx := Game.sim_context()
 	var est := Economy.throughput_estimate(ctx)
-	# the stage you sell from, and the next one (a full-width card above the station grid)
-	panel_grid = null
 	var v := _item_card(Icons.model_icon(sd["icon"]), tr(sd["name"]), tr(sd["desc"]), 56)
 	panel_grid.columns = 1
 	panel_grid = null
@@ -1214,7 +1320,8 @@ func _fill_build() -> void:
 		if why != "":
 			_card_action(v, _locked_button(why, 260))
 		else:
-			_card_action(v, _buy_button(tr("ui.b_build") % [tr(nxt["name"]), Loc.money(float(nxt["cost"]))], float(nxt["cost"]), Game.buy_stage, 260))
+			var buy := _buy_button(tr("ui.b_build") % [tr(nxt["name"]), Loc.money(float(nxt["cost"]))], float(nxt["cost"]), Game.buy_stage, 260)
+			_card_action(v, _menu_target(buy, "buy_stage"))
 	# where today's customers would get stuck
 	var bn: String = est["bottleneck"]
 	if bn == "arrivals":
@@ -1223,25 +1330,13 @@ func _fill_build() -> void:
 		_hint(tr("ui.b_bn") % _station_name(bn))
 	else:
 		_hint(tr("ui.b_bn_none") % int(round(float(est["served"]))))
-	for group in Data.STATION_GROUPS:
-		var ids := []
-		for id in Data.STATIONS:
-			var def: Dictionary = Data.STATIONS[id]
-			if def["group"] != group[0] or def.get("virtual", false):
-				continue
-			if Game.station_available(id) and not def.get("later", false):
-				ids.append(id)
-		if ids.is_empty():
-			continue
-		_section(tr(group[1]))
-		for id in ids:
-			_station_card(id, est)
 
 func _station_card(id: String, est: Dictionary) -> void:
 	var def: Dictionary = Data.STATIONS[id]
 	var lvl := Game.station_level(id)
 	var cap := Game.station_cap(id)
 	var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]))
+	panel_grid.columns = 1
 	v.add_theme_constant_override("separation", 4)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
@@ -1265,7 +1360,7 @@ func _station_card(id: String, est: Dictionary) -> void:
 	v.add_child(eff)
 	var why := Game.station_lock_reason(id)
 	if why != "":
-		_card_action(v, _locked_button(why, 230))
+		_card_action(v, _menu_target(_locked_button(why, 230), "buy_station"))
 		return
 	# what one more level would do to today's numbers
 	var next := Economy.throughput_estimate(Game.what_if({"stations": {id: lvl + 1}}))
@@ -1277,7 +1372,7 @@ func _station_card(id: String, est: Dictionary) -> void:
 		v.add_child(g)
 	var cost := Game.station_cost(id)
 	var text := (tr("ui.b_unlock") % Loc.money(cost)) if lvl == 0 and int(def.get("owned_from", 0)) > 0 else (tr("ui.b_buy_level") % [lvl + 1, Loc.money(cost)])
-	_card_action(v, _buy_button(text, cost, Game.buy_station_level.bind(id), 230))
+	_card_action(v, _menu_target(_buy_button(text, cost, Game.buy_station_level.bind(id), 230), "buy_station"))
 
 func _fill_goals() -> void:
 	var g := Game.current_goal()
@@ -1336,6 +1431,10 @@ func _on_goal_claimed(g: Dictionary) -> void:
 	show_dialog(tr(Data.MENTOR), [tr(String(g.get("say", "")))], tr("ui.g_ok"))
 
 func _fill_promote() -> void:
+	if _prep_detail.is_empty():
+		_configure_prep_roll(Data.MARKETING.keys(), _promo_roll_card)
+		return
+	_prep_back()
 	_hint(tr("ui.a_hint"))
 	var eff: Label
 	if Game.competition() > 0.0:
@@ -1344,15 +1443,25 @@ func _fill_promote() -> void:
 	else:
 		eff = _label(tr("ui.a_effect_none") % Game.promo_power(), "Heading")
 	panel_body.add_child(eff)
-	for id in Data.MARKETING:
-		var def: Dictionary = Data.MARKETING[id]
-		var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]))
-		var b: Button
-		if Game.marketing.has(id):
-			b = _locked_button(tr("ui.a_active") % int(Game.marketing[id]), 220)
-		else:
-			b = _buy_button(tr("ui.a_start") % Loc.money(float(def["cost"])), float(def["cost"]), Game.start_marketing.bind(id), 220)
-		_card_action(v, b)
+	var id := _prep_detail
+	var def: Dictionary = Data.MARKETING[id]
+	var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]), 88)
+	panel_grid.columns = 1
+	var b: Button
+	if Game.marketing.has(id):
+		b = _locked_button(tr("ui.a_active") % int(Game.marketing[id]), 220)
+	else:
+		b = _buy_button(tr("ui.a_start") % Loc.money(float(def["cost"])), float(def["cost"]), Game.start_marketing.bind(id), 220)
+	_card_action(v, _menu_target(b, "start_promo"))
+
+func _promo_roll_card(index: int) -> PanelContainer:
+	var id := _roll_ids[index]
+	var def: Dictionary = Data.MARKETING[id]
+	var title := tr(def["name"])
+	var value := tr("ui.a_active") % int(Game.marketing[id]) if Game.marketing.has(id) else Loc.money(float(def["cost"]))
+	var card := _model_roll_card("campaign:" + id, def["icon"], title, value)
+	_roll_open(card, index, "inspect_" + id, title, _open_prep_detail.bind(id))
+	return card
 
 # ================================================================= card helpers
 
