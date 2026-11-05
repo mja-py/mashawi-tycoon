@@ -167,7 +167,7 @@
 	</script>
 	<script src="index.js"></script>
 	<script>
-	const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":4377104,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+	const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":5811124,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 	const GODOT_THREADS_ENABLED = false;
 	(function () {
 		const statusOverlay = document.getElementById('status');
@@ -371,8 +371,10 @@
 			loaded.then(function () {
 				// ?dev=--fps%20--dbg_input forwards dev flags to the game (see scripts/core/dev_tools.gd).
 				const args = ['--main-pack', pack];
-				const dev = new URLSearchParams(location.search).get('dev');
-				if (dev) { args.push('--'); dev.split(' ').forEach(function (a) { if (a) { args.push(a); } }); }
+				const query = new URLSearchParams(location.search);
+				const dev = (query.get('dev') || '').split(' ').filter(Boolean);
+				if (query.get('demo') === 'characters') { dev.push('--character-demo'); }
+				if (dev.length) { args.push('--', ...dev); }
 				return engine.start({ args: args });
 			}).then(function () {
 				rlog('engine started');
