@@ -10,6 +10,7 @@ const DESIGNS := {
 	"jbr": [Color("c1ae95"), Color("9baca0"), Color("f0d1a8"), Vector2(0.77, 0.46), 0.23, 0.48, false],
 	"mall": [Color("c2c0b9"), Color("abada9"), Color("676f73"), Vector2(0.9, 0.68), 0.3, 0.61, false],
 	"gv": [Color("b49779"), Color("ab8370"), Color("75494a"), Vector2(0.58, 0.46), 0.31, 0.52, true],
+	"boulevard": [Color("96918d"), Color("b6a898"), Color("726854"), Vector2(0.91, 0.53), -0.88, 0.27, true],
 }
 
 static func build(parent: Node3D, layout: String, size: Vector2, center: Vector3) -> void:

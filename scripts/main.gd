@@ -131,7 +131,8 @@ func _apply_dev_flags() -> void:
 		Game.menu["chicken_tikka"]["level"] = 3
 		Game.stock_for_today()
 		show_prep()
-		world.preview_cart()
+		if Game.stage_tier() == 0:
+			world.preview_cart()
 		return
 	world.set_location(Game.location)
 	if DevTools.has("screenshot"):

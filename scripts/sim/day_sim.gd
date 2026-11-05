@@ -121,7 +121,11 @@ func _process(delta: float) -> void:
 			clock_changed.emit(hour)
 		stats["queue"] = tp.queue_len()
 		stats["kitchen"] = pickup.size()
-		stats["seated"] = tp.seated.size()
+		var seated := 0
+		for diner in tp.seated:
+			if diner.get("active", true):
+				seated += 1
+		stats["seated"] = seated
 		stats_changed.emit(stats)
 	if hour >= end_hour:
 		_close()
@@ -366,6 +370,8 @@ func _after_pickup(c: Customer, dine_in: bool) -> void:
 func _on_sat(c: Customer) -> void:
 	if c.state == Customer.State.SEATED:
 		tp.seat_taken(c)
+		if world.plot and _seat_of.has(c):
+			world.plot.show_meal(int(_seat_of[c]["table"]))
 
 func _take_seat(c: Customer) -> Dictionary:
 	if world.plot == null or not world.plot.has_method("free_seat"):
@@ -383,8 +389,7 @@ func _release_seat(c: Customer) -> void:
 	var seat: Dictionary = _seat_of[c]
 	_seat_of.erase(c)
 	if world.plot != null:
-		world.plot.release_seat(int(seat["idx"]))
-		world.plot.set_table_dirty(int(seat["table"]), true)
+		world.plot.release_seat(int(seat["idx"]), c)
 
 ## Done eating: the table is left dirty and the guest walks off.
 func _on_left_seat(payload) -> void:

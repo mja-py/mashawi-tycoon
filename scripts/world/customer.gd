@@ -24,11 +24,14 @@ var bubble: Label3D
 var wants: String = "food"
 var forced_stop := false
 var on_promenade := false
+var order_facing := World.CART_POS
+var pickup_facing := World.CART_POS
 var item: String = ""
 var wait_min: float = 0.0
 var slot: int = -1
 var seat: Dictionary = {}
 var _path: Array[Vector3] = []
+var _seat_trail: Array[Vector3] = []
 var _bubble_tween: Tween
 ## Skip accelerates only customer movement; meshes and UI animate at normal speed.
 var simulation_speed := 1.0
@@ -91,11 +94,13 @@ func go_to_slot(index: int, pos: Vector3) -> void:
 	state = State.TO_SLOT
 	_walk_towards(target)
 
-## Walk to a seat ({idx, table, pos, facing, approach, y_off}) and sit down there.
+## Follow the terrace aisles, then step into the chair.
 func go_to_seat(s: Dictionary) -> void:
 	seat = s
-	_path = [s["pos"]]
-	target = s.get("approach", s["pos"])
+	_seat_trail.clear()
+	_path.assign(s["route"])
+	_path.append(s["pos"])
+	target = _path.pop_front()
 	state = State.TO_SEAT
 	_walk_towards(target)
 
@@ -106,6 +111,8 @@ func _sit_down() -> void:
 		_yaw = float(seat.get("facing", PI))
 		model.position.y = float(seat.get("y_off", 0.0))
 		ModelLib.play_loop(model, "sit")
+	if is_instance_valid(_bag):
+		_bag.queue_free()
 	arrived.emit(self)
 
 ## Stand up from the table and walk off along the sidewalk.
@@ -114,11 +121,16 @@ func leave_from_seat(text: String = "", color: Color = Color.WHITE) -> void:
 		say(text, color)
 	if model:
 		model.position.y = 0.0
-	var approach: Vector3 = seat.get("approach", position) if not seat.is_empty() else position
+	if state == State.SEATED:
+		_seat_trail.pop_back()
 	seat = {}
-	var lane := World.PROMENADE_Z if on_promenade else World.WALK_Z
-	_path = [Vector3(approach.x, 0, lane)]
-	target = approach
+	_seat_trail.reverse()
+	_path.assign(_seat_trail)
+	_seat_trail.clear()
+	if _path.is_empty():
+		_start_leaving()
+		return
+	target = _path.pop_front()
 	state = State.TO_SEAT
 	_leaving_after_path = true
 	_walk_towards(target)
@@ -237,7 +249,7 @@ func _process(delta: float) -> void:
 					_walk_towards(target)
 					return
 				state = State.QUEUED
-				face_point(World.CART_POS)
+				face_point(pickup_facing if slot >= 100 else order_facing)
 				if model:
 					ModelLib.play_loop(model, "idle")
 				arrived.emit(self)
@@ -248,6 +260,8 @@ func _process(delta: float) -> void:
 			d.y = 0
 			if d.length() < 0.03:
 				position = target
+				if not _leaving_after_path:
+					_seat_trail.append(position)
 				if not _path.is_empty():
 					target = _path.pop_front()
 					_walk_towards(target)

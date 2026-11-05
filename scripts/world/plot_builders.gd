@@ -75,6 +75,24 @@ static func grill(parent: Node3D, pos: Vector3, n: int, batch: MeshBatch = null)
 			sk.rotation.y = deg_to_rad(90)
 	return glows
 
+static func fryer(parent: Node3D, p: Vector3, tier: int) -> void:
+	var b := MeshBatch.new()
+	b.add_box(Vector3(0.26, 0.087, 0.19), STEEL, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.044, 0)))
+	b.add_box(Vector3(0.21, 0.012, 0.14), DARK, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.088, 0)))
+	for i in range(2 if tier >= 3 else 1):
+		var x := (i - 0.5) * 0.092 if tier >= 3 else 0.0
+		b.add_box(Vector3(0.078, 0.018, 0.091), GOLD, Transform3D(Basis.IDENTITY, p + Vector3(x, 0.099, -0.012)))
+		b.add_box(Vector3(0.021, 0.022, 0.070), DARK, Transform3D(Basis.IDENTITY, p + Vector3(x, 0.109, 0.064)))
+	b.add_box(Vector3(0.038, 0.017, 0.008), RED, Transform3D(Basis.IDENTITY, p + Vector3(-0.073, 0.059, 0.098)))
+	b.flush(parent)
+	spawn("fries", parent, p + Vector3(0.097, 0.086, -0.047), 0, 0.19, false)
+
+static func dessert_case(parent: Node3D, p: Vector3, tier: int) -> void:
+	spawn("sweets", parent, p, 0, 1.0)
+	if tier >= 2:
+		ModelLib.spawn("food/saffron-cake", parent, p + Vector3(-0.075, 0.219, 0), 20, 0.24)
+		ModelLib.spawn("food/omani-halwa", parent, p + Vector3(0.075, 0.219, 0), -10, 0.24)
+
 ## Grill smoke rising from pos (keep these few: one GPUParticles3D each).
 static func smoke(parent: Node3D, pos: Vector3, extents: Vector3 = Vector3(0.08, 0.01, 0.06), amount: int = 16) -> GPUParticles3D:
 	var p := GPUParticles3D.new()

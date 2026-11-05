@@ -31,11 +31,12 @@ const LINE_Z := -0.01
 const CREW_Y := 0.16
 const CHIMNEY_Z := -0.5
 ## terrace
-const TABLE_SCALE := 0.75
-const CHAIR_X := 0.19
-const ROWS := [0.12, -0.3, -0.72]
-const AISLE_Z := 0.52
-const RAIL_Z := 0.72
+const CHAIR_X := 0.218
+const ROWS := [0.28, -0.63]
+const AISLE_Z := -0.17
+const FRONT_AISLE_Z := 0.74
+const ENTRY_X := -0.35
+const DECK_Y := 0.018
 
 const CREAM := Color(0.96, 0.9, 0.78)
 const TRIM := Color(0.52, 0.13, 0.16)
@@ -61,7 +62,7 @@ var _smokes: Array = []
 var _crew: Array = []
 var _t := 0.0
 var simulation_speed := 1.0
-## {idx, table, pos (plot space), facing, approach (plot space), y_off, who}
+## {idx, table, pos, facing, route (plot space), y_off, who}
 var seats: Array = []
 ## {pos, node (plate holder), dirty, left}
 var tables: Array = []
@@ -71,6 +72,7 @@ var _helper: Node3D
 var _board: Label3D
 var _applied := false
 var _stall_board: Label3D
+var _truck_board: Label3D
 
 func _init() -> void:
 	cart = MashawiStand.new()
@@ -124,6 +126,8 @@ func apply(state: Dictionary) -> void:
 		_board.visible = not neon
 	if _alive(_stall_board):
 		_stall_board.visible = not neon
+	if _alive(_truck_board):
+		_truck_board.visible = not neon
 	cart.set_neon(neon and stage < FIXED)
 	if _alive(_helper):
 		# a second pair of hands once the grill or the counter is busy enough
@@ -151,6 +155,11 @@ func _wanted(stations: Dictionary, paved: bool) -> Dictionary:
 		var lt := _tier(stations, "lights")
 		if lt > 0:
 			w["station:lights:%d:%s" % [lt, s]] = ["_rig_lights", lt]
+		if stage >= 1:
+			for id in ["doner", "fryer", "karak", "sweets", "coldbox"]:
+				var t := _tier(stations, id)
+				if t > 0:
+					w["rig:%s:%d:%s" % [id, t, s]] = ["_build_mobile_equipment", id, t]
 		return w
 	for id in ["counter", "grill"]:
 		# the kiosk always comes with a till and one mangal
@@ -203,15 +212,29 @@ func _smoke(parent: Node3D, pos: Vector3, extents: Vector3, amount: int) -> void
 # ---------------------------------------------------------------- contract for the sim
 
 func queue_slot(i: int) -> Vector3:
-	if stage < FIXED:
+	if stage < 2:
 		return World.CART_POS + Vector3(0.05 + 0.5 * i, 0, 0.42 + 0.02 * i)
-	return position + Vector3(K_X - 0.35 + 0.48 * i, 0, 0.76 + 0.012 * i)
+	var front := World.CART_POS + FoodTruck.ORDER if stage == 2 else position + Vector3(K_X + 0.41, 0, 0.58)
+	# Compress the tail into the street bounds at high counter levels.
+	var rank := float(i)
+	front.x += rank * 0.43 / (1.0 + 0.073 * rank)
+	return front
 
 func pickup_slot(i: int) -> Vector3:
+	if stage >= 2:
+		var first := World.CART_POS + FoodTruck.PICKUP if stage == 2 else position + Vector3(K_X - 0.40, 0, 0.58)
+		var offset := float(i)
+		return first + Vector3(-offset * 0.35 / (1.0 + 0.075 * offset), 0, minf(offset * 0.052, 0.22))
 	var actor := server()
 	var base := actor.global_position if actor else World.CART_POS
 	base.y = 0.0
 	return base + Vector3(-0.14 - 0.34 * i, 0.0, (0.40 if stage < FIXED else 0.69) + 0.07 * i)
+
+func service_front(pickup: bool) -> Vector3:
+	if stage < 2:
+		return World.CART_POS
+	var slot := pickup_slot(0) if pickup else queue_slot(0)
+	return slot + Vector3(0, 0, -0.34)
 
 func server() -> Node3D:
 	if stage < FIXED:
@@ -229,17 +252,30 @@ func free_seat() -> Dictionary:
 			continue
 		if bool(tables[int(s["table"])]["dirty"]):
 			continue
-		return {"idx": s["idx"], "table": s["table"], "pos": position + (s["pos"] as Vector3), "facing": s["facing"],
-			"approach": position + (s["approach"] as Vector3), "y_off": s["y_off"]}
+		var route: Array[Vector3] = []
+		for point in s["route"]:
+			route.append(position + point)
+		return {"idx": s["idx"], "table": s["table"], "pos": position + (s["pos"] as Vector3),
+			"facing": s["facing"], "route": route, "y_off": s["y_off"]}
 	return {}
 
 func take_seat(idx: int, who) -> void:
 	if idx >= 0 and idx < seats.size():
 		seats[idx]["who"] = who
 
-func release_seat(idx: int) -> void:
-	if idx >= 0 and idx < seats.size() and not _holds(seats[idx]["who"]):
-		seats[idx]["who"] = null
+func release_seat(idx: int, who: Customer) -> void:
+	if idx < 0 or idx >= seats.size() or seats[idx]["who"] != who:
+		return
+	var table := int(seats[idx]["table"])
+	seats[idx]["who"] = null
+	for s in seats:
+		if int(s["table"]) == table and _holds(s["who"]):
+			return
+	set_table_dirty(table, true)
+
+func show_meal(table: int) -> void:
+	if table >= 0 and table < tables.size() and _alive(tables[table]["node"]):
+		tables[table]["node"].show()
 
 func set_table_dirty(table: int, dirty: bool) -> void:
 	if table < 0 or table >= tables.size():
@@ -390,24 +426,49 @@ func _build_stall(n: Node3D) -> void:
 	PlotBuilders.spawn("bag", n, Vector3(1.68, 0, 0.02), -20, 0.4)
 	b.flush(n)
 
-## Stage 2: the food truck (drawn by the stand) + cones at the kerb, a dumpster and a power hookup.
+## Stage 2: the open service hatch has a real counter and fitted kitchen.
 func _build_truck(n: Node3D) -> void:
 	n.position = STAND_POS
-	PlotBuilders.spawn("cone", n, Vector3(-1.25, 0, 0.98), 0, 0.26)
-	PlotBuilders.spawn("cone", n, Vector3(1.3, 0, 0.98), 30, 0.26)
-	PlotBuilders.spawn("dumpster", n, Vector3(1.6, 0, -0.02), -90, 1.2)
-	PlotBuilders.spawn("pole", n, Vector3(-1.55, 0, -0.1), 0, 2.0)
+	_truck_board = FoodTruck.build(n)
 	var b := MeshBatch.new()
-	# cable from the pole to the truck: one continuous sagging line
-	var pts: Array[Vector3] = []
-	for i in range(7):
-		var t := i / 6.0
-		pts.append(Vector3(-1.48 + t * 0.7, 0.85 - 0.6 * t + 0.25 * t * t, -0.1))
-	for i in range(6):
-		var a: Vector3 = pts[i]
-		var c: Vector3 = pts[i + 1]
-		b.add_box(Vector3(0.012, 0.012, a.distance_to(c) + 0.01), PlotBuilders.DARK, Transform3D(Basis.looking_at(c - a, Vector3.UP), (a + c) / 2.0))
+	PlotBuilders.grill(n, FoodTruck.GRILL - Vector3(0.08, 0, 0), 2, b)
+	b.add_box(Vector3(0.12, 0.072, 0.10), PlotBuilders.DARK, _at(Vector3(-0.45, FoodTruck.SILL_Y + 0.036, 0.30)))
+	b.add_box(Vector3(0.09, 0.035, 0.006), Color("73aa8d"), _at(Vector3(-0.45, FoodTruck.SILL_Y + 0.06, 0.352)))
 	b.flush(n)
+	_smoke(n, Vector3(0.05, 1.33, -0.20), Vector3(0.028, 0.009, 0.028), 10)
+	_service_markers(n, FoodTruck.PICKUP.x, FoodTruck.ORDER.x, FoodTruck.HATCH_Z + 0.011, 0.31)
+	for x in [FoodTruck.PICKUP.x, FoodTruck.ORDER.x]:
+		ModelLib.box(n, Vector3(0.18, 0.006, 0.025), Vector3(x, 0.015, 0.68), PlotBuilders.GOLD)
+
+func _build_mobile_equipment(n: Node3D, station: String, t: int) -> void:
+	n.position = STAND_POS
+	match station:
+		"fryer":
+			var p := FoodTruck.FRYER
+			if stage == 1:
+				p = Vector3(1.18, 0.315, 0.11)
+			PlotBuilders.fryer(n, p, t)
+		"sweets":
+			PlotBuilders.dessert_case(n, FoodTruck.SWEETS, t)
+		"doner":
+			var spit := Node3D.new()
+			spit.position = Vector3(-0.13, FoodTruck.SILL_Y, -0.06) if stage == 2 else Vector3(-0.88, 0.33, 0.06)
+			n.add_child(spit)
+			PlotBuilders.spawn("doner", spit, Vector3.ZERO, 0, 0.35)
+			_spits.append(spit)
+		"karak":
+			var p := FoodTruck.TEA if stage == 2 else Vector3(1.30, 0.33, -0.03)
+			PlotBuilders.spawn("samovar", n, p, 0, 1.10)
+			PlotBuilders.spawn("cup_tea", n, p + Vector3(-0.09, 0, 0.05), 0, 0.20, false)
+		"coldbox":
+			if stage == 2:
+				var p := Vector3(1.06, 0.235, -0.18)
+				ModelLib.box(n, Vector3(0.27, 0.27, 0.28), p + Vector3.UP * 0.135, STEEL)
+				ModelLib.box(n, Vector3(0.22, 0.026, 0.018), p + Vector3(0, 0.20, 0.15), PlotBuilders.DARK)
+
+func _service_markers(n: Node3D, pickup_x: float, order_x: float, z: float, y: float) -> void:
+	PlotBuilders.sign(n, Vector3(pickup_x, y, z), 52, 0.0013, "scene.pickup", CREAM)
+	PlotBuilders.sign(n, Vector3(order_x, y, z), 52, 0.0013, "scene.order", CREAM)
 
 ## Stage 3+: a fixed booth at the building line with a service window and a terrace on its -X side.
 func _build_kiosk(n: Node3D) -> void:
@@ -459,8 +520,47 @@ func _build_kiosk(n: Node3D) -> void:
 	# crew stand at the window ends so the stations behind them stay visible
 	_crew_member(n, true, Vector3(K_X - 0.36, CREW_Y, -0.22), 15)
 	_helper = _crew_member(n, false, Vector3(K_X + 0.36, CREW_Y, -0.24), -15)
+	if stage >= 4:
+		_dress_restaurant(n, b)
 	_build_terrace(n, b)
 	b.flush(n)
+
+func _dress_restaurant(n: Node3D, b: MeshBatch) -> void:
+	var green := Color("205c50")
+	var bronze := Color("ab8253")
+	var ivory := Color("e1c7a2")
+	var front := K_FRONT + 0.018
+	# A tiled plinth, a timber service bar, and a fascia continuous with the roof.
+	b.add_box(Vector3(K_W, 0.25, 0.025), green, _at(Vector3(K_X, 0.227, front)))
+	for i in range(17):
+		var x := K_X + (i - 8) * 0.103
+		b.add_box(Vector3(0.036, 0.036, 0.009), bronze,
+			Transform3D(Basis(Vector3.BACK, PI / 4.0), Vector3(x, 0.201, front + 0.017)))
+	b.add_box(Vector3(K_W + 0.04, 0.038, 0.044), bronze, _at(Vector3(K_X, 0.366, front)))
+	b.add_box(Vector3(K_W + 0.14, 0.106, 0.13), green, _at(Vector3(K_X, 1.041, front + 0.018)))
+	b.add_box(Vector3(K_W + 0.19, 0.028, 0.18), bronze, _at(Vector3(K_X, 1.107, front + 0.01)))
+	for x in [K_X - 0.40, K_X + 0.41]:
+		b.add_box(Vector3(0.30, 0.075, 0.015), green, _at(Vector3(x, 0.301, front + 0.026)))
+		b.add_box(Vector3(0.22, 0.009, 0.036), bronze, _at(Vector3(x, 0.022, 0.57)))
+	_service_markers(n, K_X - 0.40, K_X + 0.41, front + 0.035, 0.301)
+	# The screened back wall keeps the terrace open to the street and camera.
+	var left := -_gap + 0.14
+	var right := -0.33
+	var back := -1.04
+	for x in [left, right]:
+		b.add_box(Vector3(0.07, 0.87, 0.07), PlotBuilders.WOOD, _at(Vector3(x, 0.435, back)))
+	b.add_box(Vector3(right - left, 0.062, 0.08), PlotBuilders.WOOD, _at(Vector3((left + right) * 0.5, 0.85, back)))
+	b.add_box(Vector3(right - left, 0.047, 0.047), PlotBuilders.WOOD, _at(Vector3((left + right) * 0.5, 0.307, back)))
+	for i in range(floori((right - left) / 0.13)):
+		var x := left + 0.11 + i * 0.13
+		b.add_box(Vector3(0.035, 0.52, 0.026), PlotBuilders.WOOD, _at(Vector3(x, 0.57, back)))
+	b.add_box(Vector3(right - left, 0.07, 0.20), ivory, _at(Vector3((left + right) * 0.5, 0.87, back + 0.038)))
+	if stage >= 5:
+		# Flagship: a second roofline and repeating bronze fins over the lounge.
+		b.add_box(Vector3(right - left + 0.16, 0.09, 0.51), green, _at(Vector3((left + right) * 0.5, 1.06, back + 0.16)))
+		for i in range(11):
+			var x := lerpf(left, right, float(i) / 10.0)
+			b.add_box(Vector3(0.037, 0.038, 0.60), bronze, _at(Vector3(x, 1.122, back + 0.17)))
 
 # ---------------------------------------------------------------- terrace + seating
 
@@ -468,70 +568,65 @@ func _layout_terrace() -> void:
 	_slots.clear()
 	if stage < FIXED:
 		return
-	var cols := []
-	var x := -0.6
-	while x - 0.25 >= -_gap + 0.04:
-		cols.append(x)
-		x -= 0.7
+	_music_spot = Vector3(-_gap + 0.24, 0, -0.99)
 	for r in range(ROWS.size()):
-		for c in range(cols.size()):
-			if r == ROWS.size() - 1 and c == cols.size() - 1:
-				_music_spot = Vector3(cols[c], 0, ROWS[r])
-				continue
-			_slots.append({"x": cols[c], "z": ROWS[r], "row": r, "col": c})
+		var x := -0.79
+		while x - 0.28 >= -_gap + 0.03:
+			_slots.append(Vector3(x, 0, ROWS[r]))
+			x -= 0.64
 
 func _build_terrace(n: Node3D, b: MeshBatch) -> void:
 	var left := -_gap + 0.03
 	var right := -0.28
-	b.add_box(Vector3(right - left, 0.012, RAIL_Z + 0.1 - (K_BACK + 0.05)), DECK,
-		_at(Vector3((left + right) / 2.0, 0.006, (RAIL_Z + 0.1 + K_BACK + 0.05) / 2.0)))
-	# planters with bushes as a low rail, between the chair lanes
-	var xs := []
-	for s in _slots:
-		if int(s["row"]) == 0:
-			xs.append(float(s["x"]))
-	for x in xs:
-		# small enough to stay clear of the chair lanes either side (table x +- 0.19)
-		b.add_model(PlotBuilders.PROPS["planter"], Transform3D(Basis.from_scale(Vector3.ONE * 0.5), Vector3(x, 0, RAIL_Z)))
-		b.add_model(PlotBuilders.PROPS["bush"], Transform3D(Basis.from_scale(Vector3.ONE * 0.38), Vector3(x, 0.09, RAIL_Z)))
-	# two parasols over the middle row
-	var mid := []
-	for s in _slots:
-		if int(s["row"]) == 1:
-			mid.append(s)
-	if mid.size() >= 1:
-		PlotBuilders.spawn("parasol_a", n, Vector3(mid[0]["x"], 0, mid[0]["z"]), 0, 1.35)
-	if mid.size() >= 3:
-		PlotBuilders.spawn("parasol_b", n, Vector3(mid[2]["x"], 0, mid[2]["z"]), 30, 1.35)
+	var back := -1.12
+	var front := FRONT_AISLE_Z + 0.12
+	var center := (left + right) * 0.5
+	b.add_box(Vector3(right - left, DECK_Y, front - back), DECK, _at(Vector3(center, DECK_Y * 0.5, (front + back) * 0.5)))
+	var inlay := Color("ab815d")
+	for z in [AISLE_Z - 0.12, AISLE_Z + 0.12, front - 0.065]:
+		b.add_box(Vector3(right - left - 0.04, 0.005, 0.028), inlay, _at(Vector3(center, DECK_Y + 0.002, z)))
+	# Only the perimeter has planters. The front approach and side entry stay open.
+	for z in [-0.92, 0.63]:
+		var p := Vector3(left + 0.08, DECK_Y, z)
+		b.add_box(Vector3(0.14, 0.10, 0.18), Color("976950"), _at(p + Vector3.UP * 0.05))
+		b.add_box(Vector3(0.156, 0.025, 0.195), Color("bc9670"), _at(p + Vector3.UP * 0.10))
+		b.add_model(PlotBuilders.PROPS["bush"], Transform3D(Basis.from_scale(Vector3.ONE * 0.38), p + Vector3.UP * 0.108))
+	if stage == 3:
+		PlotBuilders.spawn("parasol_a", n, Vector3(left + 0.3, DECK_Y, -0.93), 15, 1.10)
 
 func _build_seating(n: Node3D, count: int) -> void:
 	seats.clear()
 	tables.clear()
 	var b := MeshBatch.new()
-	var y_off := 0.17 * TABLE_SCALE
+	var walnut := Color("5c4334")
+	var cloth := Color("e1c7a2")
+	var teal := Color("39726a")
 	for i in range(mini(count, _slots.size())):
-		var s: Dictionary = _slots[i]
-		var p := Vector3(s["x"], 0, s["z"])
-		b.add_model(PlotBuilders.PROPS["table"], Transform3D(Basis.from_scale(Vector3.ONE * TABLE_SCALE), p))
-		var dirt := Node3D.new()
-		dirt.position = p + Vector3(0, 0.24 * TABLE_SCALE, 0)
-		dirt.visible = false
-		n.add_child(dirt)
-		PlotBuilders.spawn("plate", dirt, Vector3(-0.03, 0, 0), 0, 0.2, false)
-		PlotBuilders.spawn("cup", dirt, Vector3(0.08, 0, 0.04), 0, 0.2, false)
-		ModelLib.box(dirt, Vector3(0.05, 0.012, 0.04), Vector3(0.05, 0.006, -0.05), Color(0.95, 0.95, 0.92))
-		tables.append({"pos": p, "node": dirt, "dirty": false, "left": 0.0})
+		var p: Vector3 = _slots[i] + Vector3.UP * DECK_Y
+		b.add_cyl(0.05, 0.022, walnut, _at(p + Vector3.UP * 0.011), 0.0, 12)
+		b.add_cyl(0.025, 0.24, walnut, _at(p + Vector3.UP * 0.126), 0.0, 12)
+		b.add_cyl(0.143, 0.026, walnut, _at(p + Vector3.UP * 0.249), 0.0, 20)
+		b.add_cyl(0.121, 0.007, cloth, _at(p + Vector3.UP * 0.264), 0.0, 20)
+		var meal := Node3D.new()
+		meal.position = p + Vector3.UP * 0.268
+		meal.visible = false
+		n.add_child(meal)
+		PlotBuilders.spawn("plate", meal, Vector3(-0.062, 0, 0), 0, 0.18, false)
+		PlotBuilders.spawn("plate", meal, Vector3(0.062, 0, 0), 0, 0.18, false)
+		PlotBuilders.spawn("cup", meal, Vector3(0, 0, -0.063), 0, 0.18, false)
+		tables.append({"pos": p, "node": meal, "dirty": false, "left": 0.0})
 		for side in [-1.0, 1.0]:
 			var chair := p + Vector3(side * CHAIR_X, 0, 0)
-			var lane: float = chair.x if int(s["row"]) == 0 else chair.x + side * 0.15
-			seats.append({"idx": 0, "table": i, "pos": chair, "facing": -side * PI / 2.0,
-				"approach": Vector3(lane, 0, AISLE_Z), "y_off": y_off, "who": null})
-	# hand out the seats closest to the pickup spots first (shortest walk with the food)
-	var pick := pickup_slot(0) - position
-	seats.sort_custom(func(a, c): return (a["approach"] as Vector3).distance_to(pick) + (a["pos"] as Vector3).distance_to(a["approach"]) \
-		< (c["approach"] as Vector3).distance_to(pick) + (c["pos"] as Vector3).distance_to(c["approach"]))
-	for k in range(seats.size()):
-		seats[k]["idx"] = k
+			b.add_box(Vector3(0.147, 0.029, 0.16), teal, _at(chair + Vector3.UP * 0.145))
+			for z in [-0.059, 0.059]:
+				for x in [-0.055, 0.055]:
+					b.add_box(Vector3(0.017, 0.13, 0.017), walnut, _at(chair + Vector3(x, 0.065, z)))
+			b.add_box(Vector3(0.025, 0.17, 0.155), walnut, _at(chair + Vector3(side * 0.066, 0.218, 0)))
+			var route: Array[Vector3] = [Vector3(chair.x, 0, FRONT_AISLE_Z)]
+			if p.z < AISLE_Z:
+				route = [Vector3(ENTRY_X, 0, FRONT_AISLE_Z), Vector3(ENTRY_X, 0, AISLE_Z), Vector3(chair.x, 0, AISLE_Z)]
+			seats.append({"idx": seats.size(), "table": i, "pos": Vector3(chair.x, 0, chair.z), "facing": -side * PI / 2.0,
+				"route": route, "y_off": 0.027, "who": null})
 	b.flush(n)
 
 # ---------------------------------------------------------------- stations (kiosk)
@@ -603,14 +698,7 @@ func _st_doner(n: Node3D, t: int) -> void:
 		ModelLib.box(n, Vector3(0.12, 0.3, 0.02), Vector3(x, COUNTER_Y + 0.18, LINE_Z - 0.1), Color(1.0, 0.45, 0.1), 1.8)
 
 func _st_fryer(n: Node3D, t: int) -> void:
-	var x := K_X + 0.23
-	ModelLib.box(n, Vector3(0.18, 0.08, 0.16), Vector3(x, COUNTER_Y + 0.04, LINE_Z), STEEL)
-	ModelLib.box(n, Vector3(0.14, 0.01, 0.12), Vector3(x, COUNTER_Y + 0.085, LINE_Z), Color(0.85, 0.65, 0.2))
-	PlotBuilders.spawn("fries", n, Vector3(x + 0.05, COUNTER_Y + 0.08, LINE_Z + 0.05), 0, 0.22, false)
-	if t >= 3:
-		# a shelf of take-away boxes above the fryer
-		ModelLib.box(n, Vector3(0.26, 0.02, 0.1), Vector3(x, COUNTER_Y + 0.26, LINE_Z - 0.06), PlotBuilders.WOOD)
-		PlotBuilders.spawn("styrofoam", n, Vector3(x + 0.02, COUNTER_Y + 0.27, LINE_Z - 0.06), 0, 0.12, false)
+	PlotBuilders.fryer(n, Vector3(K_X + 0.16, COUNTER_Y, LINE_Z), t)
 
 func _st_karak(n: Node3D, t: int) -> void:
 	var xs := [K_X + 0.47]
@@ -628,11 +716,7 @@ func _st_karak(n: Node3D, t: int) -> void:
 			PlotBuilders.spawn("cup_tea", n, Vector3(K_X + 0.5 + i * 0.07, COUNTER_Y + 0.27, LINE_Z - 0.06), 0, 0.2, false)
 
 func _st_sweets(n: Node3D, t: int) -> void:
-	var p := Vector3(K_X - 0.55, COUNTER_Y + 0.04, K_FRONT + 0.03)
-	PlotBuilders.spawn("sweets", n, p, 0, 0.75)
-	if t >= 2:
-		PlotBuilders.spawn("cake", n, p + Vector3(-0.05, 0.165, 0), 0, 0.16, false)
-		PlotBuilders.spawn("plate", n, p + Vector3(0.07, 0.165, 0), 0, 0.12, false)
+	PlotBuilders.dessert_case(n, Vector3(K_X + 0.46, COUNTER_Y + 0.04, K_FRONT + 0.01), t)
 
 func _st_coldbox(n: Node3D, count: int) -> void:
 	var b := MeshBatch.new()
@@ -681,7 +765,7 @@ func _st_lights(n: Node3D, t: int) -> void:
 	var left := -_gap + 0.03
 	var right := -0.27
 	var back := K_BACK + 0.05
-	var front := RAIL_Z
+	var front := FRONT_AISLE_Z
 	var top := 1.05
 	var lx := []
 	# tier 1: two lantern posts at the back corners of the terrace
@@ -749,9 +833,7 @@ func _st_music(n: Node3D, t: int) -> void:
 func _st_shade(n: Node3D, t: int) -> void:
 	var b := MeshBatch.new()
 	# tier 1: one more parasol over the back row
-	for s in _slots:
-		if int(s["row"]) == 2 and int(s["col"]) == 1:
-			PlotBuilders.spawn("parasol_b", n, Vector3(s["x"], 0, s["z"]), 15, 1.35)
+	PlotBuilders.spawn("parasol_b", n, Vector3(-_gap + 0.12, DECK_Y, -0.92), 15, 1.15)
 	if t >= 2:
 		# shade sail over the back of the terrace on two tall posts
 		var left := -_gap + 0.08

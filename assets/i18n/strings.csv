@@ -463,3 +463,5 @@ ui.m_edit_dish,Price & recipe,السعر والوصفة
 ui.m_view_dish,Meet this dish,تعرّف على الطبق
 ui.m_house_recipe,Your house recipe,خلطة المحل
 ui.m_make_special,Make it your speciality,خلّه طبقك المميز
+scene.pickup,Pickup,الاستلام
+scene.order,Order,الطلب

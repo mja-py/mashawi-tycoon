@@ -28,10 +28,10 @@ const DISTRICT_CAST := {
 	"fahidi": ["creek-kandura", "creek-abaya", "souq-man", "souq-woman", "city-commuter", "beach-walker"],
 	"creek": ["beach-walker", "creek-abaya", "creek-kandura", "souq-woman", "souq-man"],
 	"metro": ["city-commuter", "souq-man", "creek-kandura", "souq-woman", "city-commuter", "creek-abaya"],
-	"jbr": ["beach-walker", "souq-man", "city-commuter", "beach-walker", "creek-abaya", "souq-woman"],
-	"downtown": ["city-commuter", "creek-kandura", "souq-woman", "creek-abaya", "souq-man"],
+	"jbr": ["jbr-modest-swimmer", "jbr-local-swimmer", "beach-walker", "souq-man", "creek-abaya", "souq-woman"],
+	"downtown": ["downtown-fashion", "downtown-tailored", "city-commuter", "village-evening", "creek-kandura", "souq-woman"],
 	"mall": ["creek-abaya", "city-commuter", "creek-kandura", "souq-woman", "souq-man", "beach-walker"],
-	"gv": ["creek-kandura", "souq-woman", "creek-abaya", "souq-man", "beach-walker", "city-commuter"],
+	"gv": ["village-evening", "downtown-tailored", "creek-kandura", "downtown-fashion", "souq-woman", "souq-man"],
 }
 const BUILDING_ROT := 0.0
 const ROAD_ROT := 0.0
@@ -303,9 +303,13 @@ func _build_ground(layout: String) -> void:
 	var road_basis := Basis(Vector3.UP, deg_to_rad(ROAD_ROT))
 	for x in range(-HALF_W, HALF_W + 1):
 		_batch.add_model("roads/road-straight", Transform3D(road_basis, Vector3(x, 0, 0)))
-		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -1)), paving)
-		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, 1)), paving)
-		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -2)), paving)
+		if layout != "downtown":
+			_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -1)), paving)
+			_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, 1)), paving)
+			_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -2)), paving)
+	if layout == "downtown":
+		Paving.build(_level, "boulevard", Vector2(30, 2.15), Vector3(0, 0.005, -1.59))
+		Paving.build(_level, "boulevard", Vector2(30, 1.58), Vector3(0, 0.005, 1.30))
 	ModelLib.plane(_level, Vector2(40, 40), Vector3(0, -0.015, 0), Color("a99f8d"))
 
 func _lamp(x: float, z: float, rot: float, model: String = "roads/light-curved") -> void:
@@ -548,6 +552,7 @@ func _build_gv() -> void:
 	# Global Village: souk stalls, lanterns and Gulf facades
 	_gulf_row(-3.4, 1.3, 0.4)
 	_gulf_row(FRONT_Z, 1.0, 0.3, 0.6)
+	_village_gateway(Vector3(-maxf(1.62, _gap - 0.35), 0, -2.64))
 	for x in [-5.2, -3.0, 3.0, 5.2]:
 		if not _clear_of_gap(x, 0.5, 0.05):
 			continue
@@ -574,6 +579,26 @@ func _build_gv() -> void:
 	_lamp(-1.8, 0.62, 180)
 	_lamp(2.4, 0.62, 180)
 	_palms_along(1.45, 4, 6.0, 1.0)
+
+func _village_gateway(p: Vector3) -> void:
+	# A lit, wave-trimmed festival gate echoes the UAE pavilion beside the walk.
+	var sand := Color("c6a178")
+	var brass := Color("b18551")
+	var teal := Color("34676f")
+	var spring := 0.80
+	var radius := 0.53
+	for sign in [-1.0, 1.0]:
+		var x: float = sign * radius
+		_batch.add_box(Vector3(0.16, spring, 0.26), sand, _at(p + Vector3(x, spring * 0.5, 0)))
+		_batch.add_box(Vector3(0.20, 0.07, 0.30), brass, _at(p + Vector3(x, spring - 0.075, 0)))
+		_batch.add_box(Vector3(0.039, 0.52, 0.019), teal, _at(p + Vector3(x, 0.39, 0.139)))
+	for i in range(13):
+		var a := float(i) * PI / 12.0
+		var point := p + Vector3(radius * cos(a), spring + radius * sin(a), 0)
+		var turn := Basis(Vector3.BACK, a)
+		_batch.add_box(Vector3(0.17, 0.143, 0.24), sand, Transform3D(turn, point))
+		_batch.add_box(Vector3(0.089, 0.117, 0.018), teal if i % 2 else brass, Transform3D(turn, point + Vector3.BACK * 0.126))
+		_batch.add_box(Vector3(0.032, 0.029, 0.016), Color("e9ba76"), Transform3D(turn, point + Vector3.BACK * 0.139), 0.8)
 
 ## Rival food counters flanking the player at competitive places.
 func _rival_stalls() -> void:
@@ -669,6 +694,9 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 	var c := Customer.new()
 	c.simulation_speed = customer_speed
 	c.on_promenade = Paving.DESIGNS.has(location_id)
+	if plot:
+		c.order_facing = plot.service_front(false)
+		c.pickup_facing = plot.service_front(true)
 	_level.add_child(c)
 	var model_id := ""
 	if rigged:

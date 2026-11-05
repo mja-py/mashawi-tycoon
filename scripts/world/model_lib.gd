@@ -7,6 +7,8 @@ const GUEST_HEIGHTS := {
 	"souq-woman": 1.64, "souq-man": 1.75,
 	"creek-kandura": 1.74, "creek-abaya": 1.63,
 	"beach-walker": 1.67, "city-commuter": 1.76,
+	"jbr-modest-swimmer": 1.65, "jbr-local-swimmer": 1.76, "village-evening": 1.66,
+	"downtown-fashion": 1.71, "downtown-tailored": 1.79,
 }
 
 static func scene(name: String) -> PackedScene:
