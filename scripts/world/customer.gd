@@ -38,7 +38,7 @@ var _yaw := 0.0
 var _after_beat: Callable
 var _bag: Node3D
 
-func setup(female: bool, direction: int, start: Vector3, end_x: float, decide_x: float, with_visuals: bool = true) -> void:
+func setup(model_id: String, direction: int, start: Vector3, end_x: float, decide_x: float) -> void:
 	dir = direction
 	position = start
 	exit_x = end_x
@@ -46,9 +46,9 @@ func setup(female: bool, direction: int, start: Vector3, end_x: float, decide_x:
 	speed = WALK_SPEED * randf_range(0.85, 1.2)
 	# A virtual customer still walks, queues, eats and pays through the same rules,
 	# without allocating a mesh, skeleton, material, speech label or GPU shader.
-	if not with_visuals:
+	if model_id.is_empty():
 		return
-	model = ModelLib.spawn_guest(female, self)
+	model = ModelLib.spawn_guest(model_id, self)
 	if model:
 		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * 1.6)
 	_face_direction()
@@ -83,10 +83,10 @@ func go_to_slot(index: int, pos: Vector3) -> void:
 	slot = index
 	target = pos
 	_path.clear()
-	if on_promenade and index < 100 and position.z >= SouqScenery.ARRIVAL_Z - 0.1:
+	if on_promenade and index < 100 and position.z >= World.ARRIVAL_Z - 0.1:
 		# Walk alongside the line first, then turn into the assigned spot.
 		if absf(pos.x - position.x) > 0.25:
-			target = Vector3(pos.x, 0.0, SouqScenery.ARRIVAL_Z)
+			target = Vector3(pos.x, 0.0, World.ARRIVAL_Z)
 			_path.append(pos)
 	state = State.TO_SLOT
 	_walk_towards(target)
@@ -116,7 +116,7 @@ func leave_from_seat(text: String = "", color: Color = Color.WHITE) -> void:
 		model.position.y = 0.0
 	var approach: Vector3 = seat.get("approach", position) if not seat.is_empty() else position
 	seat = {}
-	var lane := SouqScenery.PROMENADE_Z if on_promenade else World.WALK_Z
+	var lane := World.PROMENADE_Z if on_promenade else World.WALK_Z
 	_path = [Vector3(approach.x, 0, lane)]
 	target = approach
 	state = State.TO_SEAT
@@ -164,14 +164,14 @@ func take_bag(bag: Node3D) -> void:
 func _start_leaving() -> void:
 	if state == State.DONE:
 		return
-	var lane_z := World.WALK_Z + 0.20
+	var lane_z := World.WALK_Z
 	var step_to_lane := position.z < World.WALK_Z - 0.1
 	if on_promenade:
 		if slot >= 100:
 			# Pickup is on the left. Exit past the vendor rather than across the line.
 			dir = -1
 			exit_x = -World.WALK_EDGE
-		lane_z = SouqScenery.PROMENADE_Z if slot >= 0 else SouqScenery.ARRIVAL_Z
+		lane_z = World.PROMENADE_Z if slot >= 0 else World.ARRIVAL_Z
 		step_to_lane = absf(position.z - lane_z) > 0.12
 	if step_to_lane:
 		target = Vector3(position.x, 0, lane_z)
@@ -186,10 +186,11 @@ func _start_leaving() -> void:
 		ModelLib.play_loop(model, "walk", 1.6)
 	_face_direction()
 
-func say(text: String, color: Color = Color.WHITE, duration: float = 1.0) -> void:
+func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.66) -> void:
 	if bubble == null or simulation_speed > 1.0:
 		return
 	bubble.text = text
+	bubble.position.y = height
 	bubble.modulate = Color(color.r, color.g, color.b, 1.0)
 	bubble.visible = true
 	bubble.scale = Vector3.ONE * 0.6

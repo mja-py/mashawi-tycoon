@@ -243,7 +243,8 @@ func _showcase_guest(step: int) -> void:
 	var i := tp.queue_len()
 	var start := world.queue_slot(i) + Vector3(0.27, 0, 0.30)
 	if step == 4 or step == 5:
-		start = Vector3(1.67 if step == 4 else 1.24, 0, World.WALK_Z + 0.24)
+		var lane := World.ARRIVAL_Z if Paving.DESIGNS.has(world.location_id) else World.WALK_Z
+		start = Vector3(1.67 if step == 4 else 1.24, 0, lane)
 	var guest := world.spawn_guest(-1, start)
 	guest.decided = true
 	guest.gone.connect(_on_gone)
@@ -272,7 +273,7 @@ func _counter_ready(payload: Customer) -> bool:
 		return false
 	if not payload.order_shown:
 		payload.order_shown = true
-		payload.say(tr(Data.MENU_ITEMS[payload.item]["name"]), Color("ffe4ab"), 0.30)
+		payload.say(tr(Data.MENU_ITEMS[payload.item]["name"]), Color("ffe4ab"), 0.30, 0.78)
 		payload.perform("order", "interact-right", 0.48)
 	return payload.beat_left == 0.0
 
@@ -343,7 +344,7 @@ func _on_served(payload, item: String, wait_min: float, dine_in: bool) -> void:
 	if running and not finishing and c.model:
 		_handoff_left = 0.72
 		world.handoff(c)
-		c.say(text, col)
+		c.say(text, col, 0.46)
 		c.perform("collect", "pick-up", 0.72, _after_pickup.bind(c, dine_in))
 	else:
 		_after_pickup(c, dine_in)

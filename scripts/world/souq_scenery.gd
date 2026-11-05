@@ -3,8 +3,6 @@ extends RefCounted
 ## The Al Seef starter plaza. Batch repeated details so the Creek vista stays
 ## cheap alongside the animated service queue.
 
-const ARRIVAL_Z := -0.46
-const PROMENADE_Z := 0.12
 const QUAY_Z := -2.77
 const PLASTER := Color("bb8f64")
 const STONE := Color("d8b690")
@@ -16,8 +14,6 @@ const BRASS := Color("be904f")
 const TEAL := Color("357b76")
 const RUST := Color("a9513a")
 const CLOTH := Color("d6c19b")
-const PAVERS := [Color("baa086"), Color("c3a98e"), Color("c9af91"), Color("b59a7f")]
-const WALK_PAVERS := [Color("ac927a"), Color("b29a81")]
 const WATER := preload("res://scripts/world/souq_water.gdshader")
 
 var _batch: MeshBatch
@@ -28,7 +24,7 @@ func _init(batch: MeshBatch, rng: RandomNumberGenerator) -> void:
 	_rng = rng
 
 func build(parent: Node3D, gap: float) -> void:
-	_paving(parent)
+	Paving.build(parent, "fahidi", Vector2(32, 9.46), Vector3(0, -0.008, 2.0))
 	_creek(parent)
 	# An asymmetric opening keeps the wind tower, shopfront and moored abra in view.
 	var west := -maxf(1.88, gap + 0.72)
@@ -41,6 +37,7 @@ func build(parent: Node3D, gap: float) -> void:
 	_market_sign(parent, Vector3(west, 0.765, -1.48))
 	_display(Vector3(west - 0.49, 0, -1.36), TEAL)
 	_display(Vector3(east + 0.54, 0, -1.41), RUST)
+	_textiles(Vector3(east - 0.70, 0, -1.56))
 	_lantern(Vector3(west + 0.53, 0.69, -1.67))
 	_lantern(Vector3(east - 0.60, 0.75, -1.72))
 	_batch.add_model("nature/tree_palmDetailedTall", Transform3D(Basis.from_scale(Vector3.ONE * 0.84), Vector3(west - 1.04, 0, -1.24)))
@@ -53,21 +50,6 @@ func _beam(a: Vector3, b: Vector3, width: float, color: Color) -> void:
 	var along := b - a
 	var basis := Basis.looking_at(along, Vector3.UP)
 	_box((a + b) * 0.5, Vector3(width, width, along.length()), color, basis)
-
-func _paving(parent: Node3D) -> void:
-	ModelLib.plane(parent, Vector2(40, 36), Vector3(0, -0.021, 15.3), Color("967e68"))
-	for row in range(15):
-		var z := -2.47 + row * 0.37
-		var tones := WALK_PAVERS if absf(z - PROMENADE_Z) < 0.50 else PAVERS
-		for col in range(-15, 16):
-			var x := (col + 0.5 * (row % 2)) * 0.57
-			_box(Vector3(x, -0.008, z), Vector3(0.559, 0.013, 0.361), tones[_rng.randi_range(0, tones.size() - 1)])
-	# Flush stone bands distinguish the waterfront path and the service apron.
-	for z in [PROMENADE_Z - 0.21, PROMENADE_Z + 0.53]:
-		for i in range(-21, 22):
-			_box(Vector3(i * 0.39, -0.003, z), Vector3(0.379, 0.015, 0.045), TRIM)
-			if i % 3 == 0:
-				_box(Vector3(i * 0.39, 0.006, z), Vector3(0.038, 0.003, 0.038), DECK, Basis(Vector3.UP, PI / 4.0))
 
 func _creek(parent: Node3D) -> void:
 	var water := MeshInstance3D.new()
@@ -92,8 +74,19 @@ func _creek(parent: Node3D) -> void:
 	# A timber landing joins the stone quay just behind the main shop.
 	for i in range(12):
 		_box(Vector3(1.52, -0.048 - i * 0.004, QUAY_Z - 0.045 - i * 0.047), Vector3(1.57, 0.033, 0.043), DECK if i % 3 else TIMBER)
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.062
+	ring.outer_radius = 0.089
+	ring.rings = 16
+	ring.ring_segments = 6
 	for x in [0.79, 2.25]:
 		_box(Vector3(x, -0.022, QUAY_Z - 0.58), Vector3(0.075, 0.28, 0.075), TIMBER)
+		var float_ring := MeshInstance3D.new()
+		float_ring.mesh = ring
+		float_ring.material_override = ModelLib.flat_material(RUST)
+		float_ring.rotation.x = PI / 2.0
+		float_ring.position = Vector3(x, 0.092, QUAY_Z - 0.53)
+		parent.add_child(float_ring)
 	_abra(parent, Vector3(1.48, -0.13, QUAY_Z - 0.92))
 	_beam(Vector3(0.79, 0.085, QUAY_Z - 0.58), Vector3(0.63, -0.028, QUAY_Z - 0.92), 0.012, CLOTH)
 	_beam(Vector3(2.25, 0.085, QUAY_Z - 0.58), Vector3(2.31, -0.018, QUAY_Z - 0.92), 0.012, CLOTH)
@@ -183,6 +176,19 @@ func _display(p: Vector3, color: Color) -> void:
 		_box(p + Vector3((i - 1) * 0.079, 0.157, 0), Vector3(0.073, 0.036, 0.23), color if i != 1 else CLOTH, Basis(Vector3.UP, (i - 1) * 0.12))
 	_box(p + Vector3(0.225, 0.05, -0.04), Vector3(0.153, 0.1, 0.15), DECK)
 	_batch.add_cyl(0.065, 0.056, BRASS, Transform3D(Basis.IDENTITY, p + Vector3(0.225, 0.127, -0.04)), 0.0, 12)
+
+func _textiles(p: Vector3) -> void:
+	# Short hanging lengths evoke the souq's textile stalls without occupying the path.
+	for x in [-0.19, 0.19]:
+		_box(p + Vector3(x, 0.258, 0), Vector3(0.023, 0.51, 0.029), TIMBER)
+		_box(p + Vector3(x, 0.022, 0), Vector3(0.054, 0.042, 0.16), DECK)
+	_box(p + Vector3.UP * 0.50, Vector3(0.405, 0.021, 0.025), TIMBER)
+	for i in range(3):
+		var x := (i - 1) * 0.113
+		var length := 0.27 + 0.04 * (i % 2)
+		_box(p + Vector3(x, 0.49 - length * 0.5, 0.021), Vector3(0.100, length, 0.022), [RUST, TEAL, CLOTH][i])
+		for hem in [0.028, 0.065]:
+			_box(p + Vector3(x, 0.49 - length + hem, 0.034), Vector3(0.100, 0.018, 0.008), BRASS)
 
 func _lantern(p: Vector3) -> void:
 	_box(p + Vector3(0, 0.075, -0.022), Vector3(0.035, 0.026, 0.111), TIMBER)

@@ -3,6 +3,11 @@ extends RefCounted
 ## Loads Kenney GLB scenes by short name ("roads/road-straight") with caching.
 
 static var _cache := {}
+const GUEST_HEIGHTS := {
+	"souq-woman": 1.64, "souq-man": 1.75,
+	"creek-kandura": 1.74, "creek-abaya": 1.63,
+	"beach-walker": 1.67, "city-commuter": 1.76,
+}
 
 static func scene(name: String) -> PackedScene:
 	if _cache.has(name):
@@ -28,9 +33,8 @@ static func spawn(name: String, parent: Node, pos: Vector3 = Vector3.ZERO, rot_y
 static func animation_player(root: Node) -> AnimationPlayer:
 	return root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 
-static func spawn_guest(female: bool, parent: Node, pos := Vector3.ZERO, height := 0.54) -> Node3D:
-	var path := "customers/souq-woman" if female else "customers/souq-man"
-	return spawn(path, parent, pos, 0, height / (1.64 if female else 1.75))
+static func spawn_guest(id: String, parent: Node, pos := Vector3.ZERO, height := 0.54) -> Node3D:
+	return spawn("customers/" + id, parent, pos, 0, height / float(GUEST_HEIGHTS[id]))
 
 ## Fit the rigged stand crew to the scale of the cart and kiosk.
 static func spawn_crew(female: bool, parent: Node, pos: Vector3, rot_y_deg: float, scale: float) -> Node3D:

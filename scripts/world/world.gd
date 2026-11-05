@@ -16,10 +16,23 @@ const BUILDING_DIMS := {
 }
 const WALK_Z := -0.62
 const NEAR_WALK_Z := 0.95
+const ARRIVAL_Z := -0.46
+const PROMENADE_Z := 0.01
 const CART_POS := Vector3(0.0, 0.0, -1.42)
 const WALK_EDGE := 5.6
 const MAX_WALKERS := 16
 const MAX_RIGGED_GUESTS := 6
+## The first few faces establish each district. The same compact set is reused
+## in different combinations for service customers and background walkers.
+const DISTRICT_CAST := {
+	"fahidi": ["creek-kandura", "creek-abaya", "souq-man", "souq-woman", "city-commuter", "beach-walker"],
+	"creek": ["beach-walker", "creek-abaya", "creek-kandura", "souq-woman", "souq-man"],
+	"metro": ["city-commuter", "souq-man", "creek-kandura", "souq-woman", "city-commuter", "creek-abaya"],
+	"jbr": ["beach-walker", "souq-man", "city-commuter", "beach-walker", "creek-abaya", "souq-woman"],
+	"downtown": ["city-commuter", "creek-kandura", "souq-woman", "creek-abaya", "souq-man"],
+	"mall": ["creek-abaya", "city-commuter", "creek-kandura", "souq-woman", "souq-man", "beach-walker"],
+	"gv": ["creek-kandura", "souq-woman", "creek-abaya", "souq-man", "beach-walker", "city-commuter"],
+}
 const BUILDING_ROT := 0.0
 const ROAD_ROT := 0.0
 
@@ -30,6 +43,7 @@ const PLAY_CAMERA_ROTATION := Vector3(-33, 14, 0)
 const SOUQ_CAMERA_ROTATION := Vector3(-19, -9, 0)
 const SOUQ_CART_CAM := 3.10
 var _cam_base := Vector3.ZERO
+var _play_rotation := PLAY_CAMERA_ROTATION
 var _cam_tween: Tween
 var _cart_preview := false
 var _drift := false
@@ -51,7 +65,8 @@ var _sky_day := Color(0.55, 0.78, 0.98)
 var _sand: GPUParticles3D
 var walkers := 0
 var _rigged_guests := 0
-var _next_guest_female := true
+var _next_guest := 0
+var _next_passer := 2
 var customer_speed := 1.0
 
 func _ready() -> void:
@@ -146,12 +161,12 @@ func push_in() -> void:
 	if _cart_preview:
 		_cart_preview = false
 		cart.preview_crew(false)
-	if preview and Game.stage_tier() == 0:
+	if preview and location_id == "fahidi" and Game.stage_tier() == 0:
 		camera.rotation_degrees = SOUQ_CAMERA_ROTATION
 		camera.position = _cam_base
 		camera.size = SOUQ_CART_CAM
 		return
-	camera.rotation_degrees = SOUQ_CAMERA_ROTATION if location_id == "fahidi" else PLAY_CAMERA_ROTATION
+	camera.rotation_degrees = _play_rotation
 	camera.position = _cam_base
 	var size := _stage_camera_size(_stage_at(location_id))
 	if _cam_tween:
@@ -206,7 +221,8 @@ func set_location(id: String) -> void:
 	_lamps.clear()
 	walkers = 0
 	_rigged_guests = 0
-	_next_guest_female = true
+	_next_guest = 0
+	_next_passer = 2
 	_level = Node3D.new()
 	add_child(_level)
 	_batch = MeshBatch.new()
@@ -214,8 +230,16 @@ func set_location(id: String) -> void:
 	_gap = Plot.footprint(_stage_at(id))
 	var layout: String = Data.LOCATIONS[id]["layout"]
 	var souq := layout == "fahidi"
-	camera.rotation_degrees = SOUQ_CAMERA_ROTATION if souq else PLAY_CAMERA_ROTATION
-	var focus := Vector3(0.08, 0.72, -1.56) if souq else Vector3(0.0, 0.38, -1.05)
+	_play_rotation = PLAY_CAMERA_ROTATION
+	var focus := Vector3(0.0, 0.38, -1.05)
+	match layout:
+		"fahidi":
+			_play_rotation = SOUQ_CAMERA_ROTATION
+			focus = Vector3(0.08, 0.72, -1.56)
+		"metro":
+			_play_rotation = Vector3(-24, 12, 0)
+			focus = Vector3(0.05, 0.61, -1.50)
+	camera.rotation_degrees = _play_rotation
 	_cam_base = focus + camera.transform.basis.z * 22.0
 	camera.position = _cam_base
 	if not souq:
@@ -266,26 +290,23 @@ func _pick_any(arr: Array) -> Variant:
 	return arr[_rng.randi_range(0, arr.size() - 1)]
 
 func _build_ground(layout: String) -> void:
+	if Paving.DESIGNS.has(layout):
+		var size := Vector2(32, 5.6)
+		var center := Vector3(0, 0.006, 0.88)
+		if layout == "mall" or layout == "gv":
+			size.y = 12.0
+			center.z = -2.4
+		Paving.build(_level, layout, size, center)
+		return
 	var sidewalk := "roads/tile-low"
-	var paving := ModelLib.flat_material(Color("c9b99e") if layout == "gv" else Color("b9c4bf"))
-	var grass := Color(0.45, 0.66, 0.32)
-	var sand := Color(0.91, 0.82, 0.58)
+	var paving := ModelLib.flat_material(Color("a9aaa5") if layout == "metro" else Color("c2b8a7"))
 	var road_basis := Basis(Vector3.UP, deg_to_rad(ROAD_ROT))
 	for x in range(-HALF_W, HALF_W + 1):
 		_batch.add_model("roads/road-straight", Transform3D(road_basis, Vector3(x, 0, 0)))
 		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -1)), paving)
 		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, 1)), paving)
-		if layout in ["metro", "downtown", "gv", "mall"]:
-			_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -2)), paving)
-	# big base plane so nothing shows the void
-	var base_col := grass
-	if layout == "jbr":
-		base_col = sand
-	elif layout in ["downtown", "metro", "gv"]:
-		base_col = Color(0.62, 0.62, 0.6)
-	elif layout == "mall":
-		base_col = Color(0.9, 0.88, 0.84)
-	ModelLib.plane(_level, Vector2(40, 40), Vector3(0, -0.015, 0), base_col)
+		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -2)), paving)
+	ModelLib.plane(_level, Vector2(40, 40), Vector3(0, -0.015, 0), Color("a99f8d"))
 
 func _lamp(x: float, z: float, rot: float, model: String = "roads/light-curved") -> void:
 	_scenery(model, Vector3(x, 0, z), rot)
@@ -359,9 +380,9 @@ func _palms_along(z: float, count: int, spread: float = 7.5, min_x_gap: float = 
 
 func _build_creek() -> void:
 	# Creek Park: lawn, palms and the creek behind
-	ModelLib.plane(_level, Vector2(40, 4), Vector3(0, 0.004, -3.5), Color(0.42, 0.64, 0.3))
-	ModelLib.plane(_level, Vector2(40, 8), Vector3(0, 0.008, -9.0), Color(0.3, 0.6, 0.78))
-	ModelLib.plane(_level, Vector2(40, 0.3), Vector3(0, 0.012, -5.2), Color(0.88, 0.84, 0.7))
+	ModelLib.plane(_level, Vector2(40, 13), Vector3(0, -0.016, 1.25), Color("748d52"))
+	ModelLib.plane(_level, Vector2(40, 8), Vector3(0, -0.07, -9.10), Color("477d87"))
+	ModelLib.plane(_level, Vector2(40, 0.35), Vector3(0, -0.008, -5.1), Color("b6a285"))
 	var fx := -HALF_W - 0.5
 	while fx <= HALF_W + 0.5:
 		if absf(fx) > maxf(1.9, _gap + 0.5):
@@ -398,6 +419,8 @@ func _build_creek() -> void:
 		_scenery(_pick(["kaykit/rock_single_A", "kaykit/rock_single_B"]), Vector3(_rng.randf_range(-8.0, 8.0), 0, _rng.randf_range(-4.5, -2.3)), _rng.randf() * 360, 0.8)
 	for bx in [-3.4, 3.6]:
 		_side_prop("kaykit/bench", Vector3(bx, 0, -1.3), 0, 1.5)
+		_scenery("furniture/table-set", Vector3(bx + 0.2, 0, -3.05), 25.0, 0.88)
+		_batch.add_cyl(0.40, 0.018, Color("b6a285"), _at(Vector3(bx + 0.2, -0.007, -3.05)), 0.0, 24)
 	_side_prop("kaykit/bush", Vector3(-2.4, 0, -1.3), 0, 1.3)
 	_side_prop("kaykit/bush", Vector3(2.5, 0, -1.3), 0, 1.3)
 	_lamp(-3.2, -0.62, 0, "roads/light-square")
@@ -406,20 +429,9 @@ func _build_creek() -> void:
 	_palms_along(1.45, 4, 6.0, 1.0)
 
 func _build_metro() -> void:
-	# Metro: the gold shell station with towers behind
+	# An elevated shell station with a glazed concourse and metal ribs.
 	_skyline(SKYSCRAPERS + ["building-k", "building-l", "building-m"], -3.6, 1.5)
-	var st := Node3D.new()
-	# the station steps back when a kiosk stands in front of it
-	st.position = Vector3(0, 0, -2.6 if _gap <= 0.0 else -3.5)
-	_level.add_child(st)
-	var gold := Color(0.85, 0.7, 0.35)
-	ModelLib.box(st, Vector3(4.4, 0.9, 1.6), Vector3(0, 0.45, 0), Color(0.55, 0.7, 0.85))
-	var shell := ModelLib.cylinder(st, 0.95, 4.6, Vector3(0, 0.85, 0), gold)
-	shell.rotation.z = PI / 2
-	shell.scale = Vector3(1, 1, 0.75)
-	# ticket booth off to the side so the stand never pokes into it
-	ModelLib.box(st, Vector3(1.2, 0.5, 0.5), Vector3(2.4, 0.25, 0.95), gold)
-	ModelLib.box(st, Vector3(0.9, 0.35, 0.04), Vector3(2.4, 0.2, 1.21), Color(0.25, 0.3, 0.38))
+	_metro_station(Vector3(0.18, 0, -2.90 if _gap < 2.4 else -3.68))
 	for sx in [-1.9, 1.9]:
 		if _clear_of_gap(sx * 2.0, 0.7):
 			_gulf_building(Vector3(sx * 2.0, 0, FRONT_Z - 0.6), 1.4, 1.2, 1.2, GulfArch.WHITE_WASH, false)
@@ -434,11 +446,36 @@ func _build_metro() -> void:
 	_side_prop("kaykit/bench", Vector3(-3.6, 0, -1.3), 0, 1.5)
 	_palms_along(1.45, 5, 6.5, 1.0)
 
+func _metro_station(p: Vector3) -> void:
+	var concrete := Color("bbb2a3")
+	var bronze := Color("b68d58")
+	var gold := Color("d3ab75")
+	var glass := Color("4a6974")
+	_batch.add_box(Vector3(5.4, 0.14, 1.38), concrete, _at(p + Vector3(0, 0.76, 0)))
+	_batch.add_box(Vector3(3.85, 0.44, 1.18), glass, _at(p + Vector3(0, 1.03, 0)))
+	for x in [-1.48, 1.48]:
+		_batch.add_box(Vector3(0.31, 0.72, 0.65), concrete, _at(p + Vector3(x, 0.36, 0)))
+		_batch.add_box(Vector3(0.69, 0.12, 0.72), concrete, _at(p + Vector3(x, 0.68, 0)))
+	for i in range(10):
+		var x := (i - 4.5) * 0.39
+		_batch.add_box(Vector3(0.026, 0.42, 0.035), concrete, _at(p + Vector3(x, 1.02, 0.606)))
+	for i in range(12):
+		var a := (i + 0.5) * PI / 12.0
+		var z := cos(a) * 0.71
+		var y := 1.05 + sin(a) * 0.50
+		var span := 4.80 - sin(a) * 0.63
+		var basis := Basis(Vector3.RIGHT, atan2(0.50 * cos(a), 0.71 * sin(a)))
+		_batch.add_box(Vector3(span, 0.035, 0.205), gold if i % 4 != 0 else bronze,
+			Transform3D(basis, p + Vector3(0, y, z)))
+	_batch.add_box(Vector3(0.90, 0.60, 0.62), glass, _at(p + Vector3(2.03, 0.30, 0.67)))
+	_batch.add_box(Vector3(0.97, 0.055, 0.70), bronze, _at(p + Vector3(2.03, 0.62, 0.67)))
+
 func _build_jbr() -> void:
 	# JBR: sand, sea, parasols and the towers across the bay
-	ModelLib.plane(_level, Vector2(40, 8), Vector3(0, 0.003, -2.4), Color(0.93, 0.85, 0.62))
-	ModelLib.plane(_level, Vector2(60, 10), Vector3(0, 0.01, -8.3), Color(0.25, 0.62, 0.85))
-	ModelLib.plane(_level, Vector2(40, 0.25), Vector3(0, 0.015, -3.4), Color(0.85, 0.93, 0.95))
+	ModelLib.plane(_level, Vector2(40, 9), Vector3(0, 0.002, -2.35), Color("cfb68e"))
+	ModelLib.plane(_level, Vector2(60, 14), Vector3(0, 0.008, -10.70), Color("458da0"))
+	ModelLib.plane(_level, Vector2(40, 0.41), Vector3(0, 0.005, -3.65), Color("ad9b7e"))
+	ModelLib.plane(_level, Vector2(40, 0.12), Vector3(0, 0.010, -3.74), Color("b7d3ce"))
 	for i in range(8):
 		var x := -8.0 + i * 2.2 + _rng.randf_range(-0.3, 0.3)
 		_scenery("buildings/" + _pick(SKYSCRAPERS), Vector3(x, 0, -12.5), 0, 1.4)
@@ -446,10 +483,24 @@ func _build_jbr() -> void:
 	for i in range(6):
 		_scenery(_pick(["buildings/detail-parasol-a", "buildings/detail-parasol-b"]),
 			Vector3(_rng.randf_range(-7.0, 7.0), 0, _rng.randf_range(-3.2, -2.5)), _rng.randf() * 360, 1.0)
+	for x in [-3.25, 3.0]:
+		_beach_shade(Vector3(x, 0, -2.30))
 	_lamp(-3.0, -0.62, 0)
 	_lamp(3.0, -0.62, 0)
 	_scenery("kaykit/bench", Vector3(-1.5, 0, 1.4), 180, 1.5)
 	_palms_along(1.45, 4, 6.0, 1.0)
+
+func _beach_shade(p: Vector3) -> void:
+	var frame := Color("674f43")
+	_batch.add_box(Vector3(0.84, 0.055, 0.55), frame, _at(p + Vector3.UP * 0.035))
+	for x in [-0.37, 0.37]:
+		for z in [-0.23, 0.23]:
+			_batch.add_box(Vector3(0.036, 0.64, 0.036), frame, _at(p + Vector3(x, 0.32, z)))
+	for i in range(9):
+		var x := (i - 4) * 0.096
+		_batch.add_box(Vector3(0.095, 0.031, 0.56), Color("397c80") if i % 3 == 0 else Color("e2ccaa"),
+			_at(p + Vector3(x, 0.65, 0)))
+	_scenery("kaykit/bench", p + Vector3(0, 0.066, -0.08), 0, 1.05)
 
 func _build_downtown() -> void:
 	GulfArch.burj(_level, _batch, Vector3(4.6, 0, -2.5))
@@ -467,8 +518,7 @@ func _build_downtown() -> void:
 	_scenery("cars/taxi", Vector3(-4.0, 0, 0.3), 90, 0.21)
 
 func _build_mall() -> void:
-	# Mall food court: marble floor, shop fronts, planters and skylight columns
-	ModelLib.plane(_level, Vector2(40, 10), Vector3(0, 0.004, -5.0), Color(0.93, 0.91, 0.87))
+	# Mall food court: shop fronts, planters and skylight columns
 	var x := -HALF_W - 1.5
 	var shop_cols := [Color(0.85, 0.3, 0.25), Color(0.25, 0.5, 0.75), Color(0.3, 0.65, 0.45), Color(0.9, 0.65, 0.2), Color(0.55, 0.35, 0.65)]
 	var k := 0
@@ -551,7 +601,8 @@ func _rival_stalls() -> void:
 		l.modulate = col.darkened(0.2)
 		l.position = Vector3(0, 1.34, 0.32)
 		st.add_child(l)
-		var vendor := ModelLib.spawn_guest(i % 2 != 0, st, Vector3(0, 0, -0.45), 0.59)
+		var vendor_id := "souq-woman" if i % 2 != 0 else "souq-man"
+		var vendor := ModelLib.spawn_guest(vendor_id, st, Vector3(0, 0, -0.45), 0.59)
 		if vendor:
 			ModelLib.play_loop(vendor, "idle")
 		i += 1
@@ -604,8 +655,8 @@ func set_customer_speed(value: float) -> void:
 
 func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z
-	if location_id == "fahidi":
-		z = SouqScenery.ARRIVAL_Z if potential_customer else SouqScenery.PROMENADE_Z + 0.45
+	if Paving.DESIGNS.has(location_id):
+		z = ARRIVAL_Z if potential_customer else PROMENADE_Z + 0.45
 	var start := Vector3(-WALK_EDGE * direction, 0, z + randf_range(-0.1, 0.1))
 	return spawn_guest(direction, start, potential_customer, with_visuals)
 
@@ -617,15 +668,22 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 		return null
 	var c := Customer.new()
 	c.simulation_speed = customer_speed
-	c.on_promenade = location_id == "fahidi"
+	c.on_promenade = Paving.DESIGNS.has(location_id)
 	_level.add_child(c)
-	c.setup(_next_guest_female, direction, start, WALK_EDGE * direction, -1.25 * direction, rigged)
+	var model_id := ""
+	if rigged:
+		var cast: Array = DISTRICT_CAST[location_id]
+		if potential_customer:
+			model_id = cast[_next_guest % cast.size()]
+			_next_guest += 1
+		else:
+			model_id = cast[_next_passer % cast.size()]
+			_next_passer += 1
+		_rigged_guests += 1
+	c.setup(model_id, direction, start, WALK_EDGE * direction, -1.25 * direction)
 	if not potential_customer:
 		c.decided = true
 	walkers += 1
-	if rigged:
-		_rigged_guests += 1
-		_next_guest_female = not _next_guest_female
 	c.gone.connect(func(_c):
 		walkers -= 1
 		if rigged:
@@ -713,8 +771,8 @@ func _plot_state_for(id: String) -> Dictionary:
 		"site": {"layout": Data.LOCATIONS[id]["layout"], "location": id}}
 
 func spawn_car() -> void:
-	if Data.LOCATIONS[location_id]["layout"] == "fahidi":
-		return # The heritage waterfront promenade is pedestrian.
+	if Paving.DESIGNS.has(location_id):
+		return
 	var dir := 1 if randf() < 0.5 else -1
 	var car := Car.new()
 	_level.add_child(car)

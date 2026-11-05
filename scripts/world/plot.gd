@@ -96,7 +96,8 @@ func apply(state: Dictionary) -> void:
 		tables.clear()
 		_layout_terrace()
 	var stations: Dictionary = state.get("stations", {})
-	var wanted := _wanted(stations)
+	var site: Dictionary = state.get("site", {})
+	var wanted := _wanted(stations, Paving.DESIGNS.has(site.get("layout", "")))
 	for k in _built.keys():
 		if not wanted.has(k):
 			_free_key(k)
@@ -142,10 +143,10 @@ func _tier(stations: Dictionary, id: String) -> int:
 	return Data.station_tier(int(stations.get(id, 0))) if stations.has(id) else -1
 
 ## key -> [builder method, args...]
-func _wanted(stations: Dictionary) -> Dictionary:
+func _wanted(stations: Dictionary, paved: bool) -> Dictionary:
 	var w := {}
 	var s := str(stage)
-	w["stage:" + s] = ["_build_stage"]
+	w["stage:" + s] = ["_build_stage", paved]
 	if stage < FIXED:
 		var lt := _tier(stations, "lights")
 		if lt > 0:
@@ -324,22 +325,19 @@ func _label(parent: Node3D, pos: Vector3, key: String, size: int, px: float, col
 
 # ---------------------------------------------------------------- stages
 
-func _build_stage(n: Node3D) -> void:
+func _build_stage(n: Node3D, paved: bool) -> void:
 	match stage:
-		0: _build_cart_court(n)
+		0: _build_cart_court(n, paved)
 		1: _build_stall(n)
 		2: _build_truck(n)
 		_: _build_kiosk(n)
 
 ## A little souk courtyard gives the first cart its own silhouette and a clear queue.
 ## All decoration is batched; the pavement stays level with the pedestrian path.
-func _build_cart_court(n: Node3D) -> void:
+func _build_cart_court(n: Node3D, paved: bool) -> void:
 	var b := MeshBatch.new()
-	b.add_box(Vector3(2.02, 0.025, 1.35), Color("d5ba91"), _at(Vector3(0, 0.004, 0.05)))
-	for x in range(-4, 5):
-		for z in range(5):
-			var col := Color("c6a47c") if (x + z) % 2 == 0 else Color("dfc7a2")
-			b.add_box(Vector3(0.216, 0.008, 0.24), col, _at(Vector3(x * 0.223, 0.021, -0.47 + z * 0.25)))
+	if not paved:
+		b.add_box(Vector3(2.02, 0.025, 1.35), Color("c5ae94"), _at(Vector3(0, 0.004, 0.05)))
 	for sx in [-0.91, 0.91]:
 		b.add_box(Vector3(0.24, 0.25, 0.27), Color("b56849"), _at(Vector3(sx, 0.13, -0.34)))
 		b.add_box(Vector3(0.27, 0.035, 0.3), PlotBuilders.CREAM, _at(Vector3(sx, 0.26, -0.34)))
@@ -349,7 +347,7 @@ func _build_cart_court(n: Node3D) -> void:
 	_bulbs.append(PlotBuilders.string_lights(n, b, Vector3(-0.91, 1.34, -0.55), Vector3(0.91, 1.34, -0.55), 9, 0.16))
 	# Small pavement inlay leads the eye to the serving counter, clear of the walking lane.
 	for sx in [-0.18, 0.18]:
-		b.add_box(Vector3(0.055, 0.009, 0.14), PlotBuilders.GOLD, _at(Vector3(sx, 0.027, 0.62)))
+		b.add_box(Vector3(0.047, 0.008, 0.12), Color("987c57"), _at(Vector3(sx, 0.024, 0.62)))
 	b.flush(n)
 
 ## Stage 1: canopy on four posts over the wheel-less stand, A-board and props.
@@ -742,7 +740,7 @@ func _st_music(n: Node3D, t: int) -> void:
 	if t >= 3:
 		# an oud player on a stool
 		b.add_cyl(0.06, 0.13, PlotBuilders.WOOD, _at(p + Vector3(0, base + 0.065, 0.02)))
-		var player := ModelLib.spawn_guest(false, n, p + Vector3(0, base + 0.08, 0.02))
+		var player := ModelLib.spawn_guest("souq-man", n, p + Vector3(0, base + 0.08, 0.02))
 		if player:
 			ModelLib.play_loop(player, "sit", 0.6)
 			b.add_box(Vector3(0.08, 0.12, 0.03), Color(0.55, 0.32, 0.15), _at(p + Vector3(0.0, base + 0.25, 0.14)))
