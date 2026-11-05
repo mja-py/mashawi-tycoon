@@ -48,6 +48,8 @@ var _cam_tween: Tween
 var _cart_preview := false
 var _drift := false
 var _drift_t := 0.0
+var _beach_crowns: Array[Node3D] = []
+var _breeze_time := 0.0
 var sun: DirectionalLight3D
 var env: WorldEnvironment
 var cart: MashawiStand
@@ -199,6 +201,12 @@ func _process(delta: float) -> void:
 	if _drift:
 		_drift_t += delta
 		camera.position = _cam_base + camera.transform.basis.x * sin(_drift_t * 0.22) * 0.45
+	if not _beach_crowns.is_empty():
+		_breeze_time += delta
+		for i in range(_beach_crowns.size()):
+			var phase := _breeze_time * 1.1 + i * 1.6
+			_beach_crowns[i].rotation.x = sin(phase * 0.84) * 0.028
+			_beach_crowns[i].rotation.z = sin(phase) * 0.042
 
 ## True when redrawing the stand would rebuild the whole street (plot gap changed).
 func visual_needs_reload() -> bool:
@@ -219,6 +227,7 @@ func set_location(id: String) -> void:
 	if _level:
 		_level.queue_free()
 	_lamps.clear()
+	_beach_crowns.clear()
 	walkers = 0
 	_rigged_guests = 0
 	_next_guest = 0
@@ -239,6 +248,9 @@ func set_location(id: String) -> void:
 		"metro":
 			_play_rotation = Vector3(-24, 12, 0)
 			focus = Vector3(0.05, 0.61, -1.50)
+		"jbr":
+			_play_rotation = Vector3(-27, 12, 0)
+			focus = Vector3(0.03, 0.48, -1.20)
 	camera.rotation_degrees = _play_rotation
 	_cam_base = focus + camera.transform.basis.z * 22.0
 	camera.position = _cam_base
@@ -483,20 +495,38 @@ func _build_jbr() -> void:
 	for i in range(8):
 		var x := -8.0 + i * 2.2 + _rng.randf_range(-0.3, 0.3)
 		_scenery("buildings/" + _pick(SKYSCRAPERS), Vector3(x, 0, -12.5), 0, 1.4)
-	_palms_along(-2.0, 9, 7.5, 1.0)
-	for i in range(6):
-		_scenery(_pick(["buildings/detail-parasol-a", "buildings/detail-parasol-b"]),
-			Vector3(_rng.randf_range(-7.0, 7.0), 0, _rng.randf_range(-3.2, -2.5)), _rng.randf() * 360, 1.0)
-	for x in [-3.25, 3.0]:
-		_beach_shade(Vector3(x, 0, -2.30))
+	var inner := maxf(1.8, _gap)
+	for side in [-1.0, 1.0]:
+		_beach_palm(Vector3(side * (inner + 0.56), 0, -2.29), -17.0 * side)
+		_beach_shade(Vector3(side * (inner + 1.65), 0, -2.38))
+		for i in range(2):
+			var x: float = side * (inner + 2.70 + 0.94 * i)
+			_scenery("buildings/detail-parasol-a" if i == 0 else "buildings/detail-parasol-b",
+				Vector3(x, 0, -3.09 + 0.16 * i), 24.0 * side, 0.94)
+		_scenery("nature/tree_palmDetailedTall", Vector3(side * 2.83, 0.043, 1.56), 23.0 * side, 0.86)
 	_lamp(-3.0, -0.62, 0)
 	_lamp(3.0, -0.62, 0)
 	_scenery("kaykit/bench", Vector3(-1.5, 0, 1.4), 180, 1.5)
-	_palms_along(1.45, 4, 6.0, 1.0)
+
+func _beach_palm(p: Vector3, angle: float) -> void:
+	var palm := ModelLib.spawn("nature/tree_palmDetailedTall", _level, p + Vector3.UP * 0.042, angle, 0.84)
+	if palm == null:
+		return
+	var leaves := palm.find_children("leafs*", "MeshInstance3D", true, false)
+	if leaves.is_empty():
+		return
+	# Pivot at the imported crown so the trunks stay planted beside the shelter.
+	var pivot := Node3D.new()
+	pivot.name = "PalmCrown"
+	palm.add_child(pivot)
+	pivot.global_position = (leaves[0] as Node3D).global_position
+	for leaf in leaves:
+		leaf.reparent(pivot)
+	_beach_crowns.append(pivot)
 
 func _beach_shade(p: Vector3) -> void:
 	var frame := Color("674f43")
-	_batch.add_box(Vector3(0.84, 0.055, 0.55), frame, _at(p + Vector3.UP * 0.035))
+	_batch.add_box(Vector3(0.84, 0.055, 0.55), frame, _at(p + Vector3.UP * 0.029))
 	for x in [-0.37, 0.37]:
 		for z in [-0.23, 0.23]:
 			_batch.add_box(Vector3(0.036, 0.64, 0.036), frame, _at(p + Vector3(x, 0.32, z)))
@@ -755,12 +785,18 @@ func handoff(customer: Customer) -> void:
 		ModelLib.box(bag, Vector3(0.065, 0.049, 0.003), Vector3(0.0, 0.0, z), Color("286458"))
 	var offset := Vector3.DOWN * 0.062
 	bag.global_position = ModelLib.hand_position(actor) + offset
+	var truck := plot.stage == 2
 	var motion := bag.create_tween()
 	motion.tween_method(func(progress: float):
 		if is_instance_valid(customer) and is_instance_valid(actor):
 			var from := ModelLib.hand_position(actor)
 			var to := ModelLib.hand_position(customer.model)
-			bag.global_position = from.lerp(to, smoothstep(0.25, 0.8, progress)) + offset
+			var point := from.lerp(to, smoothstep(0.25, 0.8, progress)) + offset
+			if truck:
+				var z := point.z - CART_POS.z
+				var lift := smoothstep(0.10, 0.23, z) * (1.0 - smoothstep(0.46, 0.58, z))
+				point.y = lerpf(point.y, maxf(point.y, FoodTruck.SILL_Y + 0.08), lift)
+			bag.global_position = point
 		, 0.0, 1.0, 0.58)
 	motion.tween_callback(func():
 		if is_instance_valid(customer):

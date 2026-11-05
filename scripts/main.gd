@@ -127,7 +127,8 @@ func _apply_dev_flags() -> void:
 		Game.persist = false
 		Game.weather = "sunny"
 		Game.forecast = "sunny"
-		Game.rig["stations"]["grill"] = 4 # Show both members of the cart crew.
+		# Show both crew members while honoring a higher showcase upgrade.
+		Game.rig["stations"]["grill"] = maxi(4, int(Game.rig["stations"].get("grill", 0)))
 		Game.menu["chicken_tikka"]["level"] = 3
 		Game.stock_for_today()
 		show_prep()

@@ -59,21 +59,42 @@ static func sign(parent: Node3D, pos: Vector3, font_size: int, pixel_size: float
 	parent.add_child(l)
 	return l
 
-## n charcoal mangals side by side starting at pos (one 0.17 wide each). Returns the coal glow meshes.
-static func grill(parent: Node3D, pos: Vector3, n: int, batch: MeshBatch = null) -> Array:
-	var glows := []
+## Charcoal boxes with separate grates, embers and skewers resting on the rim.
+static func grill(parent: Node3D, pos: Vector3, n: int, batch: MeshBatch) -> void:
 	for i in range(n):
 		var p := pos + Vector3(i * 0.2, 0, 0)
-		var body := Vector3(0.17, 0.06, 0.13)
-		if batch:
-			batch.add_box(body, DARK, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.03, 0)))
-		else:
-			ModelLib.box(parent, body, p + Vector3(0, 0.03, 0), DARK)
-		glows.append(ModelLib.box(parent, Vector3(0.15, 0.008, 0.11), p + Vector3(0, 0.064, 0), COAL, 1.6))
-		var sk := spawn("skewer" if i % 2 == 0 else "skewer_veg", parent, p + Vector3(0, 0.07, 0.0), 90, 0.32, false)
-		if sk:
-			sk.rotation.y = deg_to_rad(90)
-	return glows
+		batch.add_box(Vector3(0.177, 0.052, 0.153), DARK, Transform3D(Basis.IDENTITY, p + Vector3.UP * 0.026))
+		batch.add_box(Vector3(0.145, 0.012, 0.118), Color("553428"), Transform3D(Basis.IDENTITY, p + Vector3.UP * 0.054))
+		for z in [-0.060, 0.060]:
+			batch.add_box(Vector3(0.182, 0.013, 0.015), STEEL, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.063, z)))
+		for x in [-0.055, -0.018, 0.018, 0.055]:
+			batch.add_box(Vector3(0.010, 0.010, 0.115), DARK, Transform3D(Basis.IDENTITY, p + Vector3(x, 0.066, 0)))
+		for ember in [Vector3(-0.040, 0.061, -0.02), Vector3(0.042, 0.061, 0.025)]:
+			batch.add_box(Vector3(0.018, 0.009, 0.025), Color("b04d2e"), Transform3D(Basis.IDENTITY, p + ember), 0.42)
+		spawn("skewer" if i % 2 == 0 else "skewer_veg", parent, p + Vector3(0, 0.073, 0.0), 90, 0.32, false)
+
+## Fitted vertical broiler. Only the shaft and roast turn.
+static func shawarma(parent: Node3D, p: Vector3) -> Node3D:
+	var b := MeshBatch.new()
+	var brushed := Color("aaa9a0")
+	var dark_steel := Color("6e716e")
+	b.add_box(Vector3(0.268, 0.032, 0.241), brushed, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.016, -0.014)))
+	b.add_box(Vector3(0.226, 0.372, 0.043), dark_steel, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.22, -0.109)))
+	for x in [-0.119, 0.119]:
+		b.add_box(Vector3(0.027, 0.369, 0.099), brushed, Transform3D(Basis.IDENTITY, p + Vector3(x, 0.219, -0.088)))
+	for i in range(3):
+		var y := 0.114 + i * 0.091
+		b.add_box(Vector3(0.147, 0.062, 0.011), Color("aa4a2b"), Transform3D(Basis.IDENTITY, p + Vector3(-0.012, y, -0.082)), 0.28)
+		for vent in range(3):
+			b.add_box(Vector3(0.136, 0.006, 0.008), Color("723728"),
+				Transform3D(Basis.IDENTITY, p + Vector3(-0.012, y + (vent - 1) * 0.017, -0.074)))
+		b.add_cyl(0.012, 0.012, DARK, Transform3D(Basis(Vector3.RIGHT, PI / 2.0), p + Vector3(0.114, y, -0.03)), 0.0, 12)
+	b.add_box(Vector3(0.245, 0.031, 0.168), brushed, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.400, -0.051)))
+	b.add_box(Vector3(0.077, 0.046, 0.065), dark_steel, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.382, 0.005)))
+	b.add_box(Vector3(0.093, 0.013, 0.016), dark_steel, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.022, 0.113)))
+	b.flush(parent)
+	var roast := spawn("doner", parent, p + Vector3(0, 0.03, 0.005), 25, 0.34)
+	return roast.find_child("SpitRotor", true, false) as Node3D if roast else null
 
 static func fryer(parent: Node3D, p: Vector3, tier: int) -> void:
 	var b := MeshBatch.new()

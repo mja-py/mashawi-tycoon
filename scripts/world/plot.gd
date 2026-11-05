@@ -73,6 +73,7 @@ var _board: Label3D
 var _applied := false
 var _stall_board: Label3D
 var _truck_board: Label3D
+var _extractor: Node3D
 
 func _init() -> void:
 	cart = MashawiStand.new()
@@ -160,6 +161,11 @@ func _wanted(stations: Dictionary, paved: bool) -> Dictionary:
 				var t := _tier(stations, id)
 				if t > 0:
 					w["rig:%s:%d:%s" % [id, t, s]] = ["_build_mobile_equipment", id, t]
+		if stage == 2:
+			for id in ["counter", "grill", "shade", "music"]:
+				var t := _tier(stations, id)
+				if t > 0 or id == "grill":
+					w["rig:%s:%d:%s" % [id, t, s]] = ["_build_mobile_equipment", id, t]
 		return w
 	for id in ["counter", "grill"]:
 		# the kiosk always comes with a till and one mangal
@@ -182,13 +188,14 @@ func _free_key(k: String) -> void:
 	var n: Node = _built.get(k)
 	_built.erase(k)
 	if n and is_instance_valid(n):
+		remove_child(n)
 		n.queue_free()
 	if k.begins_with("seating:"):
 		seats.clear()
 		tables.clear()
 
 static func _alive(n) -> bool:
-	return n != null and is_instance_valid(n) and not (n as Node).is_queued_for_deletion()
+	return n != null and is_instance_valid(n) and (n as Node).is_inside_tree() and not (n as Node).is_queued_for_deletion()
 
 func _prune() -> void:
 	for arr in [_lights, _lanterns, _bulbs, _neon, _night_only, _spits, _fans, _smokes, _crew]:
@@ -327,9 +334,11 @@ func set_night(is_night: bool) -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _alive(_extractor):
+		_extractor.rotate_y(delta * 4.5)
 	for s in _spits:
 		if is_instance_valid(s):
-			(s as Node3D).rotation.y += delta * 1.2
+			(s as Node3D).rotate_y(delta * 0.65)
 	for f in _fans:
 		if is_instance_valid(f):
 			(f as Node3D).rotation.y = sin(_t * 0.8) * 0.7
@@ -430,13 +439,13 @@ func _build_stall(n: Node3D) -> void:
 func _build_truck(n: Node3D) -> void:
 	n.position = STAND_POS
 	_truck_board = FoodTruck.build(n)
+	_extractor = n.get_node("ExtractorRotor") as Node3D
 	var b := MeshBatch.new()
-	PlotBuilders.grill(n, FoodTruck.GRILL - Vector3(0.08, 0, 0), 2, b)
 	b.add_box(Vector3(0.12, 0.072, 0.10), PlotBuilders.DARK, _at(Vector3(-0.45, FoodTruck.SILL_Y + 0.036, 0.30)))
 	b.add_box(Vector3(0.09, 0.035, 0.006), Color("73aa8d"), _at(Vector3(-0.45, FoodTruck.SILL_Y + 0.06, 0.352)))
 	b.flush(n)
-	_smoke(n, Vector3(0.05, 1.33, -0.20), Vector3(0.028, 0.009, 0.028), 10)
-	_service_markers(n, FoodTruck.PICKUP.x, FoodTruck.ORDER.x, FoodTruck.HATCH_Z + 0.011, 0.31)
+	_smoke(n, FoodTruck.EXTRACTOR + Vector3.UP * 0.082, Vector3(0.023, 0.008, 0.023), 8)
+	_service_markers(n, FoodTruck.PICKUP.x, FoodTruck.ORDER.x, FoodTruck.HATCH_Z + 0.024, 0.31)
 	for x in [FoodTruck.PICKUP.x, FoodTruck.ORDER.x]:
 		ModelLib.box(n, Vector3(0.18, 0.006, 0.025), Vector3(x, 0.015, 0.68), PlotBuilders.GOLD)
 
@@ -451,20 +460,54 @@ func _build_mobile_equipment(n: Node3D, station: String, t: int) -> void:
 		"sweets":
 			PlotBuilders.dessert_case(n, FoodTruck.SWEETS, t)
 		"doner":
-			var spit := Node3D.new()
-			spit.position = Vector3(-0.13, FoodTruck.SILL_Y, -0.06) if stage == 2 else Vector3(-0.88, 0.33, 0.06)
-			n.add_child(spit)
-			PlotBuilders.spawn("doner", spit, Vector3.ZERO, 0, 0.35)
-			_spits.append(spit)
+			var p := Vector3(-0.10, 0.423, -0.048) if stage == 2 else Vector3(-0.90, 0.33, -0.34)
+			var bottom := 0.24 if stage == 2 else 0.0
+			ModelLib.box(n, Vector3(0.296, p.y - bottom, 0.27), Vector3(p.x, (p.y + bottom) * 0.5, p.z - 0.015), FoodTruck.DARK_TEAL)
+			var rotor := PlotBuilders.shawarma(n, p)
+			if rotor:
+				_spits.append(rotor)
 		"karak":
 			var p := FoodTruck.TEA if stage == 2 else Vector3(1.30, 0.33, -0.03)
 			PlotBuilders.spawn("samovar", n, p, 0, 1.10)
 			PlotBuilders.spawn("cup_tea", n, p + Vector3(-0.09, 0, 0.05), 0, 0.20, false)
 		"coldbox":
 			if stage == 2:
-				var p := Vector3(1.06, 0.235, -0.18)
-				ModelLib.box(n, Vector3(0.27, 0.27, 0.28), p + Vector3.UP * 0.135, STEEL)
-				ModelLib.box(n, Vector3(0.22, 0.026, 0.018), p + Vector3(0, 0.20, 0.15), PlotBuilders.DARK)
+				var p := Vector3(1.08, 0.24, -0.30)
+				var height := 0.29 + 0.035 * t
+				ModelLib.box(n, Vector3(0.29, height, 0.25), p + Vector3.UP * (height * 0.5), STEEL)
+				ModelLib.box(n, Vector3(0.25, 0.022, 0.018), p + Vector3(0, height - 0.066, 0.134), PlotBuilders.DARK)
+		"counter":
+			if t >= 2:
+				ModelLib.box(n, Vector3(0.052, 0.028, 0.071), Vector3(-0.53, FoodTruck.SILL_Y + 0.014, 0.36), PlotBuilders.STEEL)
+		"grill":
+			var b := MeshBatch.new()
+			PlotBuilders.grill(n, FoodTruck.GRILL - Vector3(0.08, 0, 0), 2 if t >= 2 else 1, b)
+			if t >= 3:
+				b.add_box(Vector3(0.065, 0.008, 0.082), STEEL, _at(Vector3(0.046, FoodTruck.SILL_Y + 0.004, 0.28)))
+			b.flush(n)
+		"shade":
+			# Retractable side awning attaches to the cargo wall, clear of the hatch and name.
+			var depth := 0.12 + 0.035 * t
+			var hinge := Node3D.new()
+			hinge.position = Vector3(1.305, 1.055, -0.035)
+			hinge.rotation.y = PI / 2.0
+			n.add_child(hinge)
+			var canopy := ModelLib.box(hinge, Vector3(0.72, 0.019, depth), Vector3(0, -0.018, depth * 0.5), Color("bbab86"))
+			canopy.rotation.x = 0.12
+			PlotBuilders.stripes(canopy, 0.72, depth, FoodTruck.ENAMEL, 0.021)
+			ModelLib.box(hinge, Vector3(0.75, 0.043, 0.033), Vector3.ZERO, FoodTruck.DARK_TEAL)
+			for x in [-0.29, 0.29]:
+				var from := Vector3(x, -0.11, 0)
+				var to := Vector3(x, -0.038, depth * 0.9)
+				var arm := ModelLib.box(hinge, Vector3(0.014, 0.014, from.distance_to(to)), (from + to) * 0.5, FoodTruck.STEEL)
+				arm.basis = Basis.looking_at(to - from, Vector3.UP)
+		"music":
+			var b := MeshBatch.new()
+			for x in ([1.215] if t == 1 else [-0.765, 1.215]):
+				var p := Vector3(x, 0.953, 0.226)
+				b.add_box(Vector3(0.074, 0.089, 0.061), PlotBuilders.DARK, _at(p))
+				b.add_cyl(0.022, 0.008, FoodTruck.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2.0), p + Vector3.BACK * 0.034), 0.0, 12)
+			b.flush(n)
 
 func _service_markers(n: Node3D, pickup_x: float, order_x: float, z: float, y: float) -> void:
 	PlotBuilders.sign(n, Vector3(pickup_x, y, z), 52, 0.0013, "scene.pickup", CREAM)
@@ -693,8 +736,10 @@ func _st_doner(n: Node3D, t: int) -> void:
 		var spit := Node3D.new()
 		spit.position = Vector3(x, COUNTER_Y, LINE_Z)
 		n.add_child(spit)
-		PlotBuilders.spawn("doner", spit, Vector3.ZERO, 0, 0.36)
-		_spits.append(spit)
+		var roast := PlotBuilders.spawn("doner", spit, Vector3.ZERO, 0, 0.36)
+		var rotor := roast.find_child("SpitRotor", true, false) as Node3D if roast else null
+		if rotor:
+			_spits.append(rotor)
 		ModelLib.box(n, Vector3(0.12, 0.3, 0.02), Vector3(x, COUNTER_Y + 0.18, LINE_Z - 0.1), Color(1.0, 0.45, 0.1), 1.8)
 
 func _st_fryer(n: Node3D, t: int) -> void:
@@ -869,6 +914,16 @@ static func _sail_mat() -> StandardMaterial3D:
 func _rig_lights(n: Node3D, t: int) -> void:
 	n.position = STAND_POS
 	var b := MeshBatch.new()
+	if stage == 2:
+		var strip := ModelLib.box(n, Vector3(1.88, 0.018, 0.023), Vector3(0.23, 0.983, 0.36), Color("c9ae82"))
+		_bulbs.append(strip)
+		for x in [-0.79, 1.27]:
+			b.add_box(Vector3(0.064, 0.046, 0.04), FoodTruck.STEEL, _at(Vector3(x, 0.963, 0.388)))
+			if t >= 2:
+				_bulbs.append(ModelLib.box(n, Vector3(0.044, 0.027, 0.012), Vector3(x, 0.963, 0.413), Color("c9ae82")))
+		_light(n, Vector3(0.19, 0.86, 0.49), Color("ffd9a3"), 0.85 + 0.10 * t, 1.45)
+		b.flush(n)
+		return
 	var top := 1.3
 	var xs := [-0.92, 0.92]
 	var pz := 0.2

@@ -65,6 +65,7 @@ static func play_once(root: Node, anim: String, then: String = "idle") -> void:
 	ap.get_animation(anim).loop_mode = Animation.LOOP_NONE
 	ap.play(anim, 0.1)
 	if then != "" and ap.has_animation(then):
+		ap.set_blend_time(anim, then, 0.18)
 		ap.queue(then)
 		ap.get_animation(then).loop_mode = Animation.LOOP_LINEAR
 

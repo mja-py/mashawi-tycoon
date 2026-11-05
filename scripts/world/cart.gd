@@ -6,6 +6,7 @@ extends Node3D
 const CART_SCALE := 0.72
 const CHAR_SCALE := 0.78 / CART_SCALE
 var _spit: Node3D
+var _spit_rotor: Node3D
 var _vendor: Node3D
 var _helper: Node3D
 var _neon: Label3D
@@ -92,8 +93,9 @@ func _build() -> void:
 	_spit = Node3D.new()
 	_spit.position = Vector3(-0.33, 0.59, -0.05)
 	_body.add_child(_spit)
-	if ModelLib.spawn("food/doner-spit", _spit, Vector3.ZERO, 0, 0.55) == null:
-		ModelLib.cylinder(_spit, 0.085, 0.34, Vector3(0, 0.24, 0), Color(0.62, 0.36, 0.18))
+	var roast := ModelLib.spawn("food/doner-spit", _spit, Vector3.ZERO, 0, 0.55)
+	if roast:
+		_spit_rotor = roast.find_child("SpitRotor", true, false) as Node3D
 	# heater behind the spit
 	ModelLib.box(_body, Vector3(0.1, 0.42, 0.14), Vector3(-0.33, 0.82, -0.2), dark)
 	ModelLib.box(_body, Vector3(0.06, 0.34, 0.02), Vector3(-0.33, 0.82, -0.125), Color(1.0, 0.45, 0.1), 2.0)
@@ -301,5 +303,5 @@ func set_serving(on: bool) -> void:
 		ModelLib.play_loop(_helper, "idle")
 
 func _process(delta: float) -> void:
-	if _spit and _body.visible:
-		_spit.rotation.y += delta * 1.2
+	if _spit_rotor and _body.visible:
+		_spit_rotor.rotate_y(delta * 0.65)
