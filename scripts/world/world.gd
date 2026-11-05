@@ -21,6 +21,7 @@ const NEAR_WALK_Z := 0.95
 const CART_POS := Vector3(0.0, 0.0, -1.42)
 const WALK_EDGE := 5.6
 const MAX_WALKERS := 16
+const MAX_RIGGED_GUESTS := 6
 const BUILDING_ROT := 0.0
 const ROAD_ROT := 0.0
 
@@ -49,6 +50,7 @@ var _batch := MeshBatch.new()
 var _sky_day := Color(0.55, 0.78, 0.98)
 var _sand: GPUParticles3D
 var walkers := 0
+var _rigged_guests := 0
 var customer_speed := 1.0
 
 func _ready() -> void:
@@ -136,11 +138,17 @@ func frame_stage(tier: int, animate: bool = false) -> void:
 
 ## Opening the stand: a short push-in towards the plot.
 func push_in() -> void:
+	var preview := _cart_preview
 	if _cart_preview:
 		_cart_preview = false
 		cart.preview_crew(false)
-		camera.rotation_degrees = PLAY_CAMERA_ROTATION
-		camera.position = _cam_base
+	if preview and Game.stage_tier() == 0:
+		camera.rotation_degrees = Vector3(-20, -12, 0)
+		camera.position = Vector3(0.29, 0.50, -1.10) + camera.transform.basis.z * 22.0
+		camera.size = 2.10
+		return
+	camera.rotation_degrees = PLAY_CAMERA_ROTATION
+	camera.position = _cam_base
 	var size: float = STAGE_CAM[clampi(_stage_at(location_id), 0, STAGE_CAM.size() - 1)]
 	if _cam_tween:
 		_cam_tween.kill()
@@ -193,6 +201,7 @@ func set_location(id: String) -> void:
 		_level.queue_free()
 	_lamps.clear()
 	walkers = 0
+	_rigged_guests = 0
 	_level = Node3D.new()
 	add_child(_level)
 	_batch = MeshBatch.new()
@@ -201,7 +210,7 @@ func set_location(id: String) -> void:
 	var layout: String = Data.LOCATIONS[id]["layout"]
 	_build_ground(layout)
 	match layout:
-		"fahidi": _build_fahidi()
+		"fahidi": _build_souq()
 		"creek": _build_creek()
 		"metro": _build_metro()
 		"jbr": _build_jbr()
@@ -246,8 +255,19 @@ func _pick_any(arr: Array) -> Variant:
 	return arr[_rng.randi_range(0, arr.size() - 1)]
 
 func _build_ground(layout: String) -> void:
+	if layout == "fahidi":
+		# Staggered sandstone pavers on the pedestrian promenade.
+		ModelLib.plane(_level, Vector2(40, 40), Vector3(0, -0.015, 0), Color("ae9274"))
+		var tiles := [Color("bda388"), Color("c4aa8e"), Color("b49a7d"), Color("c6ad94")]
+		for row in range(14):
+			for column in range(-13, 14):
+				var x := (float(column) + 0.5 * (row % 2)) * 0.80
+				var z := -2.76 + float(row) * 0.41
+				var tone: Color = tiles[_rng.randi_range(0, tiles.size() - 1)]
+				_batch.add_box(Vector3(0.788, 0.01, 0.399), tone, _at(Vector3(x, -0.004, z)))
+		return
 	var sidewalk := "roads/tile-low"
-	var paving := ModelLib.flat_material(Color("c9b99e") if layout in ["fahidi", "gv"] else Color("b9c4bf"))
+	var paving := ModelLib.flat_material(Color("c9b99e") if layout == "gv" else Color("b9c4bf"))
 	var grass := Color(0.45, 0.66, 0.32)
 	var sand := Color(0.91, 0.82, 0.58)
 	var road_basis := Basis(Vector3.UP, deg_to_rad(ROAD_ROT))
@@ -255,19 +275,17 @@ func _build_ground(layout: String) -> void:
 		_batch.add_model("roads/road-straight", Transform3D(road_basis, Vector3(x, 0, 0)))
 		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -1)), paving)
 		_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, 1)), paving)
-		if layout in ["fahidi", "metro", "downtown", "gv", "mall"]:
+		if layout in ["metro", "downtown", "gv", "mall"]:
 			_batch.add_model(sidewalk, Transform3D(Basis.IDENTITY, Vector3(x, 0, -2)), paving)
 	# big base plane so nothing shows the void
 	var base_col := grass
-	if layout in ["jbr", "fahidi"]:
+	if layout == "jbr":
 		base_col = sand
 	elif layout in ["downtown", "metro", "gv"]:
 		base_col = Color(0.62, 0.62, 0.6)
 	elif layout == "mall":
 		base_col = Color(0.9, 0.88, 0.84)
 	ModelLib.plane(_level, Vector2(40, 40), Vector3(0, -0.015, 0), base_col)
-	if layout == "fahidi":
-		ModelLib.plane(_level, Vector2(40, 3), Vector3(0, 0.005, 2.9), Color(0.9, 0.83, 0.65))
 
 func _lamp(x: float, z: float, rot: float, model: String = "roads/light-curved") -> void:
 	_scenery(model, Vector3(x, 0, z), rot)
@@ -339,22 +357,36 @@ func _palms_along(z: float, count: int, spread: float = 7.5, min_x_gap: float = 
 
 # ---------------------------------------------------------------- locations
 
-func _build_fahidi() -> void:
-	# Al Fahidi: wind-tower lane
-	_gulf_row(-3.4, 1.35, 0.5)
-	GulfArch.mosque(_level, Vector3(4.5, 0, -4.6), 1.2)
-	_gulf_row(FRONT_Z, 1.0, 0.45, 0.5)
-	_lamp(-3.6, -0.62, 0)
-	_lamp(3.6, -0.62, 0)
-	_lamp(-1.8, 0.62, 180)
-	_lamp(5.2, 0.62, 180)
-	_side_prop("suburban/planter", Vector3(-2.4, 0, -1.3), 0)
-	_side_prop("kaykit/bench", Vector3(2.6, 0, -1.3), 0, 1.5)
-	_side_prop("nature/pot_large", Vector3(4.4, 0, -1.3), 0, 0.8)
-	_palms_along(1.45, 6, 7.0, 0.0)
-	_scenery("kaykit/bench", Vector3(0.6, 0, 1.4), 180, 1.5)
-	for x in [-6.0, -3.5, 1.5, 4.0, 6.5]:
-		_scenery("nature/plant_bushSmall", Vector3(x, 0, 2.3), _rng.randf() * 360, 0.6)
+func _build_souq() -> void:
+	# Al Seef's heritage waterfront: sandstone storefronts framing an open creek view.
+	var stone := Color("c29e78")
+	var wood := Color("493c32")
+	ModelLib.plane(_level, Vector2(40, 13), Vector3(0, 0.002, -9.45), Color("377f8c"))
+	_batch.add_box(Vector3(23.0, 0.04, 0.13), stone, _at(Vector3(0, 0.0, -2.94)))
+	_batch.add_box(Vector3(23.0, 0.025, 0.045), wood, _at(Vector3(0, 0.27, -2.94)))
+	for i in range(-16, 17):
+		var x := float(i) * 0.65
+		_batch.add_box(Vector3(0.07, 0.31, 0.07), wood, _at(Vector3(x, 0.13, -2.94)))
+		var p := Vector3(x + _rng.randf_range(-0.25, 0.25), 0.006, _rng.randf_range(-11.0, -3.25))
+		_batch.add_box(Vector3(_rng.randf_range(0.18, 0.74), 0.004, 0.023), Color("6ea2a7"), _at(p))
+	var gap := maxf(1.45, _gap + 0.10)
+	for side in [-1.0, 1.0]:
+		for i in range(3):
+			var x := float(side) * (gap + 0.8 + float(i) * 1.65)
+			_gulf_building(Vector3(x, 0, -2.28), 1.6, 1.13, 1.2 + 0.25 * (i % 2),
+				Color("c6976a") if i % 2 == 0 else Color("dfbb92"), i != 1, true)
+		_lamp(side * (gap + 0.58), -1.13, 0, "roads/light-square")
+		_side_prop("nature/pot_large", Vector3(side * (gap + 0.17), 0, -1.94), 0, 0.85)
+	_skyline(["building-i", "building-k", "building-l", "building-m"], -12.4, 1.1)
+	# A timber abra with a low shade roof, visible through the market opening.
+	var boat := Vector3(-0.24, 0.08, -4.65)
+	_batch.add_box(Vector3(1.55, 0.13, 0.39), wood, _at(boat))
+	_batch.add_box(Vector3(1.30, 0.035, 0.41), Color("b28158"), _at(boat + Vector3.UP * 0.073))
+	for x in [-0.52, 0.52]:
+		for z in [-0.14, 0.14]:
+			_batch.add_box(Vector3(0.035, 0.29, 0.035), wood, _at(boat + Vector3(x, 0.22, z)))
+	_batch.add_box(Vector3(1.15, 0.045, 0.43), Color("c9aa78"), _at(boat + Vector3.UP * 0.38))
+	_palms_along(1.52, 4, 6.0, 2.3)
 
 func _build_creek() -> void:
 	# Creek Park: lawn, palms and the creek behind
@@ -602,20 +634,31 @@ func set_customer_speed(value: float) -> void:
 					node.bubble.visible = false
 
 func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
+	var z := WALK_Z if potential_customer else NEAR_WALK_Z
+	var start := Vector3(-WALK_EDGE * direction, 0, z + randf_range(-0.1, 0.1))
+	return spawn_guest(direction, start, potential_customer, with_visuals)
+
+func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var c := Customer.new()
 	c.simulation_speed = customer_speed
 	_level.add_child(c)
-	var z := WALK_Z if potential_customer else NEAR_WALK_Z
-	var start := Vector3(-WALK_EDGE if direction > 0 else WALK_EDGE, 0, z + randf_range(-0.1, 0.1))
-	# a Dubai mix: Emirati locals in kandura and abaya alongside residents and tourists
 	var model := "people/character-%s" % PEOPLE[randi() % PEOPLE.size()]
-	if randf() < 0.45:
-		model = "gulf:female" if randf() < 0.5 else "gulf:male"
-	c.setup(model, direction, start, -start.x, -1.25 * direction, with_visuals)
+	var rigged := with_visuals and potential_customer and _rigged_guests < MAX_RIGGED_GUESTS
+	if rigged:
+		model = "customers/souq-woman" if _rigged_guests % 2 == 0 else "customers/souq-man"
+		if not ResourceLoader.exists("res://assets/models/" + model + ".glb"):
+			model = "people/character-%s" % PEOPLE[randi() % PEOPLE.size()]
+			rigged = false
+	c.setup(model, direction, start, WALK_EDGE * direction, -1.25 * direction, with_visuals)
 	if not potential_customer:
 		c.decided = true
 	walkers += 1
-	c.gone.connect(func(_c): walkers -= 1)
+	if rigged:
+		_rigged_guests += 1
+	c.gone.connect(func(_c):
+		walkers -= 1
+		if rigged:
+			_rigged_guests -= 1)
 	return c
 
 func clear_virtual_walkers() -> void:
@@ -633,6 +676,40 @@ func pickup_slot(index: int) -> Vector3:
 	if plot != null and plot.has_method("pickup_slot"):
 		return plot.pickup_slot(index)
 	return CART_POS + Vector3(-0.55 - 0.42 * (index % 4), 0, 0.5 + 0.3 * int(index / 4))
+
+## Follow the staff hand during the offer, then carry the bag with the guest.
+func handoff(customer: Customer) -> void:
+	var actor := plot.server() if plot else null
+	if actor == null or customer.model == null:
+		return
+	customer.face_point(actor.global_position)
+	ModelLib.play_once(actor, "interact-right")
+	var animation := ModelLib.animation_player(actor)
+	if animation:
+		animation.advance(0.0)
+		animation.seek(0.45, true)
+		animation.speed_scale = 1.6
+	var bag := Node3D.new()
+	_level.add_child(bag)
+	var paper := Color("e6b574")
+	ModelLib.box(bag, Vector3(0.126, 0.148, 0.078), Vector3.ZERO, paper)
+	ModelLib.box(bag, Vector3(0.13, 0.023, 0.082), Vector3(0.0, 0.07, 0.0), paper.darkened(0.12))
+	for z in [-0.04, 0.04]:
+		ModelLib.box(bag, Vector3(0.065, 0.049, 0.003), Vector3(0.0, 0.0, z), Color("286458"))
+	var offset := Vector3.DOWN * 0.062
+	bag.global_position = ModelLib.hand_position(actor) + offset
+	var motion := bag.create_tween()
+	motion.tween_method(func(progress: float):
+		if is_instance_valid(customer) and is_instance_valid(actor):
+			var from := ModelLib.hand_position(actor)
+			var to := ModelLib.hand_position(customer.model)
+			bag.global_position = from.lerp(to, smoothstep(0.25, 0.8, progress)) + offset
+		, 0.0, 1.0, 0.58)
+	motion.tween_callback(func():
+		if is_instance_valid(customer):
+			customer.take_bag(bag)
+		else:
+			bag.queue_free())
 
 ## Redraw the stand from the game state (stations, stage). A stage that needs a
 ## different street gap rebuilds the whole location first.
@@ -665,6 +742,8 @@ func _plot_state_for(id: String) -> Dictionary:
 		"site": {"layout": Data.LOCATIONS[id]["layout"], "location": id}}
 
 func spawn_car() -> void:
+	if Data.LOCATIONS[location_id]["layout"] == "fahidi":
+		return # The heritage waterfront promenade is pedestrian.
 	var dir := 1 if randf() < 0.5 else -1
 	var car := Car.new()
 	_level.add_child(car)

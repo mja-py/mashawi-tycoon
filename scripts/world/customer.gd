@@ -8,7 +8,7 @@ signal reached_decision(customer: Customer)
 signal arrived(customer: Customer)
 signal gone(customer: Customer)
 
-enum State { WALK, TO_SLOT, QUEUED, TO_SEAT, SEATED, LEAVE, DONE }
+enum State { WALK, TO_SLOT, QUEUED, TO_SEAT, SEATED, REACT, LEAVE, DONE }
 
 const SCALE := 0.62
 const WALK_SPEED := 0.8
@@ -32,6 +32,11 @@ var _path: Array = []
 var _bubble_tween: Tween
 ## Skip accelerates only customer movement; meshes and UI animate at normal speed.
 var simulation_speed := 1.0
+var order_shown := false
+var beat_left := 0.0
+var _yaw := 0.0
+var _after_beat: Callable
+var _bag: Node3D
 
 func setup(model_name: String, direction: int, start: Vector3, end_x: float, decide_x: float, with_visuals: bool = true) -> void:
 	dir = direction
@@ -43,36 +48,39 @@ func setup(model_name: String, direction: int, start: Vector3, end_x: float, dec
 	# without allocating a mesh, skeleton, material, speech label or GPU shader.
 	if not with_visuals:
 		return
-	model = ModelLib.spawn(model_name, self, Vector3.ZERO, 0, SCALE)
+	var fitted_scale := SCALE
+	if model_name.begins_with("customers/"):
+		fitted_scale = 0.54 / (1.64 if model_name.ends_with("woman") else 1.75)
+	model = ModelLib.spawn(model_name, self, Vector3.ZERO, 0, fitted_scale)
 	if model:
 		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * 1.6)
 	_face_direction()
+	if model:
+		model.rotation.y = _yaw
 	bubble = Label3D.new()
 	bubble.font = UiTheme.font()
 	bubble.font_size = 44
-	bubble.pixel_size = 0.0045
-	bubble.outline_size = 16
+	bubble.pixel_size = 0.0028
+	bubble.outline_size = 12
 	bubble.outline_modulate = Color(0.22, 0.1, 0.04, 0.95)
 	bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	bubble.no_depth_test = true
-	bubble.position = Vector3(0, 0.72, 0)
+	bubble.position = Vector3(0, 0.66, 0)
 	bubble.visible = false
 	add_child(bubble)
 
 func _face_direction() -> void:
-	if model:
-		model.rotation.y = deg_to_rad(90 if dir > 0 else -90)
+	_yaw = deg_to_rad(90 if dir > 0 else -90)
 
-func face_cart() -> void:
-	if model:
-		model.rotation.y = PI
+func face_point(point: Vector3) -> void:
+	var d := point - global_position
+	if absf(d.x) + absf(d.z) > 0.01:
+		_yaw = atan2(d.x, d.z)
 
 func _walk_towards(pos: Vector3) -> void:
 	if model:
 		ModelLib.play_loop(model, "walk", 1.6)
-		var d := pos - position
-		if d.length() > 0.001:
-			model.rotation.y = atan2(d.x, d.z)
+		face_point(pos)
 
 func go_to_slot(index: int, pos: Vector3) -> void:
 	slot = index
@@ -93,7 +101,7 @@ func _sit_down() -> void:
 	state = State.SEATED
 	position = seat["pos"]
 	if model:
-		model.rotation.y = float(seat.get("facing", PI))
+		_yaw = float(seat.get("facing", PI))
 		model.position.y = float(seat.get("y_off", 0.0))
 		ModelLib.play_loop(model, "sit")
 	arrived.emit(self)
@@ -118,13 +126,47 @@ func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false) ->
 	if text != "":
 		say(text, color)
 	if hold:
-		if model:
-			ModelLib.play_loop(model, "idle")
-		await get_tree().create_timer(0.55 / simulation_speed).timeout
+		perform("idle", "idle", 0.4, _start_leaving)
+		return
 	_start_leaving()
+
+## Hold the pose at the counter before moving on to the next part of the visit.
+func perform(clip: String, fallback: String, seconds: float, then: Callable = Callable()) -> void:
+	if model == null or simulation_speed > 1.0:
+		if then.is_valid():
+			then.call()
+		return
+	var player := ModelLib.animation_player(model)
+	var anim := clip if player and player.has_animation(clip) else fallback
+	ModelLib.play_once(model, anim)
+	beat_left = seconds
+	if then.is_valid():
+		state = State.REACT
+		_after_beat = then
+
+func reject(point: Vector3, reason: String, text: String, color: Color) -> void:
+	# Look across at the line, then pivot away. The side angle keeps hands readable.
+	face_point(Vector3(point.x, position.y, position.z + 0.24))
+	dir = -dir
+	exit_x = -exit_x
+	say(text, color)
+	perform(reason, "emote-no", 1.18, _start_leaving)
+
+func take_bag(bag: Node3D) -> void:
+	_bag = bag
+	bag.reparent(self)
+	bag.global_position = ModelLib.hand_position(model) + Vector3.DOWN * 0.062
 
 func _start_leaving() -> void:
 	if state == State.DONE:
+		return
+	var lane_z := World.WALK_Z + 0.20
+	if position.z < World.WALK_Z - 0.1:
+		target = Vector3(position.x, 0, lane_z)
+		_path.clear()
+		_leaving_after_path = true
+		state = State.TO_SEAT
+		_walk_towards(target)
 		return
 	state = State.LEAVE
 	target = Vector3(exit_x, 0, position.z)
@@ -132,7 +174,7 @@ func _start_leaving() -> void:
 		ModelLib.play_loop(model, "walk", 1.6)
 	_face_direction()
 
-func say(text: String, color: Color = Color.WHITE) -> void:
+func say(text: String, color: Color = Color.WHITE, duration: float = 1.0) -> void:
 	if bubble == null or simulation_speed > 1.0:
 		return
 	bubble.text = text
@@ -143,7 +185,7 @@ func say(text: String, color: Color = Color.WHITE) -> void:
 		_bubble_tween.kill()
 	_bubble_tween = create_tween()
 	_bubble_tween.tween_property(bubble, "scale", Vector3.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_bubble_tween.tween_interval(1.5)
+	_bubble_tween.tween_interval(duration)
 	_bubble_tween.tween_property(bubble, "modulate:a", 0.0, 0.4)
 	_bubble_tween.tween_callback(func(): bubble.visible = false)
 
@@ -153,6 +195,17 @@ func react(anim: String) -> void:
 
 func _process(delta: float) -> void:
 	delta *= simulation_speed
+	if model:
+		model.rotation.y = rotate_toward(model.rotation.y, _yaw, 10.0 * delta)
+		if is_instance_valid(_bag):
+			_bag.global_position = ModelLib.hand_position(model) + Vector3.DOWN * 0.062
+	if beat_left > 0.0:
+		beat_left = 0.0 if simulation_speed > 1.0 else move_toward(beat_left, 0.0, delta)
+		if beat_left == 0.0 and _after_beat.is_valid():
+			var next := _after_beat
+			_after_beat = Callable()
+			next.call()
+		return
 	match state:
 		State.WALK:
 			position.x += dir * speed * delta
@@ -167,7 +220,7 @@ func _process(delta: float) -> void:
 			if d.length() < 0.03:
 				position = target
 				state = State.QUEUED
-				face_cart()
+				face_point(World.CART_POS)
 				if model:
 					ModelLib.play_loop(model, "idle")
 				arrived.emit(self)

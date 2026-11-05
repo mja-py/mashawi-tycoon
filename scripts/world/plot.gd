@@ -207,9 +207,15 @@ func queue_slot(i: int) -> Vector3:
 	return position + Vector3(K_X - 0.35 + 0.48 * i, 0, 0.76 + 0.012 * i)
 
 func pickup_slot(i: int) -> Vector3:
+	var actor := server()
+	var base := actor.global_position if actor else World.CART_POS
+	base.y = 0.0
+	return base + Vector3(-0.14 - 0.34 * i, 0.0, (0.40 if stage < FIXED else 0.69) + 0.07 * i)
+
+func server() -> Node3D:
 	if stage < FIXED:
-		return World.CART_POS + Vector3(-0.55 - 0.42 * (i % 4), 0, 0.5 + 0.3 * int(i / 4))
-	return position + Vector3(K_X + 0.4 + 0.3 * mini(i, 10), 0, 0.44)
+		return cart.server()
+	return _crew[0] if not _crew.is_empty() and _alive(_crew[0]) else null
 
 ## A seat counts as held only while its customer is actually headed for it or sitting
 ## (a take-away guest handed a seat without using it does not block it).

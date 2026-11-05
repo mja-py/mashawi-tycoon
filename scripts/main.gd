@@ -128,6 +128,7 @@ func _apply_dev_flags() -> void:
 		Game.weather = "sunny"
 		Game.forecast = "sunny"
 		Game.rig["stations"]["grill"] = 4 # Show both members of the cart crew.
+		Game.menu["chicken_tikka"]["level"] = 3
 		Game.stock_for_today()
 		show_prep()
 		world.preview_cart()
@@ -245,7 +246,9 @@ func show_prep() -> void:
 
 func start_day(skip_weather_roll: bool = false) -> void:
 	phase = Phase.DAY
-	if not skip_weather_roll:
+	if DevTools.has("character-demo") and Game.day == 1:
+		Game.weather = "sunny"
+	elif not skip_weather_roll:
 		Game.begin_day()
 	world.set_location(Game.location)
 	if hud:

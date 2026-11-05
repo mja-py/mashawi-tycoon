@@ -64,11 +64,30 @@ static func play_once(root: Node, anim: String, then: String = "idle") -> void:
 	var ap := animation_player(root)
 	if ap == null or not ap.has_animation(anim):
 		return
+	ap.clear_queue()
+	ap.speed_scale = 1.0
 	ap.get_animation(anim).loop_mode = Animation.LOOP_NONE
 	ap.play(anim, 0.1)
 	if then != "" and ap.has_animation(then):
 		ap.queue(then)
 		ap.get_animation(then).loop_mode = Animation.LOOP_LINEAR
+
+static func hand_position(actor: Node3D) -> Vector3:
+	var skeleton: Skeleton3D
+	if actor.has_meta("_hand_skeleton"):
+		skeleton = actor.get_meta("_hand_skeleton") as Skeleton3D
+	if skeleton == null and not actor.has_meta("_no_hand_skeleton"):
+		var rigs := actor.find_children("*", "Skeleton3D", true, false)
+		if rigs.is_empty():
+			actor.set_meta("_no_hand_skeleton", true)
+		else:
+			skeleton = rigs[0] as Skeleton3D
+			actor.set_meta("_hand_skeleton", skeleton)
+	if skeleton:
+		var hand := skeleton.find_bone("RightHand")
+		if hand >= 0:
+			return skeleton.to_global(skeleton.get_bone_global_pose(hand).origin)
+	return actor.to_global(Vector3(-0.17, 0.41, 0.16))
 
 ## Shared flat material per (colour, emission). Callers must not mutate the
 ## result; use flat_material_unique() when the material is changed later.

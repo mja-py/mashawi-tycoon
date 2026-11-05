@@ -222,6 +222,9 @@ func preview_crew(active: bool) -> void:
 	if _helper:
 		ModelLib.play_loop(_helper, "emote-yes" if active else "idle")
 
+func server() -> Node3D:
+	return _vendor
+
 func apply_vehicle(vehicle: String) -> void:
 	if vehicle == _vehicle:
 		return

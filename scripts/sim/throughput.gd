@@ -15,6 +15,9 @@ var on_served: Callable          # (payload, item, wait_min, dine_in)
 var on_gave_up: Callable         # (payload, reason)
 var on_ordered: Callable         # (payload, station)
 var on_left_seat: Callable       # (payload)
+var counter_ready: Callable
+var pickup_ready: Callable
+var waiting_in_line: Callable
 var _acc_counter := 0.0
 var _acc: Dictionary = {}
 var _busy: Dictionary = {}
@@ -90,6 +93,9 @@ func tick(dt_min: float, _hour: float) -> void:
 	# Counter: takes orders at counter_cap per minute and hands them to the kitchen.
 	_acc_counter += float(ctx.get("counter_cap", 0.5)) * dt_min
 	while _acc_counter >= 1.0 and not queue.is_empty():
+		if counter_ready.is_valid() and not counter_ready.call(queue[0]["payload"]):
+			_acc_counter = minf(_acc_counter, 1.0)
+			break
 		_acc_counter -= 1.0
 		var e: Dictionary = queue.pop_front()
 		var kind := String(Data.MENU_ITEMS[e["item"]].get("station_kind", ""))
@@ -110,6 +116,9 @@ func tick(dt_min: float, _hour: float) -> void:
 		var b: Array = backlog[s]
 		_acc[s] += float(kitchen.get(s, 0.0)) * dt_min
 		while _acc[s] >= 1.0 and not b.is_empty():
+			if pickup_ready.is_valid() and not pickup_ready.call(b[0]["payload"]):
+				_acc[s] = minf(_acc[s], 1.0)
+				break
 			_acc[s] -= 1.0
 			_serve(b.pop_front())
 		if b.is_empty():
@@ -121,6 +130,8 @@ func tick(dt_min: float, _hour: float) -> void:
 	# Whoever is still in line has waited another minute; past their patience they walk.
 	for i in range(queue.size() - 1, -1, -1):
 		var e: Dictionary = queue[i]
+		if waiting_in_line.is_valid() and not waiting_in_line.call(e["payload"]):
+			continue
 		e["wait"] += dt_min
 		if i > 0 and e["wait"] > patience:
 			queue.remove_at(i)

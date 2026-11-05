@@ -108,8 +108,8 @@ weather.hot,Heatwave,موجة حر
 weather.cloudy,Cloudy,غائم
 weather.sandstorm,Sandstorm,عاصفة رملية
 weather.breeze,Winter breeze,نسيم شتوي
-loc.fahidi,Al Fahidi Corner,زاوية الفهيدي
-loc.fahidi.desc,"A quiet lane in the old quarter under the wind towers. Free, but few people pass by.",زقاق هادئ في الحي القديم تحت البراجيل. مجاني، لكن المارّة قليلون.
+loc.fahidi,Souk Al Seef,سوق السيف
+loc.fahidi.desc,"Sandstone shops and wind towers on Dubai Creek’s heritage promenade. A rent-free spot to start.",محلات حجرية وبراجيل على ممشى الخور التراثي. موقع مجاني للبداية.
 loc.creek,Creek Park,حديقة الخور
 loc.creek.desc,"Families and joggers along the creek. Great on breezy days, empty in a sandstorm.",عائلات ورياضيون على ضفاف الخور. رائع في الأيام اللطيفة، فارغ في العواصف.
 loc.metro,Metro Station,محطة المترو
@@ -145,6 +145,7 @@ bubble.bad_quality.1,Too dry!,ناشف وايد!
 bubble.bad_quality.2,Where's the meat?,وين اللحم؟
 bubble.bad_quality.3,Needs sauce!,يبغى له صوص!
 bubble.bad_quality.4,Bland...,ما له طعم...
+bubble.quoted_price,%s? Too much!,%s؟ غالي وايد!
 bubble.too_pricey.1,Too expensive!,غالي وايد!
 bubble.too_pricey.2,That price?!,بهالسعر؟!
 bubble.too_pricey.3,I'll eat at home.,بآكل في البيت.
