@@ -27,8 +27,10 @@ const ROAD_ROT := 0.0
 var camera: Camera3D
 ## Orthographic camera size per plot stage (wider plots need more room).
 const STAGE_CAM := [3.6, 3.9, 4.4, 5.0, 5.3, 5.6]
+const PLAY_CAMERA_ROTATION := Vector3(-33, 14, 0)
 var _cam_base := Vector3.ZERO
 var _cam_tween: Tween
+var _cart_preview := false
 var _drift := false
 var _drift_t := 0.0
 var sun: DirectionalLight3D
@@ -89,7 +91,7 @@ func _setup_camera() -> void:
 	camera.size = 4.4
 	camera.near = 0.1
 	camera.far = 60.0
-	camera.rotation_degrees = Vector3(-33, 14, 0)
+	camera.rotation_degrees = PLAY_CAMERA_ROTATION
 	add_child(camera)
 	var target := Vector3(0.0, 0.38, -1.05)
 	camera.position = target + camera.transform.basis.z * 22.0
@@ -134,12 +136,28 @@ func frame_stage(tier: int, animate: bool = false) -> void:
 
 ## Opening the stand: a short push-in towards the plot.
 func push_in() -> void:
+	if _cart_preview:
+		_cart_preview = false
+		cart.preview_crew(false)
+		camera.rotation_degrees = PLAY_CAMERA_ROTATION
+		camera.position = _cam_base
 	var size: float = STAGE_CAM[clampi(_stage_at(location_id), 0, STAGE_CAM.size() - 1)]
 	if _cam_tween:
 		_cam_tween.kill()
 	camera.size = size * 1.06
 	_cam_tween = create_tween()
 	_cam_tween.tween_property(camera, "size", size, 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+func preview_cart() -> void:
+	_cart_preview = true
+	cart.preview_crew(true)
+	if _cam_tween:
+		_cam_tween.kill()
+	camera.rotation_degrees = Vector3(-14, 0, 0)
+	camera.position = Vector3(0, 0.49, -1.42) + camera.transform.basis.z * 22.0
+	camera.size = 1.47
+	sun.light_energy = 0.5
+	env.environment.ambient_light_energy = 0.4
 
 ## Title screen: the camera drifts slowly sideways so the street feels alive.
 func set_drift(on: bool) -> void:

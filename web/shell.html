@@ -368,8 +368,10 @@
 			loaded.then(function () {
 				// ?dev=--fps%20--dbg_input forwards dev flags to the game (see scripts/core/dev_tools.gd).
 				const args = ['--main-pack', pack];
-				const dev = new URLSearchParams(location.search).get('dev');
-				if (dev) { args.push('--'); dev.split(' ').forEach(function (a) { if (a) { args.push(a); } }); }
+				const query = new URLSearchParams(location.search);
+				const dev = (query.get('dev') || '').split(' ').filter(Boolean);
+				if (query.get('demo') === 'characters') { dev.push('--character-demo'); }
+				if (dev.length) { args.push('--', ...dev); }
 				return engine.start({ args: args });
 			}).then(function () {
 				rlog('engine started');

@@ -123,6 +123,15 @@ func _apply_dev_flags() -> void:
 		Game.save_path = "user://save_test.json"
 		add_child(load("res://tests/run_tests.gd").new())
 		return
+	if DevTools.has("character-demo"):
+		Game.persist = false
+		Game.weather = "sunny"
+		Game.forecast = "sunny"
+		Game.rig["stations"]["grill"] = 4 # Show both members of the cart crew.
+		Game.stock_for_today()
+		show_prep()
+		world.preview_cart()
+		return
 	world.set_location(Game.location)
 	if DevTools.has("screenshot"):
 		Game.persist = false # screenshot runs never overwrite the player's save

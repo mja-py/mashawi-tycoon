@@ -36,6 +36,13 @@ static func spawn(name: String, parent: Node, pos: Vector3 = Vector3.ZERO, rot_y
 static func animation_player(root: Node) -> AnimationPlayer:
 	return root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 
+## Fit the rigged stand crew to the scale of the cart and kiosk.
+static func spawn_crew(female: bool, parent: Node, pos: Vector3, rot_y_deg: float, scale: float) -> Node3D:
+	var path := "crew/abaya-lady" if female else "crew/kandura-man"
+	var fitted_scale := scale * 0.78 / (1.622 if female else 1.714)
+	# The source feet sit about 1 cm below the rig origin in the idle clip.
+	return spawn(path, parent, pos + Vector3.UP * 0.011 * fitted_scale, rot_y_deg, fitted_scale)
+
 static func play_loop(root: Node, anim: String, speed: float = 1.0) -> void:
 	if root.has_method("set_anim"):
 		root.set_anim(anim, speed)

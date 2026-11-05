@@ -4,7 +4,7 @@ extends Node3D
 ## Faces +Z (towards the camera). Visuals react to purchased upgrades.
 
 const CART_SCALE := 0.72
-const CHAR_SCALE := 0.6 / CART_SCALE
+const CHAR_SCALE := 0.78 / CART_SCALE
 var _spit: Node3D
 var _vendor: Node3D
 var _helper: Node3D
@@ -205,24 +205,22 @@ func _build() -> void:
 	_seating.visible = false
 	# vendor
 	# they stand at the ends of the counter so the roof never hides them
-	_vendor = _spawn_person("gulf:female", Vector3(-0.82, 0.0, 0.12))
-	_helper = _spawn_person("gulf:male", Vector3(0.84, 0.0, 0.12))
-	if _vendor:
-		_vendor.rotation.y = deg_to_rad(35)
+	_vendor = ModelLib.spawn_crew(true, self, Vector3(-0.82, 0.0, 0.12), 20, CHAR_SCALE)
+	_helper = ModelLib.spawn_crew(false, self, Vector3(0.84, 0.0, 0.12), -20, CHAR_SCALE)
+	preview_crew(false)
 	if _helper:
-		_helper.rotation.y = deg_to_rad(-35)
-	_helper.visible = false
+		_helper.hide()
 	# The small decorative pieces are rigid; roofs/upgrades retain their own batches
 	# so hiding them never leaves stray geometry floating in the truck or stall.
 	ModelLib.batch_primitives(_body, [_roof, _awning_big, _speaker, _fridge, _spit] + _chassis + _wheels, false)
 	for group in [_roof, _awning_big, _speaker, _fridge]:
 		ModelLib.batch_primitives(group)
 
-func _spawn_person(model: String, pos: Vector3) -> Node3D:
-	var n := ModelLib.spawn(model, self, pos, 0, CHAR_SCALE)
-	if n:
-		ModelLib.play_loop(n, "idle")
-	return n
+func preview_crew(active: bool) -> void:
+	if _vendor:
+		ModelLib.play_loop(_vendor, "interact-right" if active else "idle")
+	if _helper:
+		ModelLib.play_loop(_helper, "emote-yes" if active else "idle")
 
 func apply_vehicle(vehicle: String) -> void:
 	if vehicle == _vehicle:
@@ -319,7 +317,8 @@ func apply_upgrades(upgrades: Dictionary) -> void:
 	_speaker.visible = upgrades.has("speaker")
 	_fridge.visible = upgrades.has("fridge") or upgrades.has("fridge2")
 	_seating.visible = upgrades.has("seating")
-	_helper.visible = upgrades.has("helper")
+	if _helper:
+		_helper.visible = upgrades.has("helper")
 	_update_width()
 
 func set_night(is_night: bool) -> void:
@@ -335,7 +334,7 @@ func set_serving(on: bool) -> void:
 	if _vendor:
 		ModelLib.play_loop(_vendor, "interact-right" if on else "idle", 1.4 if on else 1.0)
 	if _helper and _helper.visible:
-		ModelLib.play_loop(_helper, "pick-up" if on else "idle", 1.2 if on else 1.0)
+		ModelLib.play_loop(_helper, "idle")
 
 func _process(delta: float) -> void:
 	if _spit:

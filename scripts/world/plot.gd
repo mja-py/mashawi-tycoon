@@ -259,7 +259,7 @@ func _on_serving(on: bool) -> void:
 	for i in range(_crew.size()):
 		var c: Node3D = _crew[i]
 		if _alive(c) and c.visible:
-			ModelLib.play_loop(c, ("interact-right" if i == 0 else "pick-up") if on else "idle", 1.3 if on else 1.0)
+			ModelLib.play_loop(c, "interact-right" if on and i == 0 else "idle", 1.3 if on and i == 0 else 1.0)
 
 var _serving := false
 
@@ -304,8 +304,8 @@ static func _at(p: Vector3) -> Transform3D:
 static func _rx(p: Vector3, a: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.RIGHT, a), p)
 
-func _crew_member(parent: Node3D, model: String, pos: Vector3, rot: float = 0.0) -> Node3D:
-	var n := ModelLib.spawn(model, parent, pos, rot, 0.6)
+func _crew_member(parent: Node3D, female: bool, pos: Vector3, rot: float = 0.0) -> Node3D:
+	var n := ModelLib.spawn_crew(female, parent, pos, rot, 0.6)
 	if n:
 		ModelLib.play_loop(n, "idle")
 		_crew.append(n)
@@ -453,8 +453,8 @@ func _build_kiosk(n: Node3D) -> void:
 		aw.scale = Vector3(1.95, 0.8, 1.4)
 	# crew behind the counter
 	# crew stand at the window ends so the stations behind them stay visible
-	_crew_member(n, "gulf:female", Vector3(K_X - 0.36, CREW_Y, -0.22), 15)
-	_helper = _crew_member(n, "gulf:male", Vector3(K_X + 0.36, CREW_Y, -0.24), -15)
+	_crew_member(n, true, Vector3(K_X - 0.36, CREW_Y, -0.22), 15)
+	_helper = _crew_member(n, false, Vector3(K_X + 0.36, CREW_Y, -0.24), -15)
 	_build_terrace(n, b)
 	b.flush(n)
 
