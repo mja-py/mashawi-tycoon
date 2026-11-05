@@ -47,6 +47,7 @@ var _batch := MeshBatch.new()
 var _sky_day := Color(0.55, 0.78, 0.98)
 var _sand: GPUParticles3D
 var walkers := 0
+var customer_speed := 1.0
 
 func _ready() -> void:
 	_setup_camera()
@@ -571,8 +572,20 @@ func set_time(hour: float, weather_id: String) -> void:
 
 # ---------------------------------------------------------------- spawning
 
-func spawn_walker(direction: int, potential_customer: bool = true) -> Customer:
+func set_customer_speed(value: float) -> void:
+	customer_speed = value
+	if plot:
+		plot.simulation_speed = value
+	if _level:
+		for node in _level.get_children():
+			if node is Customer:
+				node.simulation_speed = value
+				if value > 1.0 and node.bubble:
+					node.bubble.visible = false
+
+func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var c := Customer.new()
+	c.simulation_speed = customer_speed
 	_level.add_child(c)
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z
 	var start := Vector3(-WALK_EDGE if direction > 0 else WALK_EDGE, 0, z + randf_range(-0.1, 0.1))
@@ -580,12 +593,17 @@ func spawn_walker(direction: int, potential_customer: bool = true) -> Customer:
 	var model := "people/character-%s" % PEOPLE[randi() % PEOPLE.size()]
 	if randf() < 0.45:
 		model = "gulf:female" if randf() < 0.5 else "gulf:male"
-	c.setup(model, direction, start, -start.x, -1.25 * direction)
+	c.setup(model, direction, start, -start.x, -1.25 * direction, with_visuals)
 	if not potential_customer:
 		c.decided = true
 	walkers += 1
 	c.gone.connect(func(_c): walkers -= 1)
 	return c
+
+func clear_virtual_walkers() -> void:
+	for node in _level.get_children():
+		if node is Customer and node.bubble == null:
+			node._finish()
 
 func queue_slot(index: int) -> Vector3:
 	if plot != null and plot.has_method("queue_slot"):

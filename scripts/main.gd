@@ -190,9 +190,9 @@ func _publish_state() -> void:
 	if not OS.has_feature("web"):
 		return
 	var names := ["title", "prep", "day", "report"]
-	JavaScriptBridge.eval("window.godotState = {phase: '%s', hasSave: %s, day: %d, money: %d, panel: '%s', paused: %s, menuItem: '%s'}" % [
+	JavaScriptBridge.eval("window.godotState = {phase: '%s', hasSave: %s, day: %d, money: %d, panel: '%s', paused: %s, menuItem: '%s', finishing: %s}" % [
 		names[phase], "true" if Game.has_save() else "false", Game.day, int(Game.money), hud.current_panel if hud else "",
-		"true" if get_tree().paused else "false", hud.selected_dish if hud else ""])
+		"true" if get_tree().paused else "false", hud.selected_dish if hud else "", "true" if sim.finishing else "false"])
 
 func show_title() -> void:
 	phase = Phase.TITLE
@@ -248,12 +248,19 @@ func start_day(skip_weather_roll: bool = false) -> void:
 
 func set_speed(s: float) -> void:
 	speed = s
-	Engine.time_scale = s
+	Engine.time_scale = 1.0 if sim.finishing else s
 
 func skip_day() -> void:
-	set_speed(12.0)
+	if phase != Phase.DAY or not sim.finish_quickly():
+		return
+	set_speed(DaySim.FINISH_SPEED)
+	if hud:
+		hud.show_finishing()
+	_publish_state()
 
 func _on_day_finished(stats: Dictionary) -> void:
+	sim.finishing = false
+	world.set_customer_speed(1.0)
 	set_speed(1.0)
 	phase = Phase.REPORT
 	var report := Game.end_day(stats)

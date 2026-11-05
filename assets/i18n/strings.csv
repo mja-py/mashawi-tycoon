@@ -14,6 +14,7 @@ ui.close,Close,إغلاق
 ui.day,Day %d,اليوم %d
 ui.forecast,Forecast: %s,التوقعات: %s
 ui.costs_today,Costs today: %s,تكاليف اليوم: %s
+ui.finishing,Closing...,جارٍ الإغلاق...
 ui.skip,Skip to closing,تخطي إلى الإغلاق
 ui.live,Served %d  ·  %s   (line %d · kitchen %d · seated %d),تم تقديم %d  ·  %s   (طابور %d · مطبخ %d · جالسون %d)
 ui.next_day,Next day  >,اليوم التالي

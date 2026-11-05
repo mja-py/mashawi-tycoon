@@ -30,13 +30,19 @@ var slot: int = -1
 var seat: Dictionary = {}
 var _path: Array = []
 var _bubble_tween: Tween
+## Skip accelerates only customer movement; meshes and UI animate at normal speed.
+var simulation_speed := 1.0
 
-func setup(model_name: String, direction: int, start: Vector3, end_x: float, decide_x: float) -> void:
+func setup(model_name: String, direction: int, start: Vector3, end_x: float, decide_x: float, with_visuals: bool = true) -> void:
 	dir = direction
 	position = start
 	exit_x = end_x
 	decision_x = decide_x
 	speed = WALK_SPEED * randf_range(0.85, 1.2)
+	# A skipped customer still walks, queues, eats and pays through the same rules,
+	# without allocating a mesh, skeleton, material, speech label or GPU shader.
+	if not with_visuals:
+		return
 	model = ModelLib.spawn(model_name, self, Vector3.ZERO, 0, SCALE)
 	if model:
 		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * 1.6)
@@ -114,7 +120,7 @@ func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false) ->
 	if hold:
 		if model:
 			ModelLib.play_loop(model, "idle")
-		await get_tree().create_timer(0.55).timeout
+		await get_tree().create_timer(0.55 / simulation_speed).timeout
 	_start_leaving()
 
 func _start_leaving() -> void:
@@ -127,6 +133,8 @@ func _start_leaving() -> void:
 	_face_direction()
 
 func say(text: String, color: Color = Color.WHITE) -> void:
+	if bubble == null or simulation_speed > 1.0:
+		return
 	bubble.text = text
 	bubble.modulate = Color(color.r, color.g, color.b, 1.0)
 	bubble.visible = true
@@ -140,10 +148,11 @@ func say(text: String, color: Color = Color.WHITE) -> void:
 	_bubble_tween.tween_callback(func(): bubble.visible = false)
 
 func react(anim: String) -> void:
-	if model and state != State.SEATED:
+	if model and simulation_speed == 1.0 and state != State.SEATED:
 		ModelLib.play_once(model, anim, "idle")
 
 func _process(delta: float) -> void:
+	delta *= simulation_speed
 	match state:
 		State.WALK:
 			position.x += dir * speed * delta

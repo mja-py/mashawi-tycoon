@@ -54,8 +54,16 @@ try {
   await page.waitForFunction(() => window.godotState?.paused === false);
 
   await tap(page, 610, 360); // Skip to closing (RTL day controls)
+  await page.waitForFunction(() => window.godotState?.finishing === true);
+  await tap(page, 610, 360); // An extra tap must not restart closing or settle twice.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => window.godotState?.paused === true);
+  check((await state(page)).finishing === true, 'Skip pauses behind the portrait guard');
+  await page.setViewportSize({ width: 844, height: 390 });
   const report = await waitPhase(page, 'report', 60000);
-  check(report.hasSave && report.money > stocked.money, 'stock, open and close completes a saved trading day');
+  const closed = await page.evaluate(() => JSON.parse(localStorage.getItem('mashawi_save')));
+  check(report.hasSave && !report.finishing && report.day === 2 && closed.history.length === 1, 'Skip settles the current day exactly once');
+  check(closed.history[0].served > 0 && report.money > stocked.money && closed.inventory.chicken < save.inventory.chicken, 'skipped trading earns money and consumes ingredients');
   await page.waitForTimeout(1000);
   await page.screenshot({ path: `${out}/3_report.png` });
   const errors = con.errors();

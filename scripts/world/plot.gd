@@ -60,6 +60,7 @@ var _fans: Array = []
 var _smokes: Array = []
 var _crew: Array = []
 var _t := 0.0
+var simulation_speed := 1.0
 ## {idx, table, pos (plot space), facing, approach (plot space), y_off, who}
 var seats: Array = []
 ## {pos, node (plate holder), dirty, left}
@@ -291,7 +292,7 @@ func _process(delta: float) -> void:
 			(f as Node3D).rotation.y = sin(_t * 0.8) * 0.7
 	for t in tables:
 		if t["dirty"]:
-			t["left"] = float(t["left"]) - delta
+			t["left"] = float(t["left"]) - delta * simulation_speed
 			if float(t["left"]) <= 0.0:
 				set_table_dirty(tables.find(t), false)
 

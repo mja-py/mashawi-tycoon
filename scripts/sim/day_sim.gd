@@ -15,6 +15,8 @@ var weather_def: Dictionary
 var hour: float = 10.0
 var end_hour: float = 22.0
 var running := false
+const FINISH_SPEED := 12.0
+var finishing := false
 var stats: Dictionary = {}
 var tp: Throughput
 var _rng := RandomNumberGenerator.new()
@@ -27,6 +29,8 @@ var _seat_of: Dictionary = {}   # customer -> seat dictionary from the plot
 
 func start(context: Dictionary, w: World) -> void:
 	world = w
+	finishing = false
+	world.set_customer_speed(1.0)
 	ctx = context
 	loc = Data.LOCATIONS[ctx["location"]]
 	weather_def = Data.WEATHER[ctx["weather"]]
@@ -55,10 +59,13 @@ func start(context: Dictionary, w: World) -> void:
 func _process(delta: float) -> void:
 	if not running:
 		return
+	if finishing:
+		delta *= FINISH_SPEED
 	var game_min := delta * 60.0 / Data.REAL_SECONDS_PER_GAME_HOUR
 	hour += game_min / 60.0
-	world.set_time(hour, ctx["weather"])
-	clock_changed.emit(hour)
+	if not finishing:
+		world.set_time(hour, ctx["weather"])
+		clock_changed.emit(hour)
 	# passers-by
 	var per_hour := Economy.arrival_rate(loc, ctx["weather"], hour, ctx)
 	var expected := per_hour * delta / Data.REAL_SECONDS_PER_GAME_HOUR
@@ -67,31 +74,45 @@ func _process(delta: float) -> void:
 	for i in range(arrivals):
 		_spawn_passer()
 	# background life
-	_car_timer -= delta
-	if _car_timer <= 0.0:
-		world.spawn_car()
-		_car_timer = _rng.randf_range(2.5, 7.0) / maxf(0.4, float(loc["traffic"]))
-	_ambient_timer -= delta
-	if _ambient_timer <= 0.0:
-		if world.walkers < World.MAX_WALKERS:
-			world.spawn_walker(1 if _rng.randf() < 0.5 else -1, false)
-		_ambient_timer = _rng.randf_range(3.0, 9.0) / maxf(0.4, float(loc["traffic"]))
+	if not finishing:
+		_car_timer -= delta
+		if _car_timer <= 0.0:
+			world.spawn_car()
+			_car_timer = _rng.randf_range(2.5, 7.0) / maxf(0.4, float(loc["traffic"]))
+		_ambient_timer -= delta
+		if _ambient_timer <= 0.0:
+			if world.walkers < World.MAX_WALKERS:
+				world.spawn_walker(1 if _rng.randf() < 0.5 else -1, false)
+			_ambient_timer = _rng.randf_range(3.0, 9.0) / maxf(0.4, float(loc["traffic"]))
 	# the pipeline
 	var before := tp.queue_payloads()
 	tp.tick(game_min, hour)
 	if before != tp.queue_payloads():
 		_reflow()
-	_serving_visual()
+	if not finishing:
+		_serving_visual()
 	_bottleneck_watch(game_min)
-	_stats_tick += delta
+	_stats_tick += delta / FINISH_SPEED if finishing else delta
 	if _stats_tick > 0.25:
 		_stats_tick = 0.0
+		if finishing:
+			clock_changed.emit(hour)
 		stats["queue"] = tp.queue_len()
 		stats["kitchen"] = tp.waiting_payloads().size()
 		stats["seated"] = tp.seated.size()
 		stats_changed.emit(stats)
 	if hour >= end_hour:
 		_close()
+
+## Continue this day's existing pipeline and inventory, with no new 3D presentation.
+func finish_quickly() -> bool:
+	if not running or finishing:
+		return false
+	finishing = true
+	world.set_customer_speed(FINISH_SPEED)
+	if world.cart:
+		world.cart.set_serving(false)
+	return true
 
 func _stop_chance(best: float, queue_len: int) -> float:
 	return Economy.stop_probability(float(ctx["popularity"]), best * float(ctx["appeal"]), float(ctx["boost"]), queue_len,
@@ -109,7 +130,7 @@ func _spawn_passer() -> void:
 		if _rng.randf() >= _stop_chance(best, tp.queue_len()):
 			return
 		forced = true
-	var c := world.spawn_walker(1 if _rng.randf() < 0.5 else -1, true)
+	var c := world.spawn_walker(1 if _rng.randf() < 0.5 else -1, true, not finishing)
 	c.forced_stop = forced
 	c.reached_decision.connect(_on_decision)
 	c.gone.connect(_on_gone)
@@ -242,7 +263,8 @@ func _on_served(payload, item: String, wait_min: float, dine_in: bool) -> void:
 	var text := Data.pick_bubble(key, _rng)
 	if key == "great":
 		text += "  +" + Loc.money(total)
-	Sfx.play("coin", -10.0, randf_range(0.95, 1.1))
+	if not finishing:
+		Sfx.play("coin", -10.0, randf_range(0.95, 1.1))
 	_check_stock_warnings()
 	if c == null or not is_instance_valid(c):
 		return
@@ -356,7 +378,8 @@ func _warn(key: String, text: String) -> void:
 	if _warned.has(key):
 		return
 	_warned[key] = true
-	event.emit(text, "warn")
+	if not finishing:
+		event.emit(text, "warn")
 
 func _close() -> void:
 	running = false
@@ -367,6 +390,9 @@ func _close() -> void:
 			c.leave_from_seat(tr("ev.closing"), Color(0.9, 0.9, 0.9))
 	if world.cart:
 		world.cart.set_serving(false)
+	if finishing:
+		world.clear_virtual_walkers()
+		clock_changed.emit(end_hour)
 	stats["left_wait"] = int(stats["left_wait"]) # already counted as they gave up
 	stats["util"] = tp.utilisation()
 	stats["max_queue"] = int(tp.stats["max_queue"])

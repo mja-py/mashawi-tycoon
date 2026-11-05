@@ -21,6 +21,7 @@ var prep_bar: PanelContainer
 var day_bar: PanelContainer
 var tabs := {}
 var speed_buttons := {}
+var skip_button: Button
 var live_label: Label
 var ticker_label: Label
 var panel_dim: PanelContainer
@@ -348,10 +349,10 @@ func _build_day_bar() -> void:
 		h.add_child(b)
 		speed_buttons[s] = b
 	var skip := _button(tr("ui.skip"), "Ghost", Vector2(170, 56))
+	skip_button = skip
 	skip.pressed.connect(func():
 		Sfx.play("click")
-		main.skip_day()
-		_set_speed(12.0))
+		main.skip_day())
 	h.add_child(skip)
 	var v := VBoxContainer.new()
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -531,6 +532,10 @@ func show_prep() -> void:
 	_refresh()
 
 func show_day() -> void:
+	skip_button.disabled = false
+	skip_button.text = tr("ui.skip")
+	for b in speed_buttons.values():
+		b.disabled = false
 	close_panel()
 	title_screen.visible = false
 	report_dim.visible = false
@@ -543,6 +548,13 @@ func show_day() -> void:
 	ticker_label.text = ""
 	_set_speed(1.0)
 	_refresh()
+
+func show_finishing() -> void:
+	skip_button.disabled = true
+	skip_button.text = tr("ui.finishing")
+	for b in speed_buttons.values():
+		b.disabled = true
+		b.button_pressed = false
 
 func show_report(r: Dictionary) -> void:
 	day_bar.visible = false
