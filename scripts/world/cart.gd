@@ -4,7 +4,7 @@ extends Node3D
 ## Faces +Z (towards the camera). Visuals react to purchased upgrades.
 
 const CART_SCALE := 0.72
-const CHAR_SCALE := 0.78 / CART_SCALE
+const CREW_HEIGHT := 0.64 / CART_SCALE
 var _spit: Node3D
 var _spit_rotor: Node3D
 var _vendor: Node3D
@@ -195,8 +195,8 @@ func _build() -> void:
 	_seating.visible = false
 	# vendor
 	# they stand at the ends of the counter so the roof never hides them
-	_vendor = ModelLib.spawn_crew(true, self, Vector3(-0.82, 0.0, 0.12), 20, CHAR_SCALE)
-	_helper = ModelLib.spawn_crew(false, self, Vector3(0.84, 0.0, 0.12), -20, CHAR_SCALE)
+	_vendor = ModelLib.spawn_crew(true, self, Vector3(-0.82, 0.0, 0.12), 20, CREW_HEIGHT)
+	_helper = ModelLib.spawn_crew(false, self, Vector3(0.84, 0.0, 0.12), -20, CREW_HEIGHT)
 	preview_crew(false)
 	if _helper:
 		_helper.hide()
@@ -232,9 +232,9 @@ func set_neon(on: bool) -> void:
 
 func _place_neon() -> void:
 	if _vehicle != "":
-		_neon.position = (FoodTruck.SIGN + Vector3.BACK * 0.009) / CART_SCALE
+		_neon.position = (FoodTruck.SIGN + Vector3.BACK * 0.009) * FoodTruck.SCALE / CART_SCALE
 		_neon.font_size = 66
-		_neon.pixel_size = 0.0026 / CART_SCALE
+		_neon.pixel_size = 0.0026 * FoodTruck.SCALE / CART_SCALE
 	elif stall:
 		# the canopy board is built by the Plot in plot space (stand scale 0.72)
 		_neon.position = Vector3(0, 1.14 / 0.72, 0.52 / 0.72)
@@ -271,9 +271,9 @@ func _update_width() -> void:
 	var wide := 1.25 if _upgrades.has("cart2") else 1.0
 	_body.scale.x = wide
 	if _vendor:
-		_vendor.position = FoodTruck.VENDOR / CART_SCALE if _vehicle != "" else Vector3(-(0.62 * wide + 0.22), 0.004, 0.12)
+		_vendor.position = FoodTruck.VENDOR * FoodTruck.SCALE / CART_SCALE if _vehicle != "" else Vector3(-(0.62 * wide + 0.22), 0.004, 0.12)
 	if _helper:
-		_helper.position = FoodTruck.HELPER / CART_SCALE if _vehicle != "" else Vector3(0.62 * wide + 0.24, 0.004, 0.12)
+		_helper.position = FoodTruck.HELPER * FoodTruck.SCALE / CART_SCALE if _vehicle != "" else Vector3(0.62 * wide + 0.24, 0.004, 0.12)
 	if _fridge:
 		_fridge.position.x = -(0.62 * wide + 0.3) + 0.85 - 0.62
 

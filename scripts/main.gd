@@ -134,6 +134,9 @@ func _apply_dev_flags() -> void:
 		show_prep()
 		if Game.stage_tier() == 0:
 			world.preview_cart()
+		var demo_panel := DevTools.get_flag("panel")
+		if demo_panel in ["menu", "place", "build"]:
+			hud.open_panel(demo_panel)
 		return
 	world.set_location(Game.location)
 	if DevTools.has("screenshot"):

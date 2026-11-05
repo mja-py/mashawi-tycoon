@@ -29,8 +29,11 @@ var panel: PanelContainer
 var panel_title: Label
 var stock_button: Button
 const TouchScroll := preload("res://scripts/ui/touch_scroll.gd")
+const CardRoll := preload("res://scripts/ui/card_roll.gd")
+const MenuArt := preload("res://scripts/ui/menu_art.gd")
 
 var panel_scroll: ScrollContainer
+var panel_roll: CardRoll
 var _fps_label: Label
 var panel_body: VBoxContainer
 ## Filter chips under the panel title (menu groups); hidden for the other panels.
@@ -39,6 +42,9 @@ var panel_chips: HBoxContainer
 var panel_grid: GridContainer
 var menu_group := "food"
 var selected_dish := ""
+var _browse_dish := ""
+var _browse_place := ""
+var _roll_ids: Array[String] = []
 var current_panel := ""
 ## Width (logical px) from which panels show two columns of cards.
 const TWO_COLUMNS_FROM := 1100.0
@@ -161,6 +167,8 @@ func _publish_menu_targets() -> void:
 			continue
 		var center := b.get_global_rect().get_center()
 		if panel_scroll.is_ancestor_of(b) and not panel_scroll.get_global_rect().encloses(b.get_global_rect()):
+			continue
+		if panel_roll.is_ancestor_of(b) and not panel_roll.is_focused_control(b):
 			continue
 		targets[b.get_meta("menu_target")] = {"x": center.x / vp.x, "y": center.y / vp.y, "disabled": b.disabled}
 	JavaScriptBridge.eval("window.godotMenuTargets = " + JSON.stringify(targets))
@@ -326,11 +334,24 @@ func _build_prep_bar() -> void:
 	h.add_theme_constant_override("separation", 8)
 	prep_bar.add_child(h)
 	for id in PANELS:
-		var b := _button(tr(PANELS[id]), "Tab", Vector2(118, 60))
+		var b := _button("", "Tab", Vector2(108, 64))
+		b.tooltip_text = tr(PANELS[id])
 		b.toggle_mode = true
 		b.pressed.connect(func(): _toggle_panel(id))
 		h.add_child(b)
 		tabs[id] = b
+		var face := VBoxContainer.new()
+		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		face.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		face.alignment = BoxContainer.ALIGNMENT_CENTER
+		face.add_theme_constant_override("separation", 0)
+		b.add_child(face)
+		var glyph := MenuArt.new("tab:" + id)
+		glyph.custom_minimum_size.y = 24.0
+		face.add_child(glyph)
+		var caption := _label(tr(PANELS[id]), "Light", HORIZONTAL_ALIGNMENT_CENTER)
+		caption.add_theme_font_size_override("font_size", 16)
+		face.add_child(caption)
 	h.add_child(_spacer())
 	var open := _button(tr("ui.open_shop"), "Primary", Vector2(220, 64))
 	open.pressed.connect(_on_open_shop)
@@ -419,6 +440,14 @@ func _build_panel() -> void:
 	panel_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel_body.add_theme_constant_override("separation", 10)
 	panel_scroll.add_child(panel_body)
+	panel_roll = CardRoll.new()
+	panel_roll.hide()
+	panel_roll.index_changed.connect(func(index: int):
+		if current_panel == "menu":
+			_browse_dish = _roll_ids[index]
+		elif current_panel == "place":
+			_browse_place = _roll_ids[index])
+	v.add_child(panel_roll)
 
 func _build_report() -> void:
 	report_dim = PanelContainer.new()
@@ -858,6 +887,8 @@ func _rebuild_panel(animate: bool = false) -> void:
 	panel_grid = null
 	stock_button.visible = current_panel == "supplies"
 	panel_chips.visible = current_panel == "menu"
+	panel_roll.visible = current_panel == "place" or (current_panel == "menu" and selected_dish.is_empty())
+	panel_scroll.visible = not panel_roll.visible
 	for c in panel_chips.get_children():
 		panel_chips.remove_child(c)
 		c.queue_free()
@@ -950,7 +981,7 @@ func _quality_text(q: float) -> String:
 func _select_dish(id: String) -> void:
 	selected_dish = id
 	panel_scroll.scroll_vertical = 0
-	_rebuild_panel()
+	_rebuild_panel(true)
 	if main:
 		main._publish_state()
 
@@ -962,67 +993,88 @@ func _fill_menu() -> void:
 		panel_chips.add_child(back)
 		_menu_detail(selected_dish)
 		return
+	var groups := {}
+	for id in Data.MENU_ITEMS:
+		if not Game.item_available(id):
+			continue
+		var kind: String = Data.MENU_ITEMS[id]["kind"]
+		if not groups.has(kind):
+			groups[kind] = []
+		groups[kind].append(id)
+	if not groups.has(menu_group):
+		menu_group = "food"
 	for group in Data.MENU_GROUPS:
-		var count := 0
-		for id in Data.MENU_ITEMS:
-			if Data.MENU_ITEMS[id]["kind"] == group[0]:
-				count += 1
-		var b := _button("%s  ·  %d" % [tr(group[1]), count], "Filter", Vector2(0, 52))
-		_menu_target(b, "category_" + String(group[0]))
-		b.toggle_mode = true
-		b.button_pressed = group[0] == menu_group
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var gid: String = group[0]
+		if not groups.has(gid):
+			continue
+		var b := _button(tr(group[1]), "Filter", Vector2(0, 48))
+		_menu_target(b, "category_" + gid)
+		b.toggle_mode = true
+		b.button_pressed = gid == menu_group
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.pressed.connect(func():
 			Sfx.play("switch")
+			if menu_group != gid:
+				_browse_dish = ""
 			menu_group = gid
 			_select_dish(""))
 		panel_chips.add_child(b)
-	for id in Data.MENU_ITEMS:
-		if Data.MENU_ITEMS[id]["kind"] == menu_group:
-			_menu_card(id)
+	_roll_ids.assign(groups.get(menu_group, []))
+	panel_roll.configure(_roll_ids.size(), _roll_ids.find(_browse_dish), _dish_roll_card)
 
-## The menu is a selection of dishes, not a wall of recipe controls.
-func _menu_card(id: String) -> void:
+## Give most of the card to the art, with a short caption below.
+func _roll_card(art_id: String, title: String, value: String) -> PanelContainer:
+	var card := _card()
+	var frame := UiTheme.flat(UiTheme.CARD, 13, Color("a58258"), 2, 3)
+	frame.set_content_margin_all(8.0)
+	card.add_theme_stylebox_override("panel", frame)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 4)
+	card.add_child(body)
+	var art := MenuArt.new(art_id)
+	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	art.custom_minimum_size.y = 94
+	body.add_child(art)
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	body.add_child(line)
+	var name := _label(title, "Heading")
+	name.add_theme_font_size_override("font_size", 24)
+	name.autowrap_mode = TextServer.AUTOWRAP_OFF
+	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	line.add_child(name)
+	if value != "":
+		var tag := _label(value, "Money", HORIZONTAL_ALIGNMENT_RIGHT)
+		tag.size_flags_horizontal = Control.SIZE_SHRINK_END
+		tag.add_theme_font_size_override("font_size", 19)
+		line.add_child(tag)
+	return card
+
+func _dish_roll_card(index: int) -> PanelContainer:
+	var id := _roll_ids[index]
 	var def: Dictionary = Data.MENU_ITEMS[id]
 	var m: Dictionary = Game.menu[id]
-	var card := _card()
-	_cards_grid().add_child(card)
-	panel_grid.columns = 2 if panel.custom_minimum_size.x >= 850 else 1
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 10)
-	card.add_child(v)
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 14)
-	v.add_child(h)
-	var image := _icon(Icons.dish_icon(id), 124)
-	image.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(image)
-	var text := VBoxContainer.new()
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.add_theme_constant_override("separation", 3)
-	h.add_child(text)
-	var title := _label(tr(def["name"]), "Heading")
-	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	text.add_child(title)
-	var status := tr("ui.m_serving") if m["unlocked"] and m["enabled"] else (tr("ui.m_resting") if m["unlocked"] else tr("ui.m_new_dish"))
-	if not m["unlocked"] and not Game.item_available(id):
-		status = tr("ui.locked_by") % tr(Data.STATIONS[Game.required_station(def)]["name"])
-		image.modulate.a = 0.5
-	var state_label := _label(status, "Small")
-	state_label.add_theme_color_override("font_color", UiTheme.GOOD if m["unlocked"] and m["enabled"] else UiTheme.MUTED)
-	text.add_child(state_label)
-	if m["unlocked"]:
-		text.add_child(_label(Loc.money(float(m["price"])), "Big"))
-	else:
-		text.add_child(_label(tr("ui.m_discover"), "Muted"))
-	var select := _button(tr("ui.m_edit_dish") if m["unlocked"] else tr("ui.m_view_dish"), "Ghost", Vector2(0, 56))
-	_menu_target(select, "select_" + id)
-	select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	select.pressed.connect(func():
-		Sfx.play("open")
-		_select_dish(id))
-	v.add_child(select)
+	var value := Loc.money(float(m["price"])) if m["unlocked"] else Loc.money(float(def["unlock_cost"]))
+	var card := _roll_card("dish:" + String(def["kind"]), tr(def["name"]), value)
+	var body := card.get_child(0)
+	var art := body.get_child(0)
+	var plate := _icon(Icons.dish_icon(id), 0)
+	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.add_child(plate)
+	var caption := tr("ui.m_edit_dish") if m["unlocked"] else tr("ui.m_view_dish")
+	var action := _menu_target(Button.new(), "select_" + id)
+	action.flat = true
+	action.focus_mode = Control.FOCUS_NONE
+	action.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	action.tooltip_text = caption
+	action.pressed.connect(func():
+		panel_roll.choose(index, func():
+			Sfx.play("open")
+			_browse_dish = id
+			_select_dish(id)))
+	card.add_child(action)
+	return card
 
 func _menu_sheet() -> VBoxContainer:
 	var card := _card()
@@ -1045,8 +1097,8 @@ func _menu_detail(id: String) -> void:
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hero.add_child(info)
 	info.add_child(_label(tr(def["name"]), "Heading"))
-	info.add_child(_label(tr(def["desc"]), "Muted"))
 	if not m["unlocked"]:
+		info.add_child(_label(tr(def["desc"]), "Muted"))
 		if not Game.item_available(id):
 			intro.add_child(_locked_button(tr("ui.locked_by") % tr(Data.STATIONS[Game.required_station(def)]["name"])))
 		else:
@@ -1101,56 +1153,33 @@ func _menu_detail(id: String) -> void:
 
 
 func _fill_place() -> void:
-	_hint(tr("ui.p_hint"))
+	_roll_ids.clear()
 	for id in Game.stage_locations():
-		var def: Dictionary = Data.LOCATIONS[id]
-		var v := _item_card(null, tr(def["name"]), tr(def["desc"]))
-		v.add_theme_constant_override("separation", 4)
-		var chips := HFlowContainer.new()
-		chips.add_theme_constant_override("h_separation", 8)
-		chips.add_theme_constant_override("v_separation", 6)
-		v.add_child(chips)
-		chips.add_child(_chip((tr("ui.p_rent") % Loc.money(float(def["rent"]))) if float(def["rent"]) > 0 else tr("ui.p_free"), null, true))
-		chips.add_child(_chip(tr("ui.p_prices") % Data.price_cap_mult(def, Data.stage_def(maxi(Game.rig_tier(), Game.plot_stage_tier(id)))), null, true))
-		var t := float(def["traffic"])
-		var words := tr("ui.t_low") if t < 0.7 else (tr("ui.t_medium") if t < 1.0 else (tr("ui.t_high") if t < 1.3 else tr("ui.t_vhigh")))
-		chips.add_child(_chip(tr("ui.p_traffic") % words, null, true))
-		var hrs: Array = Data.location_hours(id)
-		if def.has("hours"):
-			chips.add_child(_chip(tr("ui.p_open") % Loc.ltr("%02d:00 - %02d:00" % [int(hrs[0]), int(hrs[1])]), null, true))
-		var comp := float(def.get("competition", 0.0))
-		if comp > 0.0:
-			var cc := _chip(tr("ui.p_competition") % (tr("ui.c_fierce") if comp >= 0.65 else tr("ui.c_high")), null, true)
-			cc.get_child(0).get_child(0).add_theme_color_override("font_color", UiTheme.BAD)
-			chips.add_child(cc)
-			chips.add_child(_chip(tr("ui.p_promo") % float(def.get("promo_power", 1.0)), null, true))
-		var need := int(def.get("min_stage", 0))
-		var ndef := Data.stage_def(need)
-		if need > 0:
-			chips.add_child(_chip(tr(ndef["name"]), Icons.model_icon(ndef["icon"]), true))
-		var built := Game.plot_stage_tier(id)
-		if built >= Game.FIXED_FROM_TIER:
-			var bdef := Data.stage_def(built)
-			var bc := _chip(tr("ui.p_built") % tr(bdef["name"]), Icons.model_icon(bdef["icon"]), true)
-			bc.get_child(0).get_child(1).add_theme_color_override("font_color", UiTheme.GOLD)
-			chips.add_child(bc)
-		if Game.plots.has(id):
-			chips.add_child(_chip(tr("ui.p_local") % Loc.ltr("%.1f" % (float(Game.plots[id]["reputation"]) * 5.0)), null, true))
-		var b: Button
-		if Game.location == id:
-			b = _locked_button(tr("ui.p_here"), 170)
-		elif not Game.location_unlocked(id):
-			b = _locked_button(tr("ui.p_needs") % (float(def["unlock_pop"]) * 5.0), 170)
-		elif not Game.location_stage_ok(id):
-			b = _locked_button(tr("ui.locked_by") % tr(ndef["name"]), 170)
-		else:
-			b = _button(tr("ui.p_move"), "Primary", Vector2(170, 52))
-			b.pressed.connect(func():
+		if id == Game.location or (Game.location_unlocked(id) and Game.location_stage_ok(id)):
+			_roll_ids.append(id)
+	var preferred := _browse_place if _browse_place in _roll_ids else Game.location
+	panel_roll.configure(_roll_ids.size(), _roll_ids.find(preferred), _place_roll_card)
+
+func _place_roll_card(index: int) -> PanelContainer:
+	var id := _roll_ids[index]
+	var def: Dictionary = Data.LOCATIONS[id]
+	var rent := float(def["rent"])
+	var card := _roll_card(id, tr(def["name"]), (tr("ui.p_rent") % Loc.money(rent)) if rent > 0 else tr("ui.p_free"))
+	var body := card.get_child(0)
+	var action: Button
+	if Game.location == id:
+		action = _locked_button(tr("ui.p_here"))
+	else:
+		action = _button(tr("ui.p_move"), "Primary", Vector2(0, 49))
+		action.pressed.connect(func():
+			panel_roll.choose(index, func():
 				if Game.set_location(id):
 					Sfx.play("confirm")
 					main.world.set_location(id)
-					main.world.set_time(Data.location_hours(id)[0], Game.forecast))
-		_card_action(v, b)
+					main.world.set_time(Data.location_hours(id)[0], Game.forecast)))
+	action.tooltip_text = tr(def["desc"])
+	body.add_child(_menu_target(action, "move_" + id))
+	return card
 
 func _station_name(id: String) -> String:
 	if Data.STATIONS.has(id):
@@ -1200,8 +1229,7 @@ func _fill_build() -> void:
 			var def: Dictionary = Data.STATIONS[id]
 			if def["group"] != group[0] or def.get("virtual", false):
 				continue
-			# show what this stage has plus what the next stage would add
-			if Game.station_available(id) or (not nxt.is_empty() and id in nxt["stations"]):
+			if Game.station_available(id) and not def.get("later", false):
 				ids.append(id)
 		if ids.is_empty():
 			continue

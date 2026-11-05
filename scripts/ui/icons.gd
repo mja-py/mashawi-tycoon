@@ -6,7 +6,7 @@ var _cache := {}
 var _weather := {}
 
 func dish_icon(id: String) -> Texture2D:
-	return model_icon(Data.MENU_ITEMS[id]["model"], 192, 1.0, true)
+	return model_icon(Data.MENU_ITEMS[id]["model"], 192, 1.18, true)
 
 func model_icon(model: String, size: int = 128, zoom: float = 1.0, plated: bool = false) -> Texture2D:
 	var key := ("dish:" if plated else "model:") + model

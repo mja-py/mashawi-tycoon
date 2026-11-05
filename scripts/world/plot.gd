@@ -140,9 +140,10 @@ func apply(state: Dictionary) -> void:
 
 ## A freshly bought piece rises out of the ground (build feedback after a purchase).
 func _grow(n: Node3D) -> void:
-	n.scale.y = 0.05
+	var full_height := n.scale.y
+	n.scale.y = full_height * 0.05
 	var tw := n.create_tween()
-	tw.tween_property(n, "scale:y", 1.0, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(n, "scale:y", full_height, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 func _tier(stations: Dictionary, id: String) -> int:
 	return Data.station_tier(int(stations.get(id, 0))) if stations.has(id) else -1
@@ -221,7 +222,7 @@ func _smoke(parent: Node3D, pos: Vector3, extents: Vector3, amount: int) -> void
 func queue_slot(i: int) -> Vector3:
 	if stage < 2:
 		return World.CART_POS + Vector3(0.05 + 0.5 * i, 0, 0.42 + 0.02 * i)
-	var front := World.CART_POS + FoodTruck.ORDER if stage == 2 else position + Vector3(K_X + 0.41, 0, 0.58)
+	var front := World.CART_POS + FoodTruck.ORDER * FoodTruck.SCALE if stage == 2 else position + Vector3(K_X + 0.41, 0, 0.58)
 	# Compress the tail into the street bounds at high counter levels.
 	var rank := float(i)
 	front.x += rank * 0.43 / (1.0 + 0.073 * rank)
@@ -229,7 +230,7 @@ func queue_slot(i: int) -> Vector3:
 
 func pickup_slot(i: int) -> Vector3:
 	if stage >= 2:
-		var first := World.CART_POS + FoodTruck.PICKUP if stage == 2 else position + Vector3(K_X - 0.40, 0, 0.58)
+		var first := World.CART_POS + FoodTruck.PICKUP * FoodTruck.SCALE if stage == 2 else position + Vector3(K_X - 0.40, 0, 0.58)
 		var offset := float(i)
 		return first + Vector3(-offset * 0.35 / (1.0 + 0.075 * offset), 0, minf(offset * 0.052, 0.22))
 	var actor := server()
@@ -357,7 +358,7 @@ static func _rx(p: Vector3, a: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.RIGHT, a), p)
 
 func _crew_member(parent: Node3D, female: bool, pos: Vector3, rot: float = 0.0) -> Node3D:
-	var n := ModelLib.spawn_crew(female, parent, pos, rot, 0.6)
+	var n := ModelLib.spawn_crew(female, parent, pos, rot, 0.55)
 	if n:
 		ModelLib.play_loop(n, "idle")
 		_crew.append(n)
@@ -438,6 +439,7 @@ func _build_stall(n: Node3D) -> void:
 ## Stage 2: the open service hatch has a real counter and fitted kitchen.
 func _build_truck(n: Node3D) -> void:
 	n.position = STAND_POS
+	n.scale = Vector3.ONE * FoodTruck.SCALE
 	_truck_board = FoodTruck.build(n)
 	_extractor = n.get_node("ExtractorRotor") as Node3D
 	var b := MeshBatch.new()
@@ -451,6 +453,8 @@ func _build_truck(n: Node3D) -> void:
 
 func _build_mobile_equipment(n: Node3D, station: String, t: int) -> void:
 	n.position = STAND_POS
+	if stage == 2:
+		n.scale = Vector3.ONE * FoodTruck.SCALE
 	match station:
 		"fryer":
 			var p := FoodTruck.FRYER
@@ -647,11 +651,11 @@ func _build_seating(n: Node3D, count: int) -> void:
 	for i in range(mini(count, _slots.size())):
 		var p: Vector3 = _slots[i] + Vector3.UP * DECK_Y
 		b.add_cyl(0.05, 0.022, walnut, _at(p + Vector3.UP * 0.011), 0.0, 12)
-		b.add_cyl(0.025, 0.24, walnut, _at(p + Vector3.UP * 0.126), 0.0, 12)
-		b.add_cyl(0.143, 0.026, walnut, _at(p + Vector3.UP * 0.249), 0.0, 20)
-		b.add_cyl(0.121, 0.007, cloth, _at(p + Vector3.UP * 0.264), 0.0, 20)
+		b.add_cyl(0.025, 0.28, walnut, _at(p + Vector3.UP * 0.146), 0.0, 12)
+		b.add_cyl(0.143, 0.026, walnut, _at(p + Vector3.UP * 0.289), 0.0, 20)
+		b.add_cyl(0.121, 0.007, cloth, _at(p + Vector3.UP * 0.304), 0.0, 20)
 		var meal := Node3D.new()
-		meal.position = p + Vector3.UP * 0.268
+		meal.position = p + Vector3.UP * 0.308
 		meal.visible = false
 		n.add_child(meal)
 		PlotBuilders.spawn("plate", meal, Vector3(-0.062, 0, 0), 0, 0.18, false)
@@ -660,11 +664,11 @@ func _build_seating(n: Node3D, count: int) -> void:
 		tables.append({"pos": p, "node": meal, "dirty": false, "left": 0.0})
 		for side in [-1.0, 1.0]:
 			var chair := p + Vector3(side * CHAIR_X, 0, 0)
-			b.add_box(Vector3(0.147, 0.029, 0.16), teal, _at(chair + Vector3.UP * 0.145))
+			b.add_box(Vector3(0.147, 0.029, 0.16), teal, _at(chair + Vector3.UP * 0.185))
 			for z in [-0.059, 0.059]:
 				for x in [-0.055, 0.055]:
-					b.add_box(Vector3(0.017, 0.13, 0.017), walnut, _at(chair + Vector3(x, 0.065, z)))
-			b.add_box(Vector3(0.025, 0.17, 0.155), walnut, _at(chair + Vector3(side * 0.066, 0.218, 0)))
+					b.add_box(Vector3(0.017, 0.17, 0.017), walnut, _at(chair + Vector3(x, 0.085, z)))
+			b.add_box(Vector3(0.025, 0.17, 0.155), walnut, _at(chair + Vector3(side * 0.066, 0.258, 0)))
 			var route: Array[Vector3] = [Vector3(chair.x, 0, FRONT_AISLE_Z)]
 			if p.z < AISLE_Z:
 				route = [Vector3(ENTRY_X, 0, FRONT_AISLE_Z), Vector3(ENTRY_X, 0, AISLE_Z), Vector3(chair.x, 0, AISLE_Z)]
@@ -869,7 +873,7 @@ func _st_music(n: Node3D, t: int) -> void:
 	if t >= 3:
 		# an oud player on a stool
 		b.add_cyl(0.06, 0.13, PlotBuilders.WOOD, _at(p + Vector3(0, base + 0.065, 0.02)))
-		var player := ModelLib.spawn_guest("souq-man", n, p + Vector3(0, base + 0.08, 0.02))
+		var player := ModelLib.spawn_guest("souq-man", n, p + Vector3(0, base + 0.08, 0.02), 0.54)
 		if player:
 			ModelLib.play_loop(player, "sit", 0.6)
 			b.add_box(Vector3(0.08, 0.12, 0.03), Color(0.55, 0.32, 0.15), _at(p + Vector3(0.0, base + 0.25, 0.14)))
@@ -915,6 +919,7 @@ func _rig_lights(n: Node3D, t: int) -> void:
 	n.position = STAND_POS
 	var b := MeshBatch.new()
 	if stage == 2:
+		n.scale = Vector3.ONE * FoodTruck.SCALE
 		var strip := ModelLib.box(n, Vector3(1.88, 0.018, 0.023), Vector3(0.23, 0.983, 0.36), Color("c9ae82"))
 		_bulbs.append(strip)
 		for x in [-0.79, 1.27]:

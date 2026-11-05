@@ -11,6 +11,7 @@ signal gone(customer: Customer)
 enum State { WALK, TO_SLOT, QUEUED, TO_SEAT, SEATED, REACT, LEAVE, DONE }
 
 const WALK_SPEED := 0.8
+const WALK_ANIMATION_SPEED := 1.30
 
 var state: State = State.WALK
 var dir: int = 1
@@ -53,7 +54,7 @@ func setup(model_id: String, direction: int, start: Vector3, end_x: float, decid
 		return
 	model = ModelLib.spawn_guest(model_id, self)
 	if model:
-		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * 1.6)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
 	_face_direction()
 	if model:
 		model.rotation.y = _yaw
@@ -65,7 +66,6 @@ func setup(model_id: String, direction: int, start: Vector3, end_x: float, decid
 	bubble.outline_modulate = Color(0.22, 0.1, 0.04, 0.95)
 	bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	bubble.no_depth_test = true
-	bubble.position = Vector3(0, 0.66, 0)
 	bubble.visible = false
 	add_child(bubble)
 
@@ -79,7 +79,7 @@ func face_point(point: Vector3) -> void:
 
 func _walk_towards(pos: Vector3) -> void:
 	if model:
-		ModelLib.play_loop(model, "walk", 1.6)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
 		face_point(pos)
 
 func go_to_slot(index: int, pos: Vector3) -> void:
@@ -195,10 +195,10 @@ func _start_leaving() -> void:
 	state = State.LEAVE
 	target = Vector3(exit_x, 0, position.z)
 	if model:
-		ModelLib.play_loop(model, "walk", 1.6)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
 	_face_direction()
 
-func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.66) -> void:
+func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.78) -> void:
 	if bubble == null or simulation_speed > 1.0:
 		return
 	bubble.text = text

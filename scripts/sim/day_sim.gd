@@ -277,7 +277,7 @@ func _counter_ready(payload: Customer) -> bool:
 		return false
 	if not payload.order_shown:
 		payload.order_shown = true
-		payload.say(tr(Data.MENU_ITEMS[payload.item]["name"]), Color("ffe4ab"), 0.30, 0.78)
+		payload.say(tr(Data.MENU_ITEMS[payload.item]["name"]), Color("ffe4ab"), 0.30, 0.90)
 		payload.perform("order", "interact-right", 0.48)
 	return payload.beat_left == 0.0
 

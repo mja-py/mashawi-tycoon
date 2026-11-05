@@ -3,6 +3,7 @@ extends RefCounted
 ## Plot-space coordinates relative to the mobile stand. The same service points
 ## drive the hatch, staff, equipment and customer movement.
 
+const SCALE := 0.88
 const SILL_Y := 0.44
 const HATCH_Z := 0.38
 const GRILL := Vector3(-0.18, SILL_Y, 0.29)

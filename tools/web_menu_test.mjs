@@ -76,13 +76,16 @@ try {
     check((await target('recipe_meat_up')).disabled === true, `${lang}: recipe maximum disables further increments`);
     await page.screenshot({ path: `${out}/${lang}_4_recipe.png` });
     await hit('back_dishes');
+    await hit(lang === 'ar' ? 'roll_left' : 'roll_right');
     await hit('select_mutton_tikka');
     check((await saved()).money === before.money, `${lang}: viewing a new dish does not purchase it`);
     await hit('unlock');
     const unlocked = await saved();
     check(unlocked.menu.mutton_tikka.unlocked && unlocked.money === before.money - 450, `${lang}: explicit unlock purchases the chosen dish`);
     await hit('back_dishes');
+    await target('category_drink');
     await hit('category_drink');
+    await hit(lang === 'ar' ? 'roll_left' : 'roll_right');
     await hit('select_soda');
     check((await state(page)).menuItem === 'soda', `${lang}: category selection shows the correct dishes`);
     await page.screenshot({ path: `${out}/${lang}_5_drink.png` });

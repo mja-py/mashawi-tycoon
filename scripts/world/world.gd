@@ -236,7 +236,8 @@ func set_location(id: String) -> void:
 	add_child(_level)
 	_batch = MeshBatch.new()
 	_rng.seed = hash(id)
-	_gap = Plot.footprint(_stage_at(id))
+	var tier := _stage_at(id)
+	_gap = Plot.footprint(tier)
 	var layout: String = Data.LOCATIONS[id]["layout"]
 	var souq := layout == "fahidi"
 	_play_rotation = PLAY_CAMERA_ROTATION
@@ -251,6 +252,8 @@ func set_location(id: String) -> void:
 		"jbr":
 			_play_rotation = Vector3(-27, 12, 0)
 			focus = Vector3(0.03, 0.48, -1.20)
+	if tier == 2:
+		_play_rotation.x = maxf(_play_rotation.x, -21.0)
 	camera.rotation_degrees = _play_rotation
 	_cam_base = focus + camera.transform.basis.z * 22.0
 	camera.position = _cam_base
@@ -529,11 +532,11 @@ func _beach_shade(p: Vector3) -> void:
 	_batch.add_box(Vector3(0.84, 0.055, 0.55), frame, _at(p + Vector3.UP * 0.029))
 	for x in [-0.37, 0.37]:
 		for z in [-0.23, 0.23]:
-			_batch.add_box(Vector3(0.036, 0.64, 0.036), frame, _at(p + Vector3(x, 0.32, z)))
+			_batch.add_box(Vector3(0.036, 0.82, 0.036), frame, _at(p + Vector3(x, 0.41, z)))
 	for i in range(9):
 		var x := (i - 4) * 0.096
 		_batch.add_box(Vector3(0.095, 0.031, 0.56), Color("397c80") if i % 3 == 0 else Color("e2ccaa"),
-			_at(p + Vector3(x, 0.65, 0)))
+			_at(p + Vector3(x, 0.83, 0)))
 	_scenery("kaykit/bench", p + Vector3(0, 0.066, -0.08), 0, 1.05)
 
 func _build_downtown() -> void:
@@ -657,7 +660,7 @@ func _rival_stalls() -> void:
 		l.position = Vector3(0, 1.34, 0.32)
 		st.add_child(l)
 		var vendor_id := "souq-woman" if i % 2 != 0 else "souq-man"
-		var vendor := ModelLib.spawn_guest(vendor_id, st, Vector3(0, 0, -0.45), 0.59)
+		var vendor := ModelLib.spawn_guest(vendor_id, st, Vector3(0, 0, -0.45))
 		if vendor:
 			ModelLib.play_loop(vendor, "idle")
 		i += 1
@@ -793,9 +796,9 @@ func handoff(customer: Customer) -> void:
 			var to := ModelLib.hand_position(customer.model)
 			var point := from.lerp(to, smoothstep(0.25, 0.8, progress)) + offset
 			if truck:
-				var z := point.z - CART_POS.z
+				var z := (point.z - CART_POS.z) / FoodTruck.SCALE
 				var lift := smoothstep(0.10, 0.23, z) * (1.0 - smoothstep(0.46, 0.58, z))
-				point.y = lerpf(point.y, maxf(point.y, FoodTruck.SILL_Y + 0.08), lift)
+				point.y = lerpf(point.y, maxf(point.y, FoodTruck.SILL_Y * FoodTruck.SCALE + 0.08), lift)
 			bag.global_position = point
 		, 0.0, 1.0, 0.58)
 	motion.tween_callback(func():
