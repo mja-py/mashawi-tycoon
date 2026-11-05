@@ -10,7 +10,6 @@ signal gone(customer: Customer)
 
 enum State { WALK, TO_SLOT, QUEUED, TO_SEAT, SEATED, REACT, LEAVE, DONE }
 
-const SCALE := 0.62
 const WALK_SPEED := 0.8
 
 var state: State = State.WALK
@@ -24,11 +23,12 @@ var model: Node3D
 var bubble: Label3D
 var wants: String = "food"
 var forced_stop := false
+var on_promenade := false
 var item: String = ""
 var wait_min: float = 0.0
 var slot: int = -1
 var seat: Dictionary = {}
-var _path: Array = []
+var _path: Array[Vector3] = []
 var _bubble_tween: Tween
 ## Skip accelerates only customer movement; meshes and UI animate at normal speed.
 var simulation_speed := 1.0
@@ -38,20 +38,17 @@ var _yaw := 0.0
 var _after_beat: Callable
 var _bag: Node3D
 
-func setup(model_name: String, direction: int, start: Vector3, end_x: float, decide_x: float, with_visuals: bool = true) -> void:
+func setup(female: bool, direction: int, start: Vector3, end_x: float, decide_x: float, with_visuals: bool = true) -> void:
 	dir = direction
 	position = start
 	exit_x = end_x
 	decision_x = decide_x
 	speed = WALK_SPEED * randf_range(0.85, 1.2)
-	# A skipped customer still walks, queues, eats and pays through the same rules,
+	# A virtual customer still walks, queues, eats and pays through the same rules,
 	# without allocating a mesh, skeleton, material, speech label or GPU shader.
 	if not with_visuals:
 		return
-	var fitted_scale := SCALE
-	if model_name.begins_with("customers/"):
-		fitted_scale = 0.54 / (1.64 if model_name.ends_with("woman") else 1.75)
-	model = ModelLib.spawn(model_name, self, Vector3.ZERO, 0, fitted_scale)
+	model = ModelLib.spawn_guest(female, self)
 	if model:
 		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * 1.6)
 	_face_direction()
@@ -85,9 +82,14 @@ func _walk_towards(pos: Vector3) -> void:
 func go_to_slot(index: int, pos: Vector3) -> void:
 	slot = index
 	target = pos
-	_path = []
+	_path.clear()
+	if on_promenade and index < 100 and position.z >= SouqScenery.ARRIVAL_Z - 0.1:
+		# Walk alongside the line first, then turn into the assigned spot.
+		if absf(pos.x - position.x) > 0.25:
+			target = Vector3(pos.x, 0.0, SouqScenery.ARRIVAL_Z)
+			_path.append(pos)
 	state = State.TO_SLOT
-	_walk_towards(pos)
+	_walk_towards(target)
 
 ## Walk to a seat ({idx, table, pos, facing, approach, y_off}) and sit down there.
 func go_to_seat(s: Dictionary) -> void:
@@ -114,7 +116,8 @@ func leave_from_seat(text: String = "", color: Color = Color.WHITE) -> void:
 		model.position.y = 0.0
 	var approach: Vector3 = seat.get("approach", position) if not seat.is_empty() else position
 	seat = {}
-	_path = [Vector3(approach.x, 0, World.WALK_Z)]
+	var lane := SouqScenery.PROMENADE_Z if on_promenade else World.WALK_Z
+	_path = [Vector3(approach.x, 0, lane)]
 	target = approach
 	state = State.TO_SEAT
 	_leaving_after_path = true
@@ -132,13 +135,14 @@ func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false) ->
 
 ## Hold the pose at the counter before moving on to the next part of the visit.
 func perform(clip: String, fallback: String, seconds: float, then: Callable = Callable()) -> void:
-	if model == null or simulation_speed > 1.0:
+	if simulation_speed > 1.0:
 		if then.is_valid():
 			then.call()
 		return
-	var player := ModelLib.animation_player(model)
-	var anim := clip if player and player.has_animation(clip) else fallback
-	ModelLib.play_once(model, anim)
+	if model:
+		var player := ModelLib.animation_player(model)
+		var anim := clip if player and player.has_animation(clip) else fallback
+		ModelLib.play_once(model, anim)
 	beat_left = seconds
 	if then.is_valid():
 		state = State.REACT
@@ -161,7 +165,15 @@ func _start_leaving() -> void:
 	if state == State.DONE:
 		return
 	var lane_z := World.WALK_Z + 0.20
-	if position.z < World.WALK_Z - 0.1:
+	var step_to_lane := position.z < World.WALK_Z - 0.1
+	if on_promenade:
+		if slot >= 100:
+			# Pickup is on the left. Exit past the vendor rather than across the line.
+			dir = -1
+			exit_x = -World.WALK_EDGE
+		lane_z = SouqScenery.PROMENADE_Z if slot >= 0 else SouqScenery.ARRIVAL_Z
+		step_to_lane = absf(position.z - lane_z) > 0.12
+	if step_to_lane:
 		target = Vector3(position.x, 0, lane_z)
 		_path.clear()
 		_leaving_after_path = true
@@ -219,6 +231,10 @@ func _process(delta: float) -> void:
 			d.y = 0
 			if d.length() < 0.03:
 				position = target
+				if not _path.is_empty():
+					target = _path.pop_front()
+					_walk_towards(target)
+					return
 				state = State.QUEUED
 				face_point(World.CART_POS)
 				if model:

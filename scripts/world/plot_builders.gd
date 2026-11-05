@@ -14,8 +14,7 @@ const PROPS := {
 	"styrofoam": "food/styrofoam", "samovar": "props/samovar", "cup_tea": "food/cup-tea", "pot_stew": "food/pot-stew",
 	"sweets": "food/sweets-counter", "cake": "food/cake", "plate": "food/plate", "cup": "food/cup",
 	"neon_frame": "props/neon-frame", "pylon": "props/pylon-sign", "lantern": "props/lantern", "fan": "props/pedestal-fan",
-	"oud": "people/character-male-c", "skewer": "food/skewer", "skewer_veg": "food/skewer-vegetables", "charcoal": "food/charcoal-bag",
-	"staff_f": "gulf:female", "staff_m": "gulf:male",
+	"skewer": "food/skewer", "skewer_veg": "food/skewer-vegetables", "charcoal": "food/charcoal-bag",
 }
 
 const RED := Color(0.52, 0.13, 0.16)

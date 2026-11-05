@@ -92,7 +92,7 @@ Publish:
 ```
 scripts/core      data.gd (all tuning tables), economy.gd (pure formulas), game.gd (state + save)
 scripts/sim       day_sim.gd (clock, passers-by, queue, sales, reactions), fast_sim.gd (headless balance)
-scripts/world     world.gd (Dubai street builder, Gulf architecture), cart.gd, customer.gd, gulf_person.gd, car.gd, model_lib.gd
+scripts/world     world.gd (Dubai street builder), gulf_arch.gd, souq_scenery.gd, cart.gd, customer.gd, car.gd, model_lib.gd
 scripts/ui        hud.gd (all panels), ui_theme.gd, icons.gd (3D model icons, weather glyphs)
 assets/models     curated Kenney GLB kits (CC0)      raw/   full kits, ignored by Godot (.gdignore)
 tests/            headless logic tests               tools/ check/shot/export/deploy scripts, GLB + Blender helpers
@@ -101,6 +101,6 @@ web/              custom HTML shell, Shopify embed snippet, static extras for th
 
 ## Credits
 
-3D models (city, roads, nature, food, cars, Mini Characters), sounds: [Kenney](https://kenney.nl) (CC0).
-Trees, bench, bush, rocks: [KayKit](https://kaylousberg.com) (CC0). Food models (spit, wrap, pita, salad, meat trays, mashawi platter, karak): generated with Blender (`tools/make_*.py`). Emirati characters: procedural (`gulf_person.gd`).
+3D models (city, roads, nature, food, cars), sounds: [Kenney](https://kenney.nl) (CC0).
+Trees, bench, bush, rocks: [KayKit](https://kaylousberg.com) (CC0). Food models (spit, wrap, pita, salad, meat trays, mashawi platter, karak): generated with Blender (`tools/make_*.py`). Rigged character models: Meshy, with game-specific animations and mobile asset optimization.
 Font: Fredoka (SIL OFL).

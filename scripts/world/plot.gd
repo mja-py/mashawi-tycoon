@@ -742,9 +742,9 @@ func _st_music(n: Node3D, t: int) -> void:
 	if t >= 3:
 		# an oud player on a stool
 		b.add_cyl(0.06, 0.13, PlotBuilders.WOOD, _at(p + Vector3(0, base + 0.065, 0.02)))
-		var player := ModelLib.spawn(PlotBuilders.PROPS["oud"], n, p + Vector3(0, base + 0.08, 0.02), 0, 0.62)
+		var player := ModelLib.spawn_guest(false, n, p + Vector3(0, base + 0.08, 0.02))
 		if player:
-			ModelLib.play_loop(player, "holding-both", 0.6)
+			ModelLib.play_loop(player, "sit", 0.6)
 			b.add_box(Vector3(0.08, 0.12, 0.03), Color(0.55, 0.32, 0.15), _at(p + Vector3(0.0, base + 0.25, 0.14)))
 	b.flush(n)
 

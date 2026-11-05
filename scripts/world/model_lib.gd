@@ -15,14 +15,6 @@ static func scene(name: String) -> PackedScene:
 	return ps
 
 static func spawn(name: String, parent: Node, pos: Vector3 = Vector3.ZERO, rot_y_deg: float = 0.0, scale: float = 1.0) -> Node3D:
-	if name.begins_with("gulf:"):
-		var gp := GulfPerson.new()
-		gp.female = name.ends_with("female")
-		gp.position = pos
-		gp.rotation.y = deg_to_rad(rot_y_deg)
-		gp.scale = Vector3.ONE * scale
-		parent.add_child(gp)
-		return gp
 	var ps := scene(name)
 	if ps == null:
 		return null
@@ -36,6 +28,10 @@ static func spawn(name: String, parent: Node, pos: Vector3 = Vector3.ZERO, rot_y
 static func animation_player(root: Node) -> AnimationPlayer:
 	return root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 
+static func spawn_guest(female: bool, parent: Node, pos := Vector3.ZERO, height := 0.54) -> Node3D:
+	var path := "customers/souq-woman" if female else "customers/souq-man"
+	return spawn(path, parent, pos, 0, height / (1.64 if female else 1.75))
+
 ## Fit the rigged stand crew to the scale of the cart and kiosk.
 static func spawn_crew(female: bool, parent: Node, pos: Vector3, rot_y_deg: float, scale: float) -> Node3D:
 	var path := "crew/abaya-lady" if female else "crew/kandura-man"
@@ -44,9 +40,6 @@ static func spawn_crew(female: bool, parent: Node, pos: Vector3, rot_y_deg: floa
 	return spawn(path, parent, pos + Vector3.UP * 0.011 * fitted_scale, rot_y_deg, fitted_scale)
 
 static func play_loop(root: Node, anim: String, speed: float = 1.0) -> void:
-	if root.has_method("set_anim"):
-		root.set_anim(anim, speed)
-		return
 	var ap := animation_player(root)
 	if ap == null:
 		return
@@ -58,9 +51,6 @@ static func play_loop(root: Node, anim: String, speed: float = 1.0) -> void:
 		ap.play(anim, 0.15)
 
 static func play_once(root: Node, anim: String, then: String = "idle") -> void:
-	if root.has_method("set_anim"):
-		root.set_anim(anim)
-		return
 	var ap := animation_player(root)
 	if ap == null or not ap.has_animation(anim):
 		return

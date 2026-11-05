@@ -261,10 +261,10 @@ func _showcase_guest(step: int) -> void:
 		_reject(guest, "queue_full", "line-full", Color("ffc17d"))
 
 func _waiting_in_line(payload: Customer) -> bool:
-	return finishing or not is_instance_valid(payload) or payload.model == null or payload.state == Customer.State.QUEUED
+	return finishing or not is_instance_valid(payload) or payload.state == Customer.State.QUEUED
 
 func _counter_ready(payload: Customer) -> bool:
-	if finishing or not is_instance_valid(payload) or payload.model == null:
+	if finishing or not is_instance_valid(payload):
 		return true
 	if _showcase_step < SHOWCASE_BEATS.size() and _showcase_time < 1.35:
 		return false
@@ -277,7 +277,7 @@ func _counter_ready(payload: Customer) -> bool:
 	return payload.beat_left == 0.0
 
 func _pickup_ready(payload: Customer) -> bool:
-	if finishing or not is_instance_valid(payload) or payload.model == null:
+	if finishing or not is_instance_valid(payload):
 		return true
 	return _handoff_left == 0.0 and payload.slot == 100 and payload.state == Customer.State.QUEUED
 
