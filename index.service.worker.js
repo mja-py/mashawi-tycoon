@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1793934792|1180607';
+const CACHE_VERSION = '1793965746|1393227';
 /** @type {string} */
 const CACHE_PREFIX = 'Mashawi Tycoon-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;

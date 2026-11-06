@@ -19,7 +19,7 @@
 		html, body { margin: 0; padding: 0; position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden;
 			background: #e9d7b6; color: #3c3026; font-family: "Baloo Bhaijaan 2", "Segoe UI", Tahoma, sans-serif;
 			touch-action: manipulation; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-		#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; opacity: 0; transition: opacity 0.5s ease; }
+		#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; opacity: 0; transition: opacity 0.32s ease; }
 		#canvas.on { opacity: 1; }
 		#canvas:focus { outline: none; }
 		/* invisible probe: its padding equals the phone's safe-area insets (notch, home bar) */
@@ -95,7 +95,7 @@
 		@keyframes turn { 0%, 20% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
 		@media (orientation: portrait) and (max-width: 900px) { #rotate { display: flex; } }
 		.hidden { display: none !important; }
-		.fading { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+		.fading { opacity: 0; pointer-events: none; transition: opacity 0.32s ease; }
 	</style>
 </head>
 <body>
@@ -135,6 +135,7 @@
 				<div class="bar" id="status-bar" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="status-progress"></div></div>
 				<div id="spin" class="spin"></div>
 				<button id="play" class="btn">العب / Play</button>
+				<button id="retry" class="btn">حاول مجددًا / Try again</button>
 				<button id="installmini">تثبيت / Install</button>
 			</div>
 		</div><div id="install-slot"></div></div>
@@ -167,7 +168,7 @@
 	</script>
 	<script src="index.js"></script>
 	<script>
-	const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":8734816,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+	const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":8741088,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 	const GODOT_THREADS_ENABLED = false;
 	(function () {
 		const statusOverlay = document.getElementById('status');
@@ -177,12 +178,15 @@
 		const bar = document.getElementById('status-bar');
 		const spin = document.getElementById('spin');
 		const play = document.getElementById('play');
+		const retry = document.getElementById('retry');
+		retry.addEventListener('click', function () { location.reload(); });
 		const rotate = document.getElementById('rotate');
 		const fsBtn = document.getElementById('fs');
 		const arrow = document.getElementById('arrow');
 		const installMini = document.getElementById('installmini');
 		const doc = document.documentElement;
 		let started = false;
+		let bootHint = 0;
 
 		// ---- remote log: on a LAN address (phone testing) or ?dev=--log, errors and milestones
 		// are POSTed to /log so the session can be read on the serving machine. ----
@@ -218,12 +222,14 @@
 		}
 
 		function fail(err) {
+			clearTimeout(bootHint);
 			rlog('FAIL ' + ((err instanceof Error) ? (err.message + ' ' + err.stack) : String(err)));
 			console.error(err);
 			statusOverlay.classList.remove('ready');
 			spin.style.display = 'none';
 			notice.textContent = 'تعذّر تشغيل اللعبة / Cannot run the game: ' + ((err instanceof Error) ? err.message : String(err));
 			play.style.display = 'none';
+			retry.style.display = 'inline-block';
 		}
 
 		// The engine (its AudioWorklet) needs a secure context: https, or localhost. A plain http
@@ -366,6 +372,10 @@
 			notice.textContent = 'جارٍ التشغيل... / Starting...';
 			pct.textContent = '';
 			spin.style.display = 'block';
+			bootHint = setTimeout(function () {
+				notice.textContent = 'لحظة إضافية... / Still opening the shop…';
+				retry.style.display = 'inline-block';
+			}, 15000);
 			// The tap is a user gesture: go full screen where the browser allows it (desktop, Android).
 			requestFullscreen().then(lockLandscape);
 			loaded.then(function () {
@@ -387,6 +397,7 @@
 		function hideStatus() {
 			if (hidden) { return; }
 			hidden = true;
+			clearTimeout(bootHint);
 			// iOS Safari changes the viewport when its toolbar collapses on the Play tap; make sure the
 			// engine has resized the canvas to the final size before the overlay goes, or the game
 			// shows up small and then jumps to full size.
@@ -395,13 +406,11 @@
 				window.dispatchEvent(new Event('resize'));
 				document.getElementById('canvas').classList.add('on');
 				statusOverlay.classList.add('fading');
-				setTimeout(function () { statusOverlay.classList.add('hidden'); }, 300);
+				setTimeout(function () { statusOverlay.classList.add('hidden'); }, 350);
 			}); });
 		}
 		if (window.visualViewport) { window.visualViewport.addEventListener('resize', function () { if (started) { window.dispatchEvent(new Event('resize')); } }); }
 		window.addEventListener('godot-ready', hideStatus);
-		// Safety net: hide the overlay a few seconds after start even if the event never comes.
-		play.addEventListener('click', function () { setTimeout(hideStatus, 6000); });
 
 		// Portrait guard for phones (JS mirror of the CSS media query, for old WebViews).
 		function checkOrientation() {
