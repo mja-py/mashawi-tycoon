@@ -1,0 +1,33 @@
+Mashawi Tycoon
+Copyright (c) 2026 Mohammad Jassem. All rights reserved.
+
+This notice covers the original materials in Mashawi Tycoon to the extent
+Mohammad Jassem holds the rights, including the source code, artwork, writing,
+interface, 3D models, textures, rigs, and animations.
+
+You may play the game through an authorized release. Copying the original
+materials for reuse, extracting assets for other projects, modifying,
+redistributing, selling, or sublicensing them requires prior written permission
+from the copyright holder, except where permitted by applicable law or platform
+terms.
+
+Third-party materials
+
+Third-party assets and software remain available under their own terms.
+
+- Kenney models and sound effects and KayKit assets retain their CC0 terms.
+  https://kenney.nl/assets
+  https://kaylousberg.com/game-assets
+  https://creativecommons.org/publicdomain/zero/1.0/
+- Baloo Bhaijaan 2 is by the Baloo 2 Project Authors under the SIL Open Font
+  License 1.1. The license text is in assets/fonts/OFL-BalooBhaijaan2.txt in
+  the source and OFL-BalooBhaijaan2.txt in the web release.
+- The game uses Godot Engine under the MIT License. Godot's dependencies
+  carry their respective notices and terms.
+  https://godotengine.org/license/
+  https://github.com/godotengine/godot/blob/master/COPYRIGHT.txt
+- Meshy-assisted assets were generated with Meshy and adapted for the game.
+  Any public license applicable to an individual Meshy asset continues to
+  apply to that asset, including CC BY 4.0 for free-plan output.
+  https://www.meshy.ai/terms-of-use
+  https://creativecommons.org/licenses/by/4.0/
