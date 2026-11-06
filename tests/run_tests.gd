@@ -25,6 +25,7 @@ func _ready() -> void:
 	_test_migration(game)
 	_test_daily_stock(game)
 	_test_mobile_stages_and_lighting(game)
+	_test_later_item_handoff(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
 
@@ -64,6 +65,40 @@ func _test_mobile_stages_and_lighting(game) -> void:
 	check(game.buy_station_level("seating"), "standard seating can be installed alongside Majlis")
 	world.apply_visual()
 	check(world.plot.seats.size() == 6 and world.plot.has_node("seating_3_2_4"), "standard tables and Majlis furniture share the terrace")
+	sim.queue_free()
+	world.queue_free()
+	game.new_game()
+
+func _test_later_item_handoff(game) -> void:
+	game.new_game()
+	game.money = 100000.0
+	game.buy_stage()
+	game.buy_stage()
+	for id in ["doner", "fryer", "sweets"]:
+		game.buy_station_level(id)
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 30
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	var sim := DaySim.new()
+	add_child(sim)
+	var receipts: Array[Array] = []
+	sim.sale_completed.connect(func(items: Array[String], _total: float): receipts.append(items))
+	sim.start(game.sim_context(), world)
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["start"]:
+			continue
+		check(game.unlock_item(id), "unlock %s for handoff test" % id)
+		var guest := world.spawn_guest(-1, world.pickup_slot(0))
+		guest.wants = "side" # keep the order deterministic and omit random add-ons
+		sim._on_served(guest, id, 0.0, false)
+		check(not receipts.is_empty() and receipts.back() == [id], "%s sale reaches the animated receipt" % id)
+		check(world.find_child("Served_" + id, true, false) != null, "%s has a visible handoff prop" % id)
+		guest._finish()
+	var rendered_guest := world.spawn_guest(-1, world.pickup_slot(0))
+	sim.finish_quickly()
+	check(rendered_guest.simulation_speed == 1.0, "Skip keeps the visible cast moving at its normal pace")
 	sim.queue_free()
 	world.queue_free()
 	game.new_game()

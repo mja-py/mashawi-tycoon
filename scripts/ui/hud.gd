@@ -3,7 +3,11 @@ extends CanvasLayer
 ## Built in code so the layout stays touch-friendly at any phone aspect ratio.
 
 var main: Node
-var fade_rect: ColorRect
+var curtain: Control
+var _curtain_left: ColorRect
+var _curtain_right: ColorRect
+var _curtain_badge: CenterContainer
+var _curtain_amount := 0.0
 var _fade_tween: Tween
 var root: Control
 var top_bar: PanelContainer
@@ -24,7 +28,14 @@ var speed_buttons := {}
 var skip_button: Button
 var live_label: Label
 var ticker_label: Label
-var panel_dim: PanelContainer
+var closing_progress: ProgressBar
+var _closing_from := 0.0
+var _closing_until := 0.0
+var _sale_tween: Tween
+var _purchase_badge: PanelContainer
+var _purchase_tween: Tween
+var _panel_revision := 0
+var panel_dim: Panel
 var panel: PanelContainer
 var panel_title: Label
 var stock_button: Button
@@ -52,6 +63,9 @@ var _roll_ids: Array[String] = []
 var current_panel := ""
 ## Width (logical px) from which panels show two columns of cards.
 const TWO_COLUMNS_FROM := 1100.0
+const TOP_BAR_HEIGHT := 60.0
+const BOTTOM_BAR_HEIGHT := 84.0
+const PANEL_GAP := 6.0
 var report_dim: PanelContainer
 var report_panel: PanelContainer
 var report_body: VBoxContainer
@@ -89,6 +103,7 @@ func _ready() -> void:
 		main.sim.clock_changed.connect(_on_clock)
 		main.sim.stats_changed.connect(_on_stats)
 		main.sim.event.connect(_toast)
+		main.sim.sale_completed.connect(_on_sale)
 	_refresh()
 
 func _build_all() -> void:
@@ -107,6 +122,7 @@ func _build_all() -> void:
 	_build_report() # above the title so its dialogs (new-game confirm) show over it
 	_build_toast()
 	_build_fade()
+	_build_purchase_badge()
 
 ## Rebuild every control in the new language and direction (only offered on the title screen).
 func _on_language_changed() -> void:
@@ -120,23 +136,59 @@ func _on_language_changed() -> void:
 
 ## Full-screen curtain for scene rebuilds (new place, bigger plot): fade out, swap, fade in.
 func _build_fade() -> void:
-	fade_rect = ColorRect.new()
-	fade_rect.color = UiTheme.NIGHT_DARK
-	fade_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	fade_rect.visible = false
-	root.add_child(fade_rect)
+	curtain = Control.new()
+	curtain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	curtain.clip_contents = true
+	curtain.mouse_filter = Control.MOUSE_FILTER_STOP
+	curtain.z_index = 20
+	curtain.hide()
+	root.add_child(curtain)
+	_curtain_left = _curtain_leaf()
+	_curtain_right = _curtain_leaf()
+	_curtain_badge = CenterContainer.new()
+	_curtain_badge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_curtain_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	curtain.add_child(_curtain_badge)
+	var badge := PanelContainer.new()
+	badge.add_theme_stylebox_override("panel", UiTheme.flat(UiTheme.PALM_DARK, 42, UiTheme.GOLD_LIGHT, 2))
+	badge.custom_minimum_size = Vector2(84, 84)
+	_curtain_badge.add_child(badge)
+	badge.add_child(MenuArt.new("tab:menu"))
+	curtain.resized.connect(func(): _move_curtain(_curtain_amount))
 
-func fade_through(action: Callable, out_dur: float = 0.18, in_dur: float = 0.32) -> void:
+func _curtain_leaf() -> ColorRect:
+	var leaf := ColorRect.new()
+	leaf.color = UiTheme.PALM_DARK
+	leaf.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	curtain.add_child(leaf)
+	_lattice_bg(leaf)
+	return leaf
+
+func _move_curtain(amount: float) -> void:
+	_curtain_amount = amount
+	var half_width := ceilf(curtain.size.x * 0.5)
+	var width := half_width + 1.0
+	_curtain_left.size = Vector2(width, curtain.size.y)
+	_curtain_right.size = _curtain_left.size
+	_curtain_left.position.x = -width * (1.0 - amount)
+	_curtain_right.position.x = half_width + width * (1.0 - amount)
+	_curtain_badge.modulate.a = smoothstep(0.68, 1.0, amount)
+
+func is_transitioning() -> bool:
+	return curtain.visible
+
+func fade_through(action: Callable, out_dur: float = 0.26, in_dur: float = 0.34) -> void:
 	if _fade_tween:
 		_fade_tween.kill()
-	fade_rect.visible = true
-	fade_rect.modulate.a = 0.0
-	_fade_tween = create_tween()
-	_fade_tween.tween_property(fade_rect, "modulate:a", 1.0, out_dur).set_trans(Tween.TRANS_SINE)
+	_move_curtain(0.0)
+	curtain.show()
+	_fade_tween = curtain.create_tween().set_ignore_time_scale()
+	_fade_tween.tween_method(_move_curtain, 0.0, 1.0, out_dur).set_trans(Tween.TRANS_SINE)
+	_fade_tween.tween_interval(0.05)
 	_fade_tween.tween_callback(action)
-	_fade_tween.tween_property(fade_rect, "modulate:a", 0.0, in_dur).set_trans(Tween.TRANS_SINE)
-	_fade_tween.tween_callback(func(): fade_rect.visible = false)
+	_fade_tween.tween_interval(0.05)
+	_fade_tween.tween_method(_move_curtain, 1.0, 0.0, in_dur).set_trans(Tween.TRANS_SINE)
+	_fade_tween.tween_callback(curtain.hide)
 
 ## `--fps` dev flag: frame rate and draw calls in the top-left corner (web: `?dev=--fps`).
 func _build_fps_overlay() -> void:
@@ -167,6 +219,9 @@ func _publish_menu_targets() -> void:
 	var vp := root.get_viewport_rect().size
 	var buttons := panel.find_children("*", "Button", true, false)
 	buttons.append_array(prep_bar.find_children("*", "Button", true, false))
+	buttons.append_array(day_bar.find_children("*", "Button", true, false))
+	buttons.append_array(report_dim.find_children("*", "Button", true, false))
+	buttons.append_array(title_screen.find_children("*", "Button", true, false))
 	for node in buttons:
 		var b := node as Button
 		if not b.is_visible_in_tree() or not b.has_meta("menu_target"):
@@ -178,6 +233,12 @@ func _publish_menu_targets() -> void:
 			continue
 		targets[b.get_meta("menu_target")] = {"x": center.x / vp.x, "y": center.y / vp.y, "disabled": b.disabled}
 	JavaScriptBridge.eval("window.godotMenuTargets = " + JSON.stringify(targets))
+	var bounds := panel_dim.get_global_rect()
+	var panel_bounds := panel.get_global_rect().intersection(bounds)
+	var view := {"menuBottom": panel_bounds.end.y / vp.y, "tabsTop": prep_bar.get_global_rect().position.y / vp.y,
+		"curtain": _curtain_amount if curtain.visible else 0.0, "closing": closing_progress.value if closing_progress.visible and day_bar.visible else -1.0,
+		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text}
+	JavaScriptBridge.eval("window.godotPresentation = " + JSON.stringify(view))
 
 ## Keep bars and panels out of notches / rounded corners on phones.
 func _apply_safe_area() -> void:
@@ -210,7 +271,9 @@ func _apply_safe_area() -> void:
 	var h := vp.y - root.offset_top + root.offset_bottom
 	# Panels use the whole width between the bars: phones are wide but short.
 	if panel:
-		panel.custom_minimum_size = Vector2(w - 16.0, maxf(300.0, h - 60.0 - 84.0 - 8.0))
+		panel_dim.offset_top = maxf(TOP_BAR_HEIGHT, top_bar.get_combined_minimum_size().y) + PANEL_GAP
+		panel_dim.offset_bottom = -maxf(BOTTOM_BAR_HEIGHT, prep_bar.get_combined_minimum_size().y) - PANEL_GAP
+		panel.custom_minimum_size = Vector2(w - 16.0, maxf(0.0, h + panel_dim.offset_bottom - panel_dim.offset_top))
 	if report_panel:
 		report_panel.custom_minimum_size = Vector2(minf(1100.0, w - 16.0), maxf(300.0, h - 16.0))
 
@@ -232,7 +295,7 @@ func _bottom_bar() -> PanelContainer:
 	var bar := PanelContainer.new()
 	bar.theme_type_variation = "Bar"
 	bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	bar.offset_top = -84
+	bar.offset_top = -BOTTOM_BAR_HEIGHT
 	bar.offset_bottom = 0
 	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	root.add_child(bar)
@@ -297,7 +360,7 @@ func _build_top_bar() -> void:
 	top_bar = PanelContainer.new()
 	top_bar.theme_type_variation = "Bar"
 	top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	top_bar.offset_bottom = 60
+	top_bar.offset_bottom = TOP_BAR_HEIGHT
 	root.add_child(top_bar)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
@@ -379,6 +442,7 @@ func _build_day_bar() -> void:
 		speed_buttons[s] = b
 	var skip := _button(tr("ui.skip"), "Ghost", Vector2(170, 56))
 	skip_button = skip
+	_menu_target(skip_button, "skip_day")
 	skip.pressed.connect(func():
 		Sfx.play("click")
 		main.skip_day())
@@ -390,15 +454,24 @@ func _build_day_bar() -> void:
 	live_label = _label(tr("ui.live") % [0, Loc.money(0), 0, 0, 0], "Light", HORIZONTAL_ALIGNMENT_RIGHT)
 	v.add_child(live_label)
 	ticker_label = _label("", "Muted", HORIZONTAL_ALIGNMENT_RIGHT)
+	ticker_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	ticker_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	ticker_label.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
 	v.add_child(ticker_label)
+	closing_progress = ProgressBar.new()
+	closing_progress.max_value = 1.0
+	closing_progress.show_percentage = false
+	closing_progress.custom_minimum_size.y = 7.0
+	closing_progress.add_theme_stylebox_override("background", UiTheme.flat(Color("5b5043"), 3))
+	closing_progress.add_theme_stylebox_override("fill", UiTheme.flat(UiTheme.GOLD_LIGHT, 3))
+	closing_progress.hide()
+	v.add_child(closing_progress)
 
 func _build_panel() -> void:
-	panel_dim = PanelContainer.new()
-	panel_dim.theme_type_variation = "Dim"
+	panel_dim = Panel.new()
+	panel_dim.add_theme_stylebox_override("panel", root.get_theme_stylebox("panel", "Dim"))
+	panel_dim.clip_contents = true
 	panel_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	panel_dim.offset_top = 60
-	panel_dim.offset_bottom = -84
 	panel_dim.visible = false
 	panel_dim.gui_input.connect(func(ev: InputEvent):
 		# mouse-wheel / trackpad scrolling bubbles up through the panel as button events, so only
@@ -409,9 +482,9 @@ func _build_panel() -> void:
 	root.add_child(panel_dim)
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel_dim.add_child(center)
 	panel = PanelContainer.new()
-	panel.custom_minimum_size = Vector2(900, 540)
 	center.add_child(panel)
 	_lattice_bg(panel)
 	_apply_safe_area()
@@ -434,9 +507,7 @@ func _build_panel() -> void:
 	stock_button = _button("", "Primary", Vector2(180, 60))
 	_menu_target(stock_button, "stock_today")
 	stock_button.visible = false
-	stock_button.pressed.connect(func():
-		if Game.stock_for_today():
-			Sfx.play("confirm"))
+	stock_button.pressed.connect(func(): _confirm_purchase(stock_button, Game.stock_for_today))
 	head.add_child(stock_button)
 	var close := _button(tr("ui.close"), "Ghost", Vector2(110, 48))
 	_menu_target(close, "close_panel")
@@ -535,6 +606,7 @@ func _build_title() -> void:
 	v.add_child(new_btn)
 	var cont := _button(tr("ui.continue"), "", Vector2(0, 60))
 	continue_btn = cont
+	_menu_target(cont, "continue_game")
 	cont.pressed.connect(func():
 		Sfx.play("confirm")
 		main.continue_game())
@@ -591,18 +663,28 @@ func show_day() -> void:
 	_slide_in(day_bar, 1)
 	_banner("%s  ·  %s" % [tr("ui.day") % Game.day, tr(Game.loc()["name"])])
 	ticker_label.text = ""
+	ticker_label.modulate.a = 1.0
+	closing_progress.hide()
 	_set_speed(1.0)
 	_refresh()
 
-func show_finishing() -> void:
+func show_finishing(from_hour: float, end_hour: float) -> void:
 	skip_button.disabled = true
 	skip_button.text = tr("ui.finishing")
 	for b in speed_buttons.values():
 		b.disabled = true
 		b.button_pressed = false
+	if _sale_tween:
+		_sale_tween.kill()
+	_closing_from = from_hour
+	_closing_until = end_hour
+	ticker_label.text = ""
+	closing_progress.value = 0.0
+	closing_progress.show()
 
 func show_report(r: Dictionary) -> void:
 	day_bar.visible = false
+	_refresh()
 	for c in report_body.get_children():
 		c.queue_free()
 	var head := HBoxContainer.new()
@@ -687,9 +769,10 @@ func show_report(r: Dictionary) -> void:
 	foot.add_child(fc)
 	foot.add_child(_spacer())
 	var next := _button(tr("ui.next_day"), "Primary", Vector2(220, 64))
+	_menu_target(next, "next_day")
 	next.pressed.connect(func():
 		Sfx.play("confirm")
-		main.show_prep())
+		fade_through(main.show_prep))
 	foot.add_child(next)
 	_apply_safe_area()
 	_show_report_overlay()
@@ -719,7 +802,9 @@ func _row(g: GridContainer, k: String, v: String, color: Color = UiTheme.INK) ->
 # ================================================================= top bar / live
 
 func _refresh() -> void:
-	if _refreshing:
+	# Settlement saves immediately. Reveal the next day’s header only after
+	# the curtain has covered the previous day’s street.
+	if _refreshing or (main and main.phase == main.Phase.REPORT and day_bar.visible):
 		return
 	_refreshing = true
 	if not is_nan(_last_money) and not is_equal_approx(_last_money, Game.money):
@@ -749,6 +834,22 @@ func _on_clock(hour: float) -> void:
 	var h := int(hour)
 	var m := int((hour - h) * 60.0)
 	clock_label.text = "%02d:%02d" % [h % 24, m]
+	if closing_progress.visible:
+		closing_progress.value = clampf(inverse_lerp(_closing_from, maxf(_closing_until, _closing_from + 0.01), hour), 0.0, 1.0)
+
+func _on_sale(items: Array[String], total: float) -> void:
+	var names := PackedStringArray()
+	for id in items:
+		names.append(tr(Data.MENU_ITEMS[id]["name"]))
+	if _sale_tween:
+		_sale_tween.kill()
+	ticker_label.text = "%s  ·  +%s" % [", ".join(names), Loc.money(total)]
+	ticker_label.modulate.a = 0.0
+	_pulse(ticker_label)
+	_sale_tween = ticker_label.create_tween()
+	_sale_tween.tween_property(ticker_label, "modulate:a", 1.0, 0.15)
+	_sale_tween.tween_interval(1.1)
+	_sale_tween.tween_property(ticker_label, "modulate:a", 0.0, 0.3)
 
 func _on_stats(stats: Dictionary) -> void:
 	money_label.text = Loc.money(Game.money)
@@ -768,6 +869,9 @@ func _toast(text: String, kind: String = "info") -> void:
 	elif kind == "warn":
 		Sfx.play("question")
 	if main and main.phase == main.Phase.DAY:
+		if _sale_tween:
+			_sale_tween.kill()
+		ticker_label.modulate.a = 1.0
 		ticker_label.text = text
 	toast.visible = true
 	toast.modulate = Color(1, 1, 1, 0)
@@ -859,12 +963,12 @@ func open_panel(id: String) -> void:
 		_panel_tween.kill()
 	panel_dim.visible = true
 	panel_dim.modulate.a = 1.0
-	# grows up out of the tab bar
+	# Open within the space above the tabs without springing over the bar.
 	panel.pivot_offset = Vector2(panel.custom_minimum_size.x / 2.0, panel.custom_minimum_size.y)
 	panel.scale = Vector2(0.9, 0.9)
 	panel.modulate.a = 0.0
 	_panel_tween = create_tween().set_parallel(true)
-	_panel_tween.tween_property(panel, "scale", Vector2.ONE, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_panel_tween.tween_property(panel, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_panel_tween.tween_property(panel, "modulate:a", 1.0, 0.16)
 	_rebuild_panel(true)
 	panel_scroll.scroll_vertical = 0
@@ -897,7 +1001,9 @@ func close_panel() -> void:
 ## `animate` staggers the cards in (used when the panel opens or the filter changes, not on
 ## every refresh after a purchase).
 func _rebuild_panel(animate: bool = false) -> void:
-	var scroll := panel_scroll.scroll_vertical
+	_panel_revision += 1
+	var revision := _panel_revision
+	var scroll := 0 if animate else panel_scroll.scroll_vertical
 	for c in panel_body.get_children():
 		panel_body.remove_child(c)
 		c.queue_free()
@@ -918,6 +1024,8 @@ func _rebuild_panel(animate: bool = false) -> void:
 		"promote": _fill_promote()
 		"goals": _fill_goals()
 	await get_tree().process_frame
+	if revision != _panel_revision:
+		return
 	panel_scroll.scroll_vertical = scroll
 	if animate:
 		_stagger_cards()
@@ -1110,11 +1218,20 @@ func _model_roll_card(kind: String, model: String, title: String, value: String)
 	return card
 
 func _roll_art_icon(card: PanelContainer, texture: Texture2D) -> void:
-	var art := card.get_child(0).get_child(0)
+	_fill_art(card.get_child(0).get_child(0), texture)
+
+func _fill_art(art: Control, texture: Texture2D) -> void:
 	var icon := _icon(texture, 0)
 	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.add_child(icon)
+
+func _detail_art(texture: Texture2D, kind: String, size: float) -> Control:
+	var art := MenuArt.new(kind)
+	art.custom_minimum_size = Vector2(size, size)
+	art.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_fill_art(art, texture)
+	return art
 
 func _roll_open(card: PanelContainer, index: int, target: String, caption: String, select: Callable) -> void:
 	var action := _menu_target(Button.new(), target)
@@ -1144,7 +1261,7 @@ func _menu_detail(id: String) -> void:
 	var hero := HBoxContainer.new()
 	hero.add_theme_constant_override("separation", 18)
 	intro.add_child(hero)
-	hero.add_child(_icon(Icons.dish_icon(id), 112))
+	hero.add_child(_detail_art(Icons.dish_icon(id), "dish:" + String(def["kind"]), 104))
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hero.add_child(info)
@@ -1225,10 +1342,11 @@ func _place_roll_card(index: int) -> PanelContainer:
 		action = _button(tr("ui.p_move"), "Primary", Vector2(0, 49))
 		action.pressed.connect(func():
 			panel_roll.choose(index, func():
-				if Game.set_location(id):
-					Sfx.play("confirm")
-					main.world.set_location(id)
-					main.world.set_time(Data.location_hours(id)[0], Game.forecast)))
+				fade_through(func():
+					if Game.set_location(id):
+						Sfx.play("confirm")
+						main.world.set_location(id)
+						main.world.set_time(Data.location_hours(id)[0], Game.forecast))))
 	action.tooltip_text = tr(def["desc"])
 	body.add_child(_menu_target(action, "move_" + id))
 	return card
@@ -1299,7 +1417,7 @@ func _build_stage_detail() -> void:
 	var nxt := Game.next_stage_def()
 	var ctx := Game.sim_context()
 	var est := Economy.throughput_estimate(ctx)
-	var v := _item_card(Icons.model_icon(sd["icon"]), tr(sd["name"]), tr(sd["desc"]), 56)
+	var v := _item_card(Icons.model_icon(sd["icon"]), tr(sd["name"]), tr(sd["desc"]), 76, "equipment")
 	panel_grid.columns = 1
 	panel_grid = null
 	var chips := HFlowContainer.new()
@@ -1335,7 +1453,7 @@ func _station_card(id: String, est: Dictionary) -> void:
 	var def: Dictionary = Data.STATIONS[id]
 	var lvl := Game.station_level(id)
 	var cap := Game.station_cap(id)
-	var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]))
+	var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]), 76, "equipment")
 	panel_grid.columns = 1
 	v.add_theme_constant_override("separation", 4)
 	var row := HBoxContainer.new()
@@ -1445,7 +1563,7 @@ func _fill_promote() -> void:
 	panel_body.add_child(eff)
 	var id := _prep_detail
 	var def: Dictionary = Data.MARKETING[id]
-	var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]), 88)
+	var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]), 88, "campaign:" + id)
 	panel_grid.columns = 1
 	var b: Button
 	if Game.marketing.has(id):
@@ -1489,14 +1607,14 @@ func _cards_grid() -> GridContainer:
 
 ## A card with an optional icon, a title and a description. Returns the text column so
 ## callers can add rows; the card's HBox is the column's parent for side buttons.
-func _item_card(icon_tex: Texture2D, title: String, desc: String, icon_size: int = 48) -> VBoxContainer:
+func _item_card(icon_tex: Texture2D, title: String, desc: String, icon_size: int = 48, art_kind: String = "") -> VBoxContainer:
 	var card := _card()
 	_cards_grid().add_child(card)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	card.add_child(h)
 	if icon_tex:
-		var ic := _icon(icon_tex, icon_size)
+		var ic: Control = _icon(icon_tex, icon_size) if art_kind.is_empty() else _detail_art(icon_tex, art_kind, icon_size)
 		ic.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		h.add_child(ic)
 	var v := VBoxContainer.new()
@@ -1525,10 +1643,42 @@ func _locked_button(text: String, width: float = 170.0) -> Button:
 func _buy_button(text: String, cost: float, action: Callable, width: float = 170.0, variation: String = "Primary") -> Button:
 	var b := _button(text, variation, Vector2(width, 52))
 	b.disabled = cost > Game.money
-	b.pressed.connect(func():
-		if action.call():
-			Sfx.play("buy"))
+	b.pressed.connect(func(): _confirm_purchase(b, action))
 	return b
+
+func _build_purchase_badge() -> void:
+	_purchase_badge = PanelContainer.new()
+	_purchase_badge.add_theme_stylebox_override("panel", UiTheme.flat(UiTheme.PALM_DARK, 8, UiTheme.GOLD_LIGHT, 2))
+	_purchase_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_purchase_badge.z_index = 21
+	_purchase_badge.hide()
+	root.add_child(_purchase_badge)
+	_purchase_badge.add_child(_label(tr("ui.purchase_confirmed"), "Light", HORIZONTAL_ALIGNMENT_CENTER))
+
+func _confirm_purchase(button: Button, action: Callable) -> void:
+	# The transaction rebuilds the shop cards synchronously. Keep the stamp on
+	# the HUD so it survives the old button and lands over the updated card.
+	var point := root.get_global_transform_with_canvas().affine_inverse() * button.get_global_rect().get_center()
+	if not action.call():
+		return
+	Sfx.play("buy")
+	if _purchase_tween:
+		_purchase_tween.kill()
+	_purchase_badge.show()
+	_purchase_badge.reset_size()
+	var badge_size := _purchase_badge.size
+	_purchase_badge.position = Vector2(clampf(point.x - badge_size.x * 0.5, 8.0, maxf(8.0, root.size.x - badge_size.x - 8.0)),
+		clampf(point.y - badge_size.y, 90.0, root.size.y - BOTTOM_BAR_HEIGHT - badge_size.y))
+	_purchase_badge.pivot_offset = badge_size * 0.5
+	_purchase_badge.scale = Vector2.ONE * 0.78
+	_purchase_badge.modulate.a = 0.0
+	_purchase_tween = _purchase_badge.create_tween()
+	_purchase_tween.tween_property(_purchase_badge, "scale", Vector2.ONE, 0.27).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_purchase_tween.parallel().tween_property(_purchase_badge, "modulate:a", 1.0, 0.12)
+	_purchase_tween.tween_interval(0.38)
+	_purchase_tween.tween_property(_purchase_badge, "modulate:a", 0.0, 0.24)
+	_purchase_tween.parallel().tween_property(_purchase_badge, "position:y", _purchase_badge.position.y - 23.0, 0.24)
+	_purchase_tween.tween_callback(_purchase_badge.hide)
 
 ## label  [-]  value  [+]   with on_delta.call(-1 / +1). The buttons grey out at the ends.
 func _stepper(parent: Container, label: String, value: String, value_w: float, variation: String, on_delta: Callable,
@@ -1644,7 +1794,7 @@ func _money_pop(gain: bool) -> void:
 		money_label.add_theme_color_override("font_color", (UiTheme.GOOD if gain else UiTheme.BAD).lerp(UiTheme.GOLD_LIGHT, k)), 0.0, 1.0, 0.5)
 
 ## Faint woven-paper texture behind panels (one cached texture / draw call).
-func _lattice_bg(p: PanelContainer) -> void:
+func _lattice_bg(p: Control) -> void:
 	var t := TextureRect.new()
 	t.texture = UiTheme.lattice()
 	t.stretch_mode = TextureRect.STRETCH_TILE
@@ -1652,6 +1802,7 @@ func _lattice_bg(p: PanelContainer) -> void:
 	t.modulate = Color(UiTheme.MUTED, 0.035)
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.add_child(t)
+	t.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 ## "Day 3 · Al Fahidi" strip that sweeps in at the top when a day starts.
 func _banner(text: String) -> void:

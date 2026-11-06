@@ -467,3 +467,4 @@ scene.pickup,Pickup,الاستلام
 scene.order,Order,الطلب
 ui.stock_outlook,Stock outlook,نظرة على المؤن
 ui.all_cards,All cards,كل البطاقات
+ui.purchase_confirmed,Purchase confirmed,تم الشراء

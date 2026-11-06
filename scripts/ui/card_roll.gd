@@ -26,7 +26,7 @@ func _ready() -> void:
 	add_theme_constant_override("separation", 1)
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	surface = Control.new()
-	surface.custom_minimum_size.y = 215.0
+	surface.custom_minimum_size.y = 136.0
 	surface.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	surface.clip_contents = true
 	add_child(surface)
@@ -137,11 +137,13 @@ func _layout_cards() -> void:
 		card.visible = distance < 1.55
 		if not card.visible:
 			continue
-		card.size = Vector2(_card_width(), maxf(190.0, surface.size.y - 14.0))
+		var room := maxf(1.0, surface.size.y - 14.0)
+		card.size = Vector2(_card_width(), room)
 		card.pivot_offset = card.size * 0.5
-		card.scale = Vector2.ONE * lerpf(1.0, 0.79, minf(distance, 1.0))
+		var fit := minf(1.0, room / card.size.y)
+		card.scale = Vector2.ONE * fit * lerpf(1.0, 0.79, minf(distance, 1.0))
 		card.rotation = clampf(offset, -1.0, 1.0) * 0.055
-		card.position = Vector2((surface.size.x - card.size.x) * 0.5 + offset * (_card_width() * 0.83), 5.0 + distance * 10.0)
+		card.position = (surface.size - card.size) * 0.5 + Vector2(offset * (_card_width() * 0.83), distance * 7.0)
 		card.modulate.a = lerpf(1.0, 0.64, minf(distance, 1.0))
 		card.z_index = 3 - mini(roundi(distance * 2.0), 3)
 

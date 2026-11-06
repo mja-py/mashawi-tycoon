@@ -75,8 +75,10 @@ try {
       await hit('inspect_stage');
       await hit('buy_stage');
       assert.equal((await saved()).rig.stage, 'stall');
+      await page.waitForFunction(() => window.godotPresentation?.curtain === 0);
       await hit('buy_stage');
       assert.equal((await saved()).rig.stage, 'truck');
+      await page.waitForFunction(() => window.godotPresentation?.curtain === 0);
       await hit('back_cards');
       await hit('build_group_kitchen');
       for (const id of ['doner', 'fryer', 'sweets']) {
@@ -101,6 +103,7 @@ try {
       await hit('tab_place');
       await rollTo('move_creek');
       await hit('move_creek');
+      await page.waitForFunction(() => window.godotMenuTargets?.move_creek?.disabled && window.godotPresentation?.curtain === 0);
       assert.equal((await saved()).location, 'creek');
       assert((await peek('move_creek')).disabled);
       assert.deepEqual(logs.errors(), []);

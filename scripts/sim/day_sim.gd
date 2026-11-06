@@ -6,6 +6,7 @@ extends Node
 signal clock_changed(hour: float)
 signal stats_changed(stats: Dictionary)
 signal event(text: String, kind: String)
+signal sale_completed(items: Array[String], total: float)
 signal finished(stats: Dictionary)
 
 var world: World
@@ -320,11 +321,13 @@ func _on_served(payload, item: String, wait_min: float, dine_in: bool) -> void:
 	var spend := float(ctx.get("spend_mult", 1.0)) if dine_in else 1.0
 	var total := price * spend
 	var cogs := Game.unit_cost(item)
+	var sold_items: Array[String] = [item]
 	stats["sold"][item] = int(stats["sold"].get(item, 0)) + 1
 	var wants := c.wants if c != null and is_instance_valid(c) else "food"
 	for extra in _addons(wants, c, dine_in):
 		var ep := float(Game.menu[extra]["price"])
 		if Game.sell(extra, ep):
+			sold_items.append(extra)
 			total += ep
 			cogs += Game.unit_cost(extra)
 			stats["sold"][extra] = int(stats["sold"].get(extra, 0)) + 1
@@ -345,11 +348,13 @@ func _on_served(payload, item: String, wait_min: float, dine_in: bool) -> void:
 	if not finishing:
 		Sfx.play("coin", -10.0, randf_range(0.95, 1.1))
 	_check_stock_warnings()
+	if not finishing:
+		sale_completed.emit(sold_items, total)
 	if c == null or not is_instance_valid(c):
 		return
 	if running and not finishing and c.model:
 		_handoff_left = 0.72
-		world.handoff(c)
+		world.handoff(c, sold_items)
 		c.say(text, col, 0.46)
 		c.perform("collect", "pick-up", 0.72, _after_pickup.bind(c, dine_in))
 	else:

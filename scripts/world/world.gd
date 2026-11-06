@@ -692,9 +692,7 @@ func set_customer_speed(value: float) -> void:
 	if _level:
 		for node in _level.get_children():
 			if node is Customer:
-				node.simulation_speed = value
-				if value > 1.0 and node.bubble:
-					node.bubble.visible = false
+				node.simulation_speed = value if node.model == null else 1.0
 
 func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z
@@ -753,7 +751,7 @@ func pickup_slot(index: int) -> Vector3:
 	return CART_POS + Vector3(-0.55 - 0.42 * (index % 4), 0, 0.5 + 0.3 * int(index / 4))
 
 ## Follow the staff hand during the offer, then carry the bag with the guest.
-func handoff(customer: Customer) -> void:
+func handoff(customer: Customer, sold_items: Array[String]) -> void:
 	var actor := plot.server() if plot else null
 	if actor == null or customer.model == null:
 		return
@@ -766,11 +764,12 @@ func handoff(customer: Customer) -> void:
 		animation.speed_scale = 1.6
 	var bag := Node3D.new()
 	_level.add_child(bag)
-	var paper := Color("e6b574")
-	ModelLib.box(bag, Vector3(0.126, 0.148, 0.078), Vector3.ZERO, paper)
-	ModelLib.box(bag, Vector3(0.13, 0.023, 0.082), Vector3(0.0, 0.07, 0.0), paper.darkened(0.12))
-	for z in [-0.04, 0.04]:
-		ModelLib.box(bag, Vector3(0.065, 0.049, 0.003), Vector3(0.0, 0.0, z), Color("286458"))
+	if not _show_handoff_food(bag, sold_items):
+		var paper := Color("e6b574")
+		ModelLib.box(bag, Vector3(0.126, 0.148, 0.078), Vector3.ZERO, paper)
+		ModelLib.box(bag, Vector3(0.13, 0.023, 0.082), Vector3(0.0, 0.07, 0.0), paper.darkened(0.12))
+		for z in [-0.04, 0.04]:
+			ModelLib.box(bag, Vector3(0.065, 0.049, 0.003), Vector3(0.0, 0.0, z), Color("286458"))
 	var offset := Vector3.DOWN * 0.062
 	bag.global_position = ModelLib.hand_position(actor) + offset
 	var truck := plot.stage == 2
@@ -791,6 +790,31 @@ func handoff(customer: Customer) -> void:
 			customer.take_bag(bag)
 		else:
 			bag.queue_free())
+
+## A later dish gets its own prop on the takeaway tray, including successful
+## add-ons. Only one item travels with each order to keep the pickup lightweight.
+func _show_handoff_food(parcel: Node3D, sold_items: Array[String]) -> bool:
+	for id in sold_items:
+		var item: Dictionary = Data.MENU_ITEMS[id]
+		if item["start"]:
+			continue
+		var model_path: String = item["model"]
+		var bounds := AABB()
+		for part in ModelLib.meshes_of(model_path):
+			var box: AABB = part[1] * (part[0] as Mesh).get_aabb()
+			bounds = box if not bounds.has_volume() else bounds.merge(box)
+		var span := maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z))
+		if span <= 0.001:
+			continue
+		var fit := 0.145 / span
+		var anchor := Vector3(bounds.get_center().x, bounds.position.y, bounds.get_center().z)
+		var food := ModelLib.spawn(model_path, parcel, Vector3.UP * 0.028 - anchor * fit, 0, fit)
+		if food:
+			food.name = "Served_" + id
+			PlotBuilders.no_shadow(food)
+			ModelLib.box(parcel, Vector3(0.17, 0.021, 0.16), Vector3.UP * 0.015, Color("c88c53"))
+			return true
+	return false
 
 ## Redraw the stand from the game state (stations, stage). A stage that needs a
 ## different street gap rebuilds the whole location first.

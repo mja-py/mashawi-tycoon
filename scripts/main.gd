@@ -31,7 +31,8 @@ func _ready() -> void:
 		_web_visibility_callback = JavaScriptBridge.create_callback(_on_web_visibility)
 		JavaScriptBridge.get_interface("window").godotSetPaused = _web_visibility_callback
 		JavaScriptBridge.eval("if (window.godotSyncVisibility) window.godotSyncVisibility()")
-		# tells the HTML shell to drop its loading overlay
+		# Keep the HTML loading art up until the canvas has actually drawn.
+		await RenderingServer.frame_post_draw
 		JavaScriptBridge.eval("window.dispatchEvent(new Event('godot-ready'))")
 
 func _on_web_visibility(args: Array) -> void:
@@ -173,7 +174,7 @@ func _stock_up_for_test() -> void:
 
 func _on_game_changed() -> void:
 	if world.cart:
-		if hud and phase == Phase.PREP and world.visual_needs_reload():
+		if hud and phase == Phase.PREP and not hud.is_transitioning() and world.visual_needs_reload():
 			hud.fade_through(world.apply_visual)
 		else:
 			world.apply_visual()
@@ -189,6 +190,8 @@ func _notification(what: int) -> void:
 				Game.save()
 		NOTIFICATION_WM_GO_BACK_REQUEST:
 			# Android back: close an open panel, otherwise leave the app only from the title.
+			if hud and hud.is_transitioning():
+				return
 			if hud and hud.current_panel != "":
 				hud.close_panel()
 			elif phase == Phase.TITLE:
@@ -217,18 +220,17 @@ func show_title() -> void:
 	_publish_state()
 
 func new_game() -> void:
-	Game.new_game()
-	_enter_prep(func():
+	_enter_prep(Game.new_game, func():
 		if hud:
 			hud.show_dialog(tr("ui.w_title"), [tr("ui.w1"), tr("ui.w2"), tr("ui.w3"), tr("ui.w4")], tr("ui.w_go")))
 
 func continue_game() -> void:
-	Game.load_game()
-	_enter_prep(Callable())
+	_enter_prep(Game.load_game)
 
 ## Title -> prep behind a short curtain (the street is rebuilt for the saved place).
-func _enter_prep(then: Callable) -> void:
+func _enter_prep(load_state: Callable, then: Callable = Callable()) -> void:
 	var go := func():
+		load_state.call()
 		show_prep()
 		if then.is_valid():
 			then.call()
@@ -272,7 +274,7 @@ func skip_day() -> void:
 		return
 	set_speed(DaySim.FINISH_SPEED)
 	if hud:
-		hud.show_finishing()
+		hud.show_finishing(sim.hour, sim.end_hour)
 	_publish_state()
 
 func _on_day_finished(stats: Dictionary) -> void:
@@ -281,11 +283,14 @@ func _on_day_finished(stats: Dictionary) -> void:
 	set_speed(1.0)
 	phase = Phase.REPORT
 	var report := Game.end_day(stats)
-	if hud:
+	if not hud:
+		_publish_state()
+		return
+	hud.fade_through(func():
 		hud.show_report(report)
 		if Game.persist:
 			Game.notify.emit(tr("ui.saved"), "info")
-	_publish_state()
+		_publish_state())
 
 ## Dev: compile every script in the project (with autoloads available) and report errors.
 func _check_scripts() -> void:
