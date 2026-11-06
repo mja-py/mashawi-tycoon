@@ -838,6 +838,7 @@ func _on_clock(hour: float) -> void:
 		closing_progress.value = clampf(inverse_lerp(_closing_from, maxf(_closing_until, _closing_from + 0.01), hour), 0.0, 1.0)
 
 func _on_sale(items: Array[String], total: float) -> void:
+	_on_stats(main.sim.stats)
 	var names := PackedStringArray()
 	for id in items:
 		names.append(tr(Data.MENU_ITEMS[id]["name"]))
