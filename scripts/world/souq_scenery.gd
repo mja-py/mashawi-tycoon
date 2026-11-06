@@ -14,7 +14,6 @@ const BRASS := Color("be904f")
 const TEAL := Color("357b76")
 const RUST := Color("a9513a")
 const CLOTH := Color("d6c19b")
-const WATER := preload("res://scripts/world/souq_water.gdshader")
 
 var _batch: MeshBatch
 var _rng: RandomNumberGenerator
@@ -40,8 +39,10 @@ func build(parent: Node3D, gap: float) -> void:
 	_textiles(Vector3(east - 0.70, 0, -1.56))
 	_lantern(Vector3(west + 0.53, 0.69, -1.67))
 	_lantern(Vector3(east - 0.60, 0.75, -1.72))
-	_batch.add_model("nature/tree_palmDetailedTall", Transform3D(Basis.from_scale(Vector3.ONE * 0.84), Vector3(west - 1.04, 0, -1.24)))
-	_batch.add_model("nature/tree_palmTall", Transform3D(Basis.from_scale(Vector3.ONE * 0.77), Vector3(east - 0.57, 0, -2.47)))
+	CoastalProps.palm(_batch, Transform3D(Basis(Vector3.UP, -0.7).scaled(Vector3.ONE * 0.88), Vector3(west - 1.04, 0, -1.24)))
+	CoastalProps.palm(_batch, Transform3D(Basis(Vector3.UP, 0.5).scaled(Vector3.ONE * 0.80), Vector3(east - 1.04, 0, -2.47)))
+	for x in [west - 1.21, east - 1.08]:
+		CoastalProps.place(_batch, "shrub", Transform3D(Basis.from_scale(Vector3.ONE * 0.49), Vector3(x, 0, -2.58)))
 
 func _box(pos: Vector3, size: Vector3, color: Color, basis := Basis.IDENTITY) -> void:
 	_batch.add_box(size, color, Transform3D(basis, pos))
@@ -52,14 +53,7 @@ func _beam(a: Vector3, b: Vector3, width: float, color: Color) -> void:
 	_box((a + b) * 0.5, Vector3(width, width, along.length()), color, basis)
 
 func _creek(parent: Node3D) -> void:
-	var water := MeshInstance3D.new()
-	water.mesh = ModelLib.plane_mesh(Vector2(40, 14))
-	var material := ShaderMaterial.new()
-	material.shader = WATER
-	water.material_override = material
-	water.position = Vector3(0, -0.18, QUAY_Z - 7.0)
-	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(water)
+	CoastalProps.water(parent, Vector3(0, -0.18, QUAY_Z), 14.0)
 	_box(Vector3(0, -0.14, QUAY_Z), Vector3(30, 0.26, 0.17), PLASTER)
 	for i in range(-23, 24):
 		var x := i * 0.38
@@ -95,8 +89,15 @@ func _creek(parent: Node3D) -> void:
 	_box(Vector3(0, 0.03, -8.6), Vector3(32, 0.12, 1.0), STONE)
 	for i in range(11):
 		var x := -12.0 + i * 2.35
-		var h := 0.38 + _rng.randf() * 0.5
-		_box(Vector3(x, h / 2.0, -9.2), Vector3(1.3 + _rng.randf() * 0.6, h, 0.9), TRIM if i % 2 else STONE)
+		var h := 0.33 + _rng.randf() * 0.36
+		var w := 1.23 + _rng.randf() * 0.53
+		var tone := Color("a88e75") if i % 2 else Color("b49b81")
+		_box(Vector3(x, h / 2.0, -9.29), Vector3(w, h, 0.84), tone)
+		_box(Vector3(x, h, -9.29), Vector3(w + 0.06, 0.038, 0.87), tone.lightened(0.08))
+		for j in [-1, 0, 1]:
+			_box(Vector3(x + j * w * 0.25, h * 0.59, -8.86), Vector3(0.08, 0.10, 0.025), Color("776a60"))
+		if i % 3 == 0:
+			CoastalProps.palm(_batch, Transform3D(Basis.from_scale(Vector3.ONE * 0.67), Vector3(x + 0.92, 0, -9.06)))
 
 func _shop(p: Vector3, w: float, h: float, tone: Color, fabric: Color) -> void:
 	_box(p + Vector3(0, h * 0.5, 0), Vector3(w, h, 0.82), tone)

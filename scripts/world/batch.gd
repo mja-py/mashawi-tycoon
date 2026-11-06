@@ -28,6 +28,9 @@ func add_cyl(radius: float, height: float, color: Color, xform: Transform3D, emi
 	_add("cyl%d|%s" % [segs, ModelLib.material_key(color, emission)], ModelLib.cylinder_mesh(1.0, 1.0, segs),
 		ModelLib.flat_material(color, emission), _scaled(xform, Vector3(radius, height, radius)))
 
+func add_mesh(name: String, mesh: Mesh, xform: Transform3D) -> void:
+	_add("mesh|" + name, mesh, null, xform)
+
 ## A Kenney model by short name, drawn with its own (imported) materials.
 func add_model(name: String, xform: Transform3D, material: Material = null) -> void:
 	var parts := ModelLib.meshes_of(name)

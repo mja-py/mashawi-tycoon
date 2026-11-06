@@ -374,8 +374,6 @@ func _skyline(models: Array, z: float, scale: float) -> void:
 
 # ---------------------------------------------------------------- Gulf architecture
 
-const PALMS := ["nature/tree_palm", "nature/tree_palmBend", "nature/tree_palmTall", "nature/tree_palmShort", "nature/tree_palmDetailedTall"]
-
 func _gulf_building(pos: Vector3, w: float, d: float, h: float, tone: Color, tower: bool, awning: bool = false) -> Node3D:
 	return GulfArch.building(_level, _rng, _batch, pos, w, d, h, tone, tower, awning)
 
@@ -386,21 +384,28 @@ func _gulf_row(front_z: float, scale: float = 1.0, towers: float = 0.45, awnings
 static func _at(p: Vector3) -> Transform3D:
 	return Transform3D(Basis.IDENTITY, p)
 
+static func _plant_at(p: Vector3, angle: float, height: float) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, angle).scaled(Vector3.ONE * height), p)
+
+func _bench(p: Vector3, angle: float, scale: float, beside_plot: bool = false) -> void:
+	if beside_plot and absf(p.x) < _gap + 1.0:
+		return
+	CoastalProps.place(_batch, "bench", _plant_at(p, angle, scale))
+
 func _palms_along(z: float, count: int, spread: float = 7.5, min_x_gap: float = 1.4) -> void:
 	for i in range(count):
 		var x := -spread + (i + 0.5) * (2.0 * spread / count) + _rng.randf_range(-0.3, 0.3)
 		if absf(x) < min_x_gap or (z < 0.0 and not _clear_of_gap(x, 0.3)):
 			continue
 		var pos := Vector3(x, 0, z + _rng.randf_range(-0.1, 0.1))
-		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3.ONE * _rng.randf_range(0.65, 0.9))
-		_batch.add_model(_pick(PALMS), Transform3D(basis, pos))
+		CoastalProps.palm(_batch, _plant_at(pos, _rng.randf() * TAU, _rng.randf_range(0.63, 0.87)))
 
 # ---------------------------------------------------------------- locations
 
 func _build_creek() -> void:
 	# Creek Park: lawn, palms and the creek behind
 	ModelLib.plane(_level, Vector2(40, 13), Vector3(0, -0.016, 1.25), Color("748d52"))
-	ModelLib.plane(_level, Vector2(40, 8), Vector3(0, -0.07, -9.10), Color("477d87"))
+	CoastalProps.water(_level, Vector3(0, -0.07, -5.10), 8.0)
 	ModelLib.plane(_level, Vector2(40, 0.35), Vector3(0, -0.008, -5.1), Color("b6a285"))
 	var fx := -HALF_W - 0.5
 	while fx <= HALF_W + 0.5:
@@ -423,29 +428,30 @@ func _build_creek() -> void:
 		if not ok:
 			continue
 		placed.append(Vector3(x, 0, z))
+		var tree := _plant_at(Vector3(x, 0, z), _rng.randf() * TAU, _rng.randf_range(0.67, 0.94))
 		if _rng.randf() < 0.65:
-			_scenery(_pick(PALMS), Vector3(x, 0, z), _rng.randf() * 360, _rng.randf_range(0.7, 1.0))
+			CoastalProps.palm(_batch, tree)
 		else:
-			_scenery(_pick(["nature/tree_oak", "nature/tree_fat", "nature/tree_detailed"]), Vector3(x, 0, z), _rng.randf() * 360, _rng.randf_range(0.6, 0.85))
+			CoastalProps.place(_batch, "ghaf", tree)
 	for i in range(18):
-		var m := _pick(["nature/plant_bush", "nature/plant_bushSmall", "nature/flower_redA", "nature/flower_yellowA", "nature/flower_purpleA", "nature/grass_large"])
 		var fp := Vector3(_rng.randf_range(-7.5, 7.5), 0, _rng.randf_range(-2.4, -1.95))
-		var rot := _rng.randf() * 360
-		var sc := _rng.randf_range(0.5, 0.75)
 		if _clear_of_gap(fp.x, 0.2):
-			_scenery(m, fp, rot, sc)
-	for i in range(4):
-		_scenery(_pick(["kaykit/rock_single_A", "kaykit/rock_single_B"]), Vector3(_rng.randf_range(-8.0, 8.0), 0, _rng.randf_range(-4.5, -2.3)), _rng.randf() * 360, 0.8)
+			CoastalProps.place(_batch, "shrub", _plant_at(fp, _rng.randf() * TAU, _rng.randf_range(0.54, 0.84)))
+	for i in range(6):
+		var p := Vector3((i - 2.5) * 2.1, 0, -4.60 + _rng.randf_range(-0.1, 0.35))
+		CoastalProps.place(_batch, "limestone", _plant_at(p, _rng.randf() * TAU, _rng.randf_range(0.68, 0.95)))
 	for bx in [-3.4, 3.6]:
-		_side_prop("kaykit/bench", Vector3(bx, 0, -1.3), 0, 1.5)
+		_bench(Vector3(bx, 0.008, -1.3), 0.0, 1.27, true)
 		_scenery("furniture/table-set", Vector3(bx + 0.2, 0, -3.05), 25.0, 0.88)
 		_batch.add_cyl(0.40, 0.018, Color("b6a285"), _at(Vector3(bx + 0.2, -0.007, -3.05)), 0.0, 24)
-	_side_prop("kaykit/bush", Vector3(-2.4, 0, -1.3), 0, 1.3)
-	_side_prop("kaykit/bush", Vector3(2.5, 0, -1.3), 0, 1.3)
+	for x in [-2.4, 2.5]:
+		if absf(x) >= _gap + 1.0:
+			CoastalProps.place(_batch, "shrub", _plant_at(Vector3(x, 0, -1.30), x, 0.95))
 	_lamp(-3.2, -0.62, 0, "roads/light-square")
 	_lamp(3.2, -0.62, 0, "roads/light-square")
 	_lamp(-1.2, 0.62, 180, "roads/light-square")
-	_palms_along(1.45, 4, 6.0, 1.0)
+	# Keep the foreground view of the queue clear of the taller crowns.
+	_palms_along(1.45, 4, 6.0, 2.0)
 
 func _build_metro() -> void:
 	# An elevated shell station with a glazed concourse and metal ribs.
@@ -462,7 +468,7 @@ func _build_metro() -> void:
 	_lamp(0.8, 0.62, 180, "roads/light-square")
 	_scenery("cars/taxi", Vector3(3.6, 0, 0.3), 90, 0.21)
 	_scenery("cars/taxi", Vector3(4.4, 0, 0.3), 90, 0.21)
-	_side_prop("kaykit/bench", Vector3(-3.6, 0, -1.3), 0, 1.5)
+	_bench(Vector3(-3.6, 0.008, -1.3), 0.0, 1.27, true)
 	_palms_along(1.45, 5, 6.5, 1.0)
 
 func _metro_station(p: Vector3) -> void:
@@ -491,53 +497,35 @@ func _metro_station(p: Vector3) -> void:
 
 func _build_jbr() -> void:
 	# JBR: sand, sea, parasols and the towers across the bay
-	ModelLib.plane(_level, Vector2(40, 9), Vector3(0, 0.002, -2.35), Color("cfb68e"))
-	ModelLib.plane(_level, Vector2(60, 14), Vector3(0, 0.008, -10.70), Color("458da0"))
-	ModelLib.plane(_level, Vector2(40, 0.41), Vector3(0, 0.005, -3.65), Color("ad9b7e"))
-	ModelLib.plane(_level, Vector2(40, 0.12), Vector3(0, 0.010, -3.74), Color("b7d3ce"))
+	ModelLib.plane(_level, Vector2(40, 17), Vector3(0, 0.002, -0.65), Color("cfb68e"))
+	CoastalProps.water(_level, Vector3(0, 0.008, -3.70), 14.0, true)
 	for i in range(8):
 		var x := -8.0 + i * 2.2 + _rng.randf_range(-0.3, 0.3)
 		_scenery("buildings/" + _pick(SKYSCRAPERS), Vector3(x, 0, -12.5), 0, 1.4)
 	var inner := maxf(1.8, _gap)
 	for side in [-1.0, 1.0]:
-		_beach_palm(Vector3(side * (inner + 0.56), 0, -2.29), -17.0 * side)
+		var palm := _plant_at(Vector3(side * (inner + 0.54), 0.012, -2.35), -0.30 * side, 0.88)
+		_beach_crowns.append(CoastalProps.wind_palm(_batch, _level, palm))
 		_beach_shade(Vector3(side * (inner + 1.65), 0, -2.38))
 		for i in range(2):
-			var x: float = side * (inner + 2.70 + 0.94 * i)
-			_scenery("buildings/detail-parasol-a" if i == 0 else "buildings/detail-parasol-b",
-				Vector3(x, 0, -3.09 + 0.16 * i), 24.0 * side, 0.94)
-		_scenery("nature/tree_palmDetailedTall", Vector3(side * 2.83, 0.043, 1.56), 23.0 * side, 0.86)
+			var x: float = side * (inner + 1.25 + 1.68 * i)
+			CoastalProps.place(_batch, "parasol" if i == 0 else "parasol_coral",
+				_plant_at(Vector3(x, 0.009, -3.09 + 0.16 * i), 0.42 * side, 0.91))
+		CoastalProps.place(_batch, "limestone", _plant_at(Vector3(side * (inner + 0.45), 0.01, -3.42), side * 1.4, 0.71))
+		CoastalProps.place(_batch, "shrub", _plant_at(Vector3(side * (inner + 0.74), 0.01, -3.27), side, 0.49))
+		CoastalProps.palm(_batch, _plant_at(Vector3(side * 3.14, 0.015, 1.56), side * 0.42, 0.76))
 	_lamp(-3.0, -0.62, 0)
 	_lamp(3.0, -0.62, 0)
-	_scenery("kaykit/bench", Vector3(-1.5, 0, 1.4), 180, 1.5)
-
-func _beach_palm(p: Vector3, angle: float) -> void:
-	var palm := ModelLib.spawn("nature/tree_palmDetailedTall", _level, p + Vector3.UP * 0.042, angle, 0.84)
-	if palm == null:
-		return
-	var leaves := palm.find_children("leafs*", "MeshInstance3D", true, false)
-	if leaves.is_empty():
-		return
-	# Pivot at the imported crown so the trunks stay planted beside the shelter.
-	var pivot := Node3D.new()
-	pivot.name = "PalmCrown"
-	palm.add_child(pivot)
-	pivot.global_position = (leaves[0] as Node3D).global_position
-	for leaf in leaves:
-		leaf.reparent(pivot)
-	_beach_crowns.append(pivot)
+	_bench(Vector3(-1.5, 0.008, 1.4), PI, 1.27)
 
 func _beach_shade(p: Vector3) -> void:
 	var frame := Color("674f43")
 	_batch.add_box(Vector3(0.84, 0.055, 0.55), frame, _at(p + Vector3.UP * 0.029))
 	for x in [-0.37, 0.37]:
 		for z in [-0.23, 0.23]:
-			_batch.add_box(Vector3(0.036, 0.82, 0.036), frame, _at(p + Vector3(x, 0.41, z)))
-	for i in range(9):
-		var x := (i - 4) * 0.096
-		_batch.add_box(Vector3(0.095, 0.031, 0.56), Color("397c80") if i % 3 == 0 else Color("e2ccaa"),
-			_at(p + Vector3(x, 0.83, 0)))
-	_scenery("kaykit/bench", p + Vector3(0, 0.066, -0.08), 0, 1.05)
+			_batch.add_cyl(0.021, 0.835, frame, _at(p + Vector3(x, 0.4175, z)), 0.0, 8)
+	CoastalProps.place(_batch, "shelter_canvas", _at(p))
+	_bench(p + Vector3(0, 0.057, -0.08), 0.0, 1.0)
 
 func _build_downtown() -> void:
 	GulfArch.burj(_level, _batch, Vector3(4.6, 0, -2.5))
@@ -549,8 +537,8 @@ func _build_downtown() -> void:
 	_lamp(2.0, 0.62, 180, "roads/light-square")
 	_scenery("roads/traffic-light", Vector3(6.0, 0, -0.62), 0)
 	_side_prop("suburban/planter", Vector3(-2.6, 0, -1.3), 0)
-	_side_prop("kaykit/bench", Vector3(2.6, 0, -1.3), 0, 1.5)
-	_scenery("kaykit/bench", Vector3(-4.4, 0, 1.4), 180, 1.5)
+	_bench(Vector3(2.6, 0.008, -1.3), 0.0, 1.27, true)
+	_bench(Vector3(-4.4, 0.008, 1.4), PI, 1.27)
 	_palms_along(1.45, 5, 6.5, 1.0)
 	_scenery("cars/taxi", Vector3(-4.0, 0, 0.3), 90, 0.21)
 
@@ -577,9 +565,9 @@ func _build_mall() -> void:
 	for cx in [-6.0, -2.0, 2.0, 6.0]:
 		_batch.add_cyl(0.08, 1.9, Color(0.88, 0.88, 0.86), _at(Vector3(cx, 0.95, -0.62)))
 		_scenery("nature/pot_large", Vector3(cx + 0.5, 0, 1.4), 0, 0.8)
-		_scenery("nature/tree_palmShort", Vector3(cx + 0.5, 0.12, 1.4), 0, 0.5)
+		CoastalProps.palm(_batch, _plant_at(Vector3(cx + 0.5, 0.12, 1.4), cx, 0.47))
 	for bx in [-4.2, 4.4]:
-		_scenery("kaykit/bench", Vector3(bx, 0, 1.4), 180, 1.5)
+		_bench(Vector3(bx, 0.008, 1.4), PI, 1.27)
 
 func _build_gv() -> void:
 	# Global Village: souk stalls, lanterns and Gulf facades
@@ -674,14 +662,15 @@ func set_time(hour: float, weather_id: String) -> void:
 	var day_factor := 1.0 - night
 	var sky: Color = w["sky"]
 	var e := env.environment
+	var web := OS.has_feature("web")
 	e.background_color = sky.lerp(Color("f0a372"), dusk).lerp(Color("242d50"), night)
 	# Compatibility/WebGL has no filmic tonemapping. Keep whites below clipping so
 	# plaster, paving and food retain their colour on Safari as well as native.
 	e.ambient_light_color = Color("bccbd0").lerp(Color("94a7cf"), night)
-	e.ambient_light_energy = lerpf(0.37, 0.52, day_factor)
+	e.ambient_light_energy = lerpf(0.37, 0.42 if web else 0.52, day_factor)
 	var warm := Color(1.0, 0.95, 0.88)
 	sun.light_color = warm.lerp(Color("ff9d68"), dusk).lerp(Color("8ca8e3"), night)
-	sun.light_energy = float(w["light"]) * lerpf(0.23, 0.78 if OS.has_feature("web") else 1.0, day_factor)
+	sun.light_energy = float(w["light"]) * lerpf(0.23, 0.58 if web else 1.0, day_factor)
 	sun.rotation_degrees.x = lerpf(lerpf(-52.0, -20.0, dusk), -40.0, night)
 	var sandstorm := weather_id == Data.BAD_WEATHER
 	var lamps_on := hour >= 18.5 or sandstorm
