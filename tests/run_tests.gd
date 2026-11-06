@@ -267,6 +267,7 @@ func _test_stages(game) -> void:
 	var est := Economy.throughput_estimate(game.sim_context())
 	check(float(est["served"]) > 0.0 and est["util"].has("seating"), "estimate covers seating at the kiosk")
 	# capacity saturates: a maxed kiosk serves a lot, and an empty one much less
+	game.weather = "sunny"
 	game.popularity = 0.9
 	var big := Economy.throughput_estimate(_ctx_for(game, {"counter": 15, "grill": 15, "karak": 10, "seating": 10}, 3, "downtown"))
 	var small := Economy.throughput_estimate(_ctx_for(game, {"counter": 0, "grill": 0}, 3, "downtown"))

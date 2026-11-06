@@ -468,3 +468,10 @@ scene.order,Order,الطلب
 ui.stock_outlook,Stock outlook,نظرة على المؤن
 ui.all_cards,All cards,كل البطاقات
 ui.purchase_confirmed,Purchase confirmed,تم الشراء
+ui.graphics,Graphics,الرسومات
+ui.graphics_fps,Frame rate limit,حد معدل الإطارات
+ui.graphics_cool,30 FPS · Cooler,30 إطارًا · حرارة أقل
+ui.graphics_smooth,60 FPS · Smooth,60 إطارًا · حركة سلسة
+ui.graphics_scale,3D resolution,دقة المشهد ثلاثي الأبعاد
+ui.graphics_auto,Auto,تلقائي
+ui.graphics_hint,Lower resolution lightens the 3D scene and keeps the menus sharp.,خفض الدقة يخفف حمل المشهد ثلاثي الأبعاد وتبقى القوائم واضحة.

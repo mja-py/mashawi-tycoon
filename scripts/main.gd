@@ -3,17 +3,28 @@ extends Node
 
 enum Phase { TITLE, PREP, DAY, REPORT }
 
+const FRAME_CAPS := [30, 60]
+const RENDER_SCALES := [0, 50, 65, 80, 100] # 0 = Auto
+const GRAPHICS_PATH := "user://graphics.cfg"
+const GRAPHICS_WEB_KEY := "mashawi_graphics"
+
 var world: World
 var sim: DaySim
 var hud: Node
 var phase: Phase = Phase.TITLE
 var speed := 1.0
+var frame_cap := 60
+var render_scale := 0
+var _graphics_open := false
 var _quality_time := 0.0
 var _quality_frames := 0
 var _quality_warmup := 4.0
 var _web_visibility_callback: JavaScriptObject
 
 func _ready() -> void:
+	_load_graphics()
+	Engine.max_fps = frame_cap
+	_apply_render_scale()
 	world = World.new()
 	add_child(world)
 	sim = DaySim.new()
@@ -27,7 +38,6 @@ func _ready() -> void:
 	Game.changed.connect(_on_game_changed)
 	_apply_dev_flags()
 	if OS.has_feature("web"):
-		_apply_web_quality()
 		_web_visibility_callback = JavaScriptBridge.create_callback(_on_web_visibility)
 		JavaScriptBridge.get_interface("window").godotSetPaused = _web_visibility_callback
 		JavaScriptBridge.eval("if (window.godotSyncVisibility) window.godotSyncVisibility()")
@@ -45,7 +55,7 @@ func _on_web_visibility(args: Array) -> void:
 ## Sustained slow frames lower only the 3D resolution; menus/text stay crisp.
 ## Use real frame time: the player's simulation speed must not change this decision.
 func _process(_delta: float) -> void:
-	if not OS.has_feature("web") or DevTools.has("scale3d"):
+	if not OS.has_feature("web") or render_scale != 0 or _graphics_open or DevTools.has("scale3d"):
 		return
 	var dt := get_process_delta_time() / maxf(Engine.time_scale, 0.01)
 	if _quality_warmup > 0.0:
@@ -62,20 +72,69 @@ func _process(_delta: float) -> void:
 		return
 	var fps := _quality_frames / _quality_time
 	var vp := get_viewport()
-	if fps < 42.0:
-		vp.scaling_3d_scale = maxf(0.6, vp.scaling_3d_scale - 0.05)
+	if fps < (54.0 if frame_cap == 60 else 26.0):
+		vp.scaling_3d_scale = maxf(0.50, vp.scaling_3d_scale - 0.05)
 	_quality_time = 0.0
 	_quality_frames = 0
 
-## WebGL starts at 75-100% resolution, then can step down to 60% on slow devices.
-## The UI stays at full resolution. `?dev=--scale3d=1` disables adaptation for comparisons.
-func _apply_web_quality() -> void:
+## Scale only the 3D buffer. The controls and text stay at canvas resolution.
+func _apply_render_scale() -> void:
 	if DevTools.has("scale3d"):
 		return
-	var dpr := float(JavaScriptBridge.eval("window.devicePixelRatio || 1"))
 	var vp := get_viewport()
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-	vp.scaling_3d_scale = clampf(1.6 / maxf(dpr, 1.0), 0.75, 1.0)
+	var scale := render_scale / 100.0 if render_scale > 0 else 1.0
+	if render_scale == 0 and OS.has_feature("web"):
+		var dpr := float(JavaScriptBridge.eval("window.devicePixelRatio || 1"))
+		scale = clampf(1.6 / maxf(dpr, 1.0), 0.75, 1.0)
+	vp.scaling_3d_scale = scale
+
+func set_graphics(fps: int, scale: int) -> void:
+	if fps not in FRAME_CAPS or scale not in RENDER_SCALES:
+		return
+	frame_cap = fps
+	Engine.max_fps = fps
+	if render_scale != scale:
+		render_scale = scale
+		_apply_render_scale()
+	_quality_frames = 0
+	_quality_time = 0.0
+	_quality_warmup = 2.0
+	if OS.has_feature("web"):
+		var json := JSON.stringify({"fps": frame_cap, "scale": render_scale})
+		JavaScriptBridge.eval("try { localStorage.setItem('%s', JSON.stringify(%s)); } catch (_) {}" % [GRAPHICS_WEB_KEY, json])
+	else:
+		var config := ConfigFile.new()
+		config.set_value("graphics", "fps", frame_cap)
+		config.set_value("graphics", "scale", render_scale)
+		config.save(GRAPHICS_PATH)
+
+func _load_graphics() -> void:
+	var prefs: Variant = {}
+	if OS.has_feature("web"):
+		var saved: Variant = JavaScriptBridge.eval("try { localStorage.getItem('%s') || ''; } catch (_) { ''; }" % GRAPHICS_WEB_KEY)
+		if saved is String and not saved.is_empty():
+			prefs = JSON.parse_string(saved)
+	else:
+		var config := ConfigFile.new()
+		if config.load(GRAPHICS_PATH) == OK:
+			prefs = {"fps": config.get_value("graphics", "fps", frame_cap), "scale": config.get_value("graphics", "scale", render_scale)}
+	if prefs is Dictionary:
+		var fps: Variant = prefs.get("fps")
+		var scale: Variant = prefs.get("scale")
+		if (fps is int or fps is float) and int(fps) in FRAME_CAPS:
+			frame_cap = int(fps)
+		if (scale is int or scale is float) and int(scale) in RENDER_SCALES:
+			render_scale = int(scale)
+
+func set_graphics_open(open: bool) -> void:
+	_graphics_open = open
+	# Pause the street and simulation so settings can still accept input.
+	var mode := Node.PROCESS_MODE_DISABLED if open else Node.PROCESS_MODE_INHERIT
+	world.process_mode = mode
+	sim.process_mode = mode
+	_quality_frames = 0
+	_quality_time = 0.0
 
 func _apply_dev_flags() -> void:
 	if DevTools.has("location"):
@@ -191,6 +250,8 @@ func _notification(what: int) -> void:
 		NOTIFICATION_WM_GO_BACK_REQUEST:
 			# Android back: close an open panel, otherwise leave the app only from the title.
 			if hud and hud.is_transitioning():
+				return
+			if hud and hud.close_graphics():
 				return
 			if hud and hud.current_panel != "":
 				hud.close_panel()

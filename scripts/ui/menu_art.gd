@@ -153,6 +153,11 @@ func _draw_badge(id: String) -> void:
 		"promote":
 			_poly([Vector2(4, 11), Vector2(11, 11), Vector2(23, 5), Vector2(23, 22), Vector2(11, 17), Vector2(4, 17)], PALE)
 			draw_line(Vector2(8, 17), Vector2(10, 24), PALE, 3.0, true)
+		"graphics":
+			for i in range(3):
+				var y := 6.0 + i * 8.0
+				draw_line(Vector2(3, y), Vector2(25, y), DARK, 2.0, true)
+				draw_circle(Vector2(8 if i % 2 == 0 else 19, y), 3.2, DARK, true, -1.0, true)
 		"goals":
 			var points: Array[Vector2] = []
 			for i in range(10):

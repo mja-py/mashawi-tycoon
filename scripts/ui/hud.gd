@@ -69,6 +69,7 @@ const PANEL_GAP := 6.0
 var report_dim: PanelContainer
 var report_panel: PanelContainer
 var report_body: VBoxContainer
+var _graphics_open := false
 var title_screen: Control
 var title_card: PanelContainer
 var toast: PanelContainer
@@ -222,6 +223,7 @@ func _publish_menu_targets() -> void:
 	buttons.append_array(day_bar.find_children("*", "Button", true, false))
 	buttons.append_array(report_dim.find_children("*", "Button", true, false))
 	buttons.append_array(title_screen.find_children("*", "Button", true, false))
+	buttons.append_array(top_bar.find_children("*", "Button", true, false))
 	for node in buttons:
 		var b := node as Button
 		if not b.is_visible_in_tree() or not b.has_meta("menu_target"):
@@ -238,6 +240,9 @@ func _publish_menu_targets() -> void:
 	var view := {"menuBottom": panel_bounds.end.y / vp.y, "tabsTop": prep_bar.get_global_rect().position.y / vp.y,
 		"curtain": _curtain_amount if curtain.visible else 0.0, "closing": closing_progress.value if closing_progress.visible and day_bar.visible else -1.0,
 		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text}
+	if main:
+		view["graphics"] = {"cap": Engine.max_fps, "choice": main.render_scale, "scale": get_viewport().scaling_3d_scale,
+			"fps": Engine.get_frames_per_second(), "open": _graphics_open, "clock": main.sim.hour}
 	JavaScriptBridge.eval("window.godotPresentation = " + JSON.stringify(view))
 
 ## Keep bars and panels out of notches / rounded corners on phones.
@@ -396,6 +401,12 @@ func _build_top_bar() -> void:
 	clock_label.add_theme_font_size_override("font_size", 24)
 	clock_chip.visible = false
 	h.add_child(clock_chip)
+	var graphics := _graphics_button("graphics_hud", "")
+	graphics.custom_minimum_size = Vector2(48, 48)
+	var sliders := MenuArt.new("tab:graphics")
+	sliders.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 9)
+	graphics.add_child(sliders)
+	h.add_child(graphics)
 
 func _build_prep_bar() -> void:
 	prep_bar = _bottom_bar()
@@ -542,6 +553,10 @@ func _build_report() -> void:
 	report_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	report_dim.visible = false
 	root.add_child(report_dim)
+	report_dim.visibility_changed.connect(func():
+		if _graphics_open and not report_dim.visible:
+			_graphics_open = false
+			main.set_graphics_open(false))
 	var center := CenterContainer.new()
 	report_dim.add_child(center)
 	report_panel = PanelContainer.new()
@@ -611,11 +626,18 @@ func _build_title() -> void:
 		Sfx.play("confirm")
 		main.continue_game())
 	v.add_child(cont)
+	var tools_row := HBoxContainer.new()
+	tools_row.add_theme_constant_override("separation", 8)
+	v.add_child(tools_row)
 	var lang := _button(tr("ui.lang_toggle"), "Ghost", Vector2(0, 54))
+	lang.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lang.pressed.connect(func():
 		Sfx.play("switch")
 		Loc.toggle())
-	v.add_child(lang)
+	tools_row.add_child(lang)
+	var graphics := _graphics_button("graphics_title", tr("ui.graphics"))
+	graphics.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tools_row.add_child(graphics)
 	v.add_child(_label(tr("ui.credits"), "Small", HORIZONTAL_ALIGNMENT_CENTER))
 
 # ================================================================= phases
@@ -903,6 +925,65 @@ func _on_open_shop() -> void:
 		return
 	Sfx.play("confirm")
 	main.start_day()
+
+func _graphics_button(target: String, caption: String) -> Button:
+	var b := _menu_target(_button(caption, "Ghost", Vector2(0, 54)), target)
+	b.tooltip_text = tr("ui.graphics")
+	b.accessibility_name = tr("ui.graphics")
+	b.pressed.connect(_show_graphics)
+	return b
+
+func _show_graphics() -> void:
+	if report_dim.visible or is_transitioning():
+		return
+	_graphics_open = true
+	main.set_graphics_open(true)
+	Sfx.play("open")
+	for child in report_body.get_children():
+		report_body.remove_child(child)
+		child.queue_free()
+	var heading := HBoxContainer.new()
+	report_body.add_child(heading)
+	heading.add_child(_label(tr("ui.graphics"), "Title"))
+	var done := _menu_target(_button(tr("ui.close"), "Ghost", Vector2(105, 52)), "graphics_close")
+	done.pressed.connect(close_graphics)
+	heading.add_child(done)
+	_graphics_choices("ui.graphics_fps", "fps", main.FRAME_CAPS,
+		[tr("ui.graphics_cool"), tr("ui.graphics_smooth")], main.frame_cap,
+		func(value: int): main.set_graphics(value, main.render_scale))
+	var names: Array[String] = [tr("ui.graphics_auto")]
+	for scale in main.RENDER_SCALES.slice(1):
+		names.append(Loc.ltr("%d%%" % scale))
+	_graphics_choices("ui.graphics_scale", "scale", main.RENDER_SCALES, names, main.render_scale,
+		func(value: int): main.set_graphics(main.frame_cap, value))
+	report_body.add_child(_label(tr("ui.graphics_hint"), "Muted"))
+	report_panel.custom_minimum_size = Vector2(minf(680.0, root.size.x - 16.0), 0.0)
+	_show_report_overlay()
+
+func _graphics_choices(label: String, target: String, values: Array, captions: Array, active: int, select: Callable) -> void:
+	report_body.add_child(_label(tr(label), "Heading"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	report_body.add_child(row)
+	var group := ButtonGroup.new()
+	for i in range(values.size()):
+		var value: int = values[i]
+		var b := _menu_target(_button(captions[i], "Filter", Vector2(0, 52)), "graphics_%s_%d" % [target, value])
+		b.toggle_mode = true
+		b.button_group = group
+		b.set_pressed_no_signal(value == active)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(func():
+			select.call(value)
+			Sfx.play("tick"))
+		row.add_child(b)
+
+func close_graphics() -> bool:
+	if not _graphics_open:
+		return false
+	report_dim.hide()
+	Sfx.play("close")
+	return true
 
 ## Simple modal with a title, a few lines and one button (reuses the report overlay).
 ## `on_ok` runs after the main button closes it; `alt` adds a second (ghost) button that
