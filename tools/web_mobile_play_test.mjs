@@ -11,7 +11,7 @@ try {
   const page = await ctx.newPage();
   const con = watchConsole(page);
   await armReady(page);
-  await page.goto(url + '?dev=' + encodeURIComponent('--phase=prep --weather=sunny'), { waitUntil: 'load' });
+  await page.goto(url + '?dev=' + encodeURIComponent('--phase=prep --weather=sunny --uitest'), { waitUntil: 'load' });
   await page.waitForSelector('#play', { state: 'visible', timeout: 180000 });
   await page.tap('#play');
   await waitReady(page, 180000);
@@ -60,12 +60,15 @@ try {
   await page.waitForFunction(() => window.godotState?.paused === true);
   check((await state(page)).finishing === true, 'Skip pauses behind the portrait guard');
   await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForFunction(() => window.godotState?.finishing && window.godotPresentation?.closing >= 0 && window.godotPresentation?.sale.includes('+'));
+  check((await state(page)).finishing, 'a real purchase plays during Skip before the report');
+  await page.screenshot({ path: `${out}/3_skip_pickup.png` });
   const report = await waitPhase(page, 'report', 60000);
   const closed = await page.evaluate(() => JSON.parse(localStorage.getItem('mashawi_save')));
   check(report.hasSave && !report.finishing && report.day === 2 && closed.history.length === 1, 'Skip settles the current day exactly once');
   check(closed.history[0].served > 0 && report.money > stocked.money && closed.inventory.chicken < save.inventory.chicken, 'skipped trading earns money and consumes ingredients');
   await page.waitForTimeout(1000);
-  await page.screenshot({ path: `${out}/3_report.png` });
+  await page.screenshot({ path: `${out}/4_report.png` });
   const errors = con.errors();
   check(errors.length === 0, `no browser or game errors (${errors.length})`);
   errors.slice(0, 8).forEach(e => console.log(e));
@@ -86,7 +89,7 @@ try {
   check((await state(smallPage)).panel === 'supplies', 'iPhone SE size can reach the supplies tab');
   await tap(smallPage, 160, 80);
   check((await state(smallPage)).money < 1500, 'iPhone SE size can reach the daily supply shortcut');
-  await smallPage.screenshot({ path: `${out}/4_small_phone_supplies.png` });
+  await smallPage.screenshot({ path: `${out}/5_small_phone_supplies.png` });
   await tap(smallPage, 44, 80);
   await tap(smallPage, 70, 345);
   await waitPhase(smallPage, 'day');

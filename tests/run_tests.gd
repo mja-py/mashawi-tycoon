@@ -26,6 +26,7 @@ func _ready() -> void:
 	_test_daily_stock(game)
 	_test_mobile_stages_and_lighting(game)
 	_test_later_item_handoff(game)
+	_test_skip_pickup(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
 
@@ -99,6 +100,53 @@ func _test_later_item_handoff(game) -> void:
 	var rendered_guest := world.spawn_guest(-1, world.pickup_slot(0))
 	sim.finish_quickly()
 	check(rendered_guest.simulation_speed == 1.0, "Skip keeps the visible cast moving at its normal pace")
+	sim.queue_free()
+	world.queue_free()
+	game.new_game()
+
+func _test_skip_pickup(game) -> void:
+	game.new_game()
+	game.money = 100000.0
+	game.buy_stage()
+	game.buy_stage()
+	game.buy_station_level("fryer")
+	check(game.unlock_item("fries"), "unlock fries for the Skip pickup test")
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 30
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	var sim := DaySim.new()
+	add_child(sim)
+	sim.start(game.sim_context(), world)
+	var receipts: Array[Array] = []
+	var reports: Array[Dictionary] = []
+	sim.sale_completed.connect(func(items: Array[String], _total: float): receipts.append(items))
+	sim.finished.connect(func(stats: Dictionary): reports.append(stats))
+	sim.finish_quickly()
+	for i in range(2):
+		var buyer := world.spawn_walker(-1, true, false)
+		buyer.wants = "side"
+		sim._on_served(buyer, "fries", 0.0, false)
+	var guest := sim._skip_guest
+	check(guest != null and guest.state == Customer.State.TO_SLOT and guest.simulation_speed == 1.0,
+		"Skip gives the buyer a visible approach at normal speed")
+	check(world.walkers == 2 and sim.stats["served"] == 2 and game.inventory["fries"] == 28,
+		"Skip presentation leaves trading and arrival counts independent")
+	if guest != null:
+		guest.position = world.pickup_slot(0)
+		guest._process(0.0)
+		check(guest.state == Customer.State.REACT and world.find_child("Served_fries", true, false) != null,
+			"Skip animates collection of the purchased dish at the pickup counter")
+		check(receipts == [["fries"]], "concurrent Skip sales share one handoff at a time")
+		var stock: Dictionary = game.inventory.duplicate()
+		sim._close()
+		check(reports.is_empty(), "the closing curtain waits for the active handoff")
+		guest._process(DaySim.HANDOFF_SECONDS)
+		check(guest.state == Customer.State.TO_SEAT or guest.state == Customer.State.LEAVE,
+			"the buyer walks away after collection")
+		check(reports.size() == 1 and sim.stats["served"] == 2 and game.inventory == stock,
+			"Skip settles once and the animation consumes no stock")
 	sim.queue_free()
 	world.queue_free()
 	game.new_game()

@@ -701,14 +701,20 @@ func spawn_walker(direction: int, potential_customer: bool = true, with_visuals:
 	var start := Vector3(-WALK_EDGE * direction, 0, z + randf_range(-0.1, 0.1))
 	return spawn_guest(direction, start, potential_customer, with_visuals)
 
-func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
+func spawn_skip_guest() -> Customer:
+	return spawn_guest(-1, pickup_slot(0) + Vector3(0.32, 0.0, 0.24), true, true, true)
+
+func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true, with_visuals: bool = true, presentation_only: bool = false) -> Customer:
 	# Keep room for service actors when the promenade already has passersby.
 	var limit := MAX_RIGGED_GUESTS if potential_customer else MAX_RIGGED_GUESTS - 2
+	# Skip can still show a pickup when the existing cast fills the promenade.
+	if presentation_only:
+		limit += 1
 	var rigged := with_visuals and _rigged_guests < limit
-	if not rigged and not potential_customer:
+	if not rigged and (not potential_customer or presentation_only):
 		return null
 	var c := Customer.new()
-	c.simulation_speed = customer_speed
+	c.simulation_speed = 1.0 if rigged else customer_speed
 	c.on_promenade = Paving.DESIGNS.has(location_id)
 	if plot:
 		c.order_facing = plot.service_front(false)
@@ -725,11 +731,12 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 			_next_passer += 1
 		_rigged_guests += 1
 	c.setup(model_id, direction, start, WALK_EDGE * direction, -1.25 * direction)
-	if not potential_customer:
-		c.decided = true
-	walkers += 1
+	c.decided = not potential_customer or presentation_only
+	if not presentation_only:
+		walkers += 1
 	c.gone.connect(func(_c):
-		walkers -= 1
+		if not presentation_only:
+			walkers -= 1
 		if rigged:
 			_rigged_guests -= 1)
 	return c

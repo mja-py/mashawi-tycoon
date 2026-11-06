@@ -17,6 +17,7 @@ var hour: float = 10.0
 var end_hour: float = 22.0
 var running := false
 const FINISH_SPEED := 12.0
+const HANDOFF_SECONDS := 0.72
 const SHOWCASE_BEATS := [0.10, 0.28, 0.46, 0.64, 1.10, 4.75, 6.20, 7.40]
 var finishing := false
 var stats: Dictionary = {}
@@ -29,6 +30,7 @@ var _stats_tick := 0.0
 var _hot_min: Dictionary = {}
 var _seat_of: Dictionary = {}   # customer -> seat dictionary from the plot
 var _handoff_left := 0.0
+var _skip_guest: Customer
 var _showcase_time := 0.0
 var _showcase_step := 0
 
@@ -71,9 +73,9 @@ func start(context: Dictionary, w: World) -> void:
 func _process(delta: float) -> void:
 	if not running:
 		return
+	_handoff_left = move_toward(_handoff_left, 0.0, delta)
 	if finishing:
 		delta *= FINISH_SPEED
-	_handoff_left = move_toward(_handoff_left, 0.0, delta)
 	var game_min := delta * 60.0 / Data.REAL_SECONDS_PER_GAME_HOUR
 	hour += game_min / 60.0
 	if not finishing:
@@ -133,7 +135,7 @@ func _process(delta: float) -> void:
 	if hour >= end_hour:
 		_close()
 
-## Continue this day's existing pipeline and inventory, with no new 3D presentation.
+## Continue trading at 12× while selected pickups play at normal speed.
 func finish_quickly() -> bool:
 	if not running or finishing:
 		return false
@@ -345,20 +347,50 @@ func _on_served(payload, item: String, wait_min: float, dine_in: bool) -> void:
 	var text := Data.pick_bubble(key, _rng)
 	if key == "great":
 		text += "  +" + Loc.money(total)
-	if not finishing:
-		Sfx.play("coin", -10.0, randf_range(0.95, 1.1))
 	_check_stock_warnings()
-	if not finishing:
-		sale_completed.emit(sold_items, total)
+	if finishing:
+		_show_skip_pickup(sold_items, total, text, col)
+	else:
+		_show_receipt(sold_items, total)
 	if c == null or not is_instance_valid(c):
 		return
 	if running and not finishing and c.model:
-		_handoff_left = 0.72
-		world.handoff(c, sold_items)
-		c.say(text, col, 0.46)
-		c.perform("collect", "pick-up", 0.72, _after_pickup.bind(c, dine_in))
+		_play_pickup(c, sold_items, text, col, _after_pickup.bind(c, dine_in))
 	else:
 		_after_pickup(c, dine_in)
+
+func _show_receipt(items: Array[String], total: float) -> void:
+	Sfx.play("coin", -10.0, randf_range(0.95, 1.1))
+	sale_completed.emit(items, total)
+
+func _play_pickup(guest: Customer, items: Array[String], text: String, color: Color, done: Callable) -> void:
+	_handoff_left = HANDOFF_SECONDS
+	world.handoff(guest, items)
+	guest.say(text, color, 0.46)
+	guest.perform("collect", "pick-up", HANDOFF_SECONDS, done)
+
+func _show_skip_pickup(items: Array[String], total: float, text: String, color: Color) -> void:
+	if is_instance_valid(_skip_guest) or _handoff_left > 0.0:
+		return
+	# Stage this completed order without putting a second customer into the sales queue.
+	var guest := world.spawn_skip_guest()
+	if guest == null:
+		return
+	if guest.model == null:
+		guest._finish()
+		return
+	_skip_guest = guest
+	guest.arrived.connect(func(customer: Customer):
+		_show_receipt(items, total)
+		_play_pickup(customer, items, text, color, _finish_skip_pickup.bind(customer)), CONNECT_ONE_SHOT)
+	guest.go_to_slot(100, world.pickup_slot(0))
+
+func _finish_skip_pickup(guest: Customer) -> void:
+	guest.leave()
+	_skip_guest = null
+	# Closing can settle a final order. Give its handoff time to finish before the curtain.
+	if not running:
+		_publish_close()
 
 func _after_pickup(c: Customer, dine_in: bool) -> void:
 	if not running:
@@ -489,6 +521,10 @@ func _close() -> void:
 		world.clear_virtual_walkers()
 	world.set_time(end_hour, ctx["weather"])
 	clock_changed.emit(end_hour)
+	if not is_instance_valid(_skip_guest):
+		_publish_close()
+
+func _publish_close() -> void:
 	stats["left_wait"] = int(stats["left_wait"]) # already counted as they gave up
 	stats["util"] = tp.utilisation()
 	stats["max_queue"] = int(tp.stats["max_queue"])
