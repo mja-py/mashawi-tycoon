@@ -190,6 +190,8 @@ func _drag(pos: Vector2) -> void:
 	get_viewport().set_input_as_handled()
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
+	if what == NOTIFICATION_DISABLED or (what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree()):
+		if _dragging and what == NOTIFICATION_DISABLED:
+			_set_cursor(float(_index))
 		_pointer = -1
 		_dragging = false

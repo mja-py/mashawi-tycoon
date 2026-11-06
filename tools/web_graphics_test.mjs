@@ -78,6 +78,41 @@ try {
 
       await boot('prep');
       await expectGraphics(60, 65, 0.65);
+      // The modal's opaque middle should look the same with or without a deck behind it.
+      const modalCrop = () => page.screenshot({ scale: 'css', clip: {
+        x: Math.round(width * 0.34), y: Math.round(height * 0.40),
+        width: Math.round(width * 0.32), height: Math.round(height * 0.21)
+      } });
+      async function openGraphics() {
+        await hit('graphics_hud');
+        await page.waitForFunction(() => window.godotPresentation?.graphics?.open);
+        await page.waitForTimeout(550);
+      }
+      async function closeGraphics() {
+        await hit('graphics_close');
+        await page.waitForFunction(() => window.godotPresentation?.graphics?.open === false);
+      }
+      await openGraphics();
+      const unobstructed = await modalCrop();
+      await closeGraphics();
+      await hit('tab_menu');
+      await page.waitForTimeout(400);
+      await hit('category_drink');
+      await hit(lang === 'ar' ? 'roll_left' : 'roll_right');
+      await page.waitForFunction(() => !!window.godotMenuTargets?.select_soda);
+      await openGraphics();
+      await page.screenshot({ path: out + '/' + lang + '-over-selection.png' });
+      assert((await modalCrop()).equals(unobstructed), 'Graphics fully covers the selection cards');
+      await page.mouse.move(width * 0.49, height * 0.54);
+      await page.mouse.down();
+      await page.mouse.move(width * (lang === 'ar' ? 0.69 : 0.29), height * 0.54, { steps: 12 });
+      await page.mouse.up();
+      await page.waitForTimeout(380);
+      await closeGraphics();
+      assert(await page.evaluate(() => !!window.godotMenuTargets?.select_soda), 'a drag in Graphics leaves the drink selection alone');
+      await hit(lang === 'ar' ? 'roll_left' : 'roll_right');
+      await page.waitForFunction(() => !!window.godotMenuTargets?.select_karak);
+
       await hit('tab_supplies');
       await page.waitForTimeout(450);
       await hit('stock_today');

@@ -120,7 +120,7 @@ func _process(delta: float) -> void:
 		_speed = signf(_speed) * s
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
+	if what == NOTIFICATION_DISABLED or (what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree()):
 		_touching = false
 		_dragging = false
 		set_process(false)

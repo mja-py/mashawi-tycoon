@@ -57,6 +57,11 @@ await drag(chicken.x, chicken.y, -165);
 await target('pack_bread_0');
 check((await state(page)).money === 1490, 'reverse swipe returns to bread without a purchase');
 await hit('tab_menu');
+await hit('graphics_hud');
+const dish = await target('select_chicken_tikka');
+await drag(dish.x, dish.y, 165);
+await hit('graphics_close');
+check(await page.evaluate(() => !!window.godotMenuTargets?.select_chicken_tikka), 'a swipe over Graphics leaves the dish selection in place');
 await hit('select_chicken_tikka');
 for (let i = 0; i < 6; i++) {
   await page.mouse.move(422, 200);

@@ -550,10 +550,14 @@ func _build_panel() -> void:
 func _build_report() -> void:
 	report_dim = PanelContainer.new()
 	report_dim.theme_type_variation = "Dim"
+	# Carousel cards use a local stacking order. Keep the whole modal above it.
+	report_dim.z_index = 10
 	report_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	report_dim.visible = false
 	root.add_child(report_dim)
 	report_dim.visibility_changed.connect(func():
+		# The roll and scroller listen to raw gestures before GUI hit testing.
+		panel_dim.process_mode = Node.PROCESS_MODE_DISABLED if report_dim.visible else Node.PROCESS_MODE_INHERIT
 		if _graphics_open and not report_dim.visible:
 			_graphics_open = false
 			main.set_graphics_open(false))
