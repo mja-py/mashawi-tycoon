@@ -94,13 +94,17 @@ scripts/core      data.gd (all tuning tables), economy.gd (pure formulas), game.
 scripts/sim       day_sim.gd (clock, passers-by, queue, sales, reactions), fast_sim.gd (headless balance)
 scripts/world     world.gd (Dubai street builder), gulf_arch.gd, souq_scenery.gd, cart.gd, customer.gd, car.gd, model_lib.gd
 scripts/ui        hud.gd (all panels), ui_theme.gd, icons.gd (3D model icons, weather glyphs)
-assets/models     curated Kenney GLB kits (CC0)      raw/   full kits, ignored by Godot (.gdignore)
+assets/models     game models and third-party GLBs   raw/   source assets, ignored by Godot (.gdignore)
 tests/            headless logic tests               tools/ check/shot/export/deploy scripts, GLB + Blender helpers
 web/              custom HTML shell, Shopify embed snippet, static extras for the web build
 ```
 
-## Credits
+## Copyright and credits
 
-3D models (city, roads, nature, food, cars), sounds: [Kenney](https://kenney.nl) (CC0).
-Trees, bench, bush, rocks: [KayKit](https://kaylousberg.com) (CC0). Food models (spit, wrap, pita, salad, meat trays, mashawi platter, karak): generated with Blender (`tools/make_*.py`). Rigged character models: Meshy, with game-specific animations and mobile asset optimization.
-Font: Fredoka (SIL OFL).
+© 2026 Mohammad Jassem. All rights reserved for the original game code, artwork,
+and assets. See [LICENSE.txt](LICENSE.txt) for reuse terms and third-party notices.
+
+The game includes CC0 assets from [Kenney](https://kenney.nl) and [KayKit](https://kaylousberg.com).
+Custom food models are made with Blender (`tools/make_*.py`). Meshy-assisted models
+are adapted for the game. The game uses [Baloo Bhaijaan 2](assets/fonts/OFL-BalooBhaijaan2.txt)
+under the SIL Open Font License 1.1.
