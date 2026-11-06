@@ -101,8 +101,10 @@ web/              custom HTML shell, Shopify embed snippet, static extras for th
 
 ## Copyright and credits
 
-© 2026 Mohammad Jassem. All rights reserved for the original game code, artwork,
-and assets. See [LICENSE.txt](LICENSE.txt) for reuse terms and third-party notices.
+© 2026 Mohammad Jassem. All rights reserved. The proprietary end-user license
+permits personal play of authorized releases. Reuse of original game code,
+artwork, and models requires separate permission where copyright applies.
+[License and third-party notices](LICENSE.txt)
 
 The game includes CC0 assets from [Kenney](https://kenney.nl) and [KayKit](https://kaylousberg.com).
 Custom food models are made with Blender (`tools/make_*.py`). Meshy-assisted models
