@@ -41,7 +41,7 @@ static func reached(state: Dictionary, view: Dictionary) -> bool:
 		"recipe": return view["sauce"] == 2
 		"price": return not is_equal_approx(float(view["price"]), float(state["price"]))
 		"supplies": return view["panel"] == "supplies"
-		"stock": return int(view["portions"]) > 0
+		"stock": return bool(view.get("foodReady", int(view["portions"]) > 0))
 		"open": return view["phase"] == "day"
 		"order": return view["ordered"] or int(view["served"]) > 0
 		"sale": return int(view["served"]) > 0

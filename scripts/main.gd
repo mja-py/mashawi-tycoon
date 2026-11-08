@@ -220,6 +220,7 @@ func _apply_dev_flags() -> void:
 	match ph:
 		"day":
 			_stock_up_for_test()
+			phase = Phase.PREP
 			start_day(true)
 			if DevTools.has("speed"):
 				set_speed(float(DevTools.get_flag("speed")))
@@ -230,6 +231,7 @@ func _apply_dev_flags() -> void:
 				hud.open_panel(DevTools.get_flag("panel"))
 		"report":
 			_stock_up_for_test()
+			phase = Phase.PREP
 			start_day(true)
 			set_speed(16.0)
 		_:
@@ -330,6 +332,8 @@ func show_prep() -> void:
 	_publish_state()
 
 func start_day(skip_weather_roll: bool = false) -> void:
+	if phase != Phase.PREP:
+		return
 	phase = Phase.DAY
 	if DevTools.has("character-demo") and Game.day == 1:
 		Game.weather = "sunny"
@@ -356,6 +360,8 @@ func skip_day() -> void:
 	_publish_state()
 
 func _on_day_finished(stats: Dictionary) -> void:
+	if phase != Phase.DAY or int(stats.get("_day", Game.day)) != Game.day:
+		return
 	sim.finishing = false
 	world.set_customer_speed(1.0)
 	set_speed(1.0)

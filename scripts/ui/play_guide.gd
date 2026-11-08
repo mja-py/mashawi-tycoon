@@ -151,7 +151,7 @@ func _view() -> Dictionary:
 				ordered = true
 	return {"phase": phase, "panel": hud.current_panel, "dish": hud.selected_dish,
 		"sauce": Game.menu["chicken_tikka"]["recipe"]["sauce"], "price": Game.menu["chicken_tikka"]["price"],
-		"portions": Game.portions_possible("chicken_tikka"), "day": Game.day, "ordered": ordered,
+		"portions": Game.portions_possible("chicken_tikka") if Game.is_on_sale("chicken_tikka") else 0, "foodReady": Game.food_on_sale(), "day": Game.day, "ordered": ordered,
 		"served": int(sim.stats.get("served", 0)) if phase == "day" else 0,
 		"level": Game.station_level(Game.tutorial["station"]), "campaign": Game.marketing.has("fliers"), "claimed": Game.goals_claimed.size()}
 
@@ -184,8 +184,8 @@ func _refresh() -> void:
 	_next.visible = not _next.disabled
 	_later.visible = not done and ((key == "upgrade" and hud.current_panel == "build" and hud._prep_detail == Game.tutorial["station"]) or (key == "campaign" and hud.current_panel == "promote" and hud._prep_detail == "fliers") or (key == "goals" and hud.current_panel == "goals" and not Game.goal_ready()))
 	_later.text = tr("coach.keep_growing") if key == "goals" else tr("coach.save_later")
-	if key == "open" and Game.portions_possible("chicken_tikka") == 0:
-		_words.text = tr("coach.restock")
+	if key in ["stock", "open"] and not done and not Game.food_on_sale():
+		_words.text = tr("coach.enable_food") if _food_disabled() else tr("coach.restock")
 	if key == "campaign" and not done and Game.money < float(Data.MARKETING["fliers"]["cost"]) + Game.daily_wages() + float(Game.loc()["rent"]):
 		_words.text = tr("coach.campaign.wait")
 	if _last_topic != key:
@@ -194,7 +194,14 @@ func _refresh() -> void:
 			_portrait.gesture()
 		hud._fade_in(_words, 0.2)
 
+func _food_disabled() -> bool:
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["kind"] == "food" and Game.is_on_sale(id): return false
+	return true
+
 func _target_id() -> String:
+	if topic() in ["stock", "open"] and _food_disabled():
+		return "on_sale" if hud.current_panel == "menu" and hud.selected_dish == "chicken_tikka" else "tab_menu"
 	match topic():
 		"menu": return "tab_menu"
 		"dish": return "select_chicken_tikka" if hud.current_panel == "menu" else "tab_menu"
@@ -236,7 +243,12 @@ func _focus() -> void:
 		"menu", "dish", "recipe", "price":
 			if hud.current_panel != "menu": hud.open_panel("menu")
 			if topic() != "menu": hud._select_dish("chicken_tikka")
-		"supplies", "stock", "open": hud.open_panel("supplies")
+		"supplies", "stock", "open":
+			if topic() != "supplies" and _food_disabled():
+				if hud.current_panel != "menu": hud.open_panel("menu")
+				hud._select_dish("chicken_tikka")
+			else:
+				hud.open_panel("supplies")
 		"upgrade":
 			if hud.current_panel != "build": hud.open_panel("build")
 			hud._open_prep_detail(Game.tutorial["station"])

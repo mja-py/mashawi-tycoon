@@ -61,7 +61,7 @@ func start(context: Dictionary, w: World) -> void:
 	weather_def = Data.WEATHER[ctx["weather"]]
 	hour = float(ctx["hours"][0])
 	end_hour = float(ctx["hours"][1])
-	stats = {"passers": 0, "served": 0, "revenue": 0.0, "cogs": 0.0, "sold": {}, "satisfaction_sum": 0.0,
+	stats = {"_day": int(ctx.get("day", Game.day)), "passers": 0, "served": 0, "revenue": 0.0, "cogs": 0.0, "sold": {}, "satisfaction_sum": 0.0,
 		"left_wait": 0, "sold_out": 0, "queue_full": 0, "lost_rival": 0, "too_pricey": 0, "dine_in": 0, "queue": 0, "kitchen": 0, "seated": 0}
 	_warned.clear()
 	_stats_tick = 0.0
@@ -70,7 +70,10 @@ func start(context: Dictionary, w: World) -> void:
 	_handoff_left = 0.0
 	_showcase_time = 0.0
 	_showcase_step = 0 if DevTools.has("character-demo") and Game.day == 1 else SHOWCASE_BEATS.size()
-	_rng.randomize()
+	if Game.day_seed > 0:
+		_rng.seed = Game.day_seed
+	else:
+		_rng.randomize()
 	if DevTools.has("sim-seed"):
 		_rng.seed = int(DevTools.get_flag("sim-seed"))
 	tp = Throughput.new()
@@ -488,6 +491,7 @@ func _settle_sale(c: Customer, item: String, wait_min: float, dine_in: bool) -> 
 			stats["sold"][extra] = int(stats["sold"].get(extra, 0)) + 1
 	stats["revenue"] = float(stats["revenue"]) + total
 	stats["cogs"] = float(stats["cogs"]) + cogs
+	Game.total_served += 1
 	stats["served"] = int(stats["served"]) + 1
 	if dine_in:
 		stats["dine_in"] = int(stats["dine_in"]) + 1

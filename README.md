@@ -25,6 +25,11 @@ supersampled portrait and real-time animation independent of trading speed.
 Normal play, 2×, 4× and Skip share the same business simulation; readable service
 beats slow the whole clock together, so faster play does not penalize sales.
 
+Each trading day records its opening cash, stock, weather and customer seed.
+Reloading an unfinished day restarts that checkpoint. Purchases require the right
+local equipment, and each guest counts once toward customer goals, including
+when they buy add-ons.
+
 Buy supplies, tune your recipe and prices, pick a spot in Dubai, invest in your stand
 and marketing, then open and watch the day play out on a low-poly Gulf street with
 Emirati locals in kandura and abaya alongside residents and tourists.

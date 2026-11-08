@@ -6,7 +6,7 @@ signal changed
 signal notify(text: String, kind: String)
 signal goal_claimed(goal: Dictionary)
 
-const SAVE_VERSION := 3
+const SAVE_VERSION := 4
 const HISTORY_LIMIT := 90
 ## Tests and headless runs point this elsewhere so the player's save is never touched.
 var save_path := "user://save.json"
@@ -39,6 +39,9 @@ var bailouts: int = 0
 var goal_index: int = 0
 var goals_claimed: Array = []
 var stats: Dictionary = {}
+var prepared_day := 0
+var weather_day := 0
+var day_seed := 0
 var tutorial: Dictionary = GuideJourney.fresh()
 var rng := RandomNumberGenerator.new()
 
@@ -76,6 +79,9 @@ func new_game() -> void:
 	goal_index = 0
 	goals_claimed = []
 	stats = _new_stats()
+	prepared_day = 0
+	weather_day = 0
+	day_seed = 0
 	tutorial = GuideJourney.fresh()
 	forecast = _roll_weather()
 	weather = forecast
@@ -94,13 +100,15 @@ func prepare_day() -> void:
 		bailouts += 1
 		money += Data.BAILOUT_AMOUNT
 		notify.emit(tr("ui.loan") % Loc.money(Data.BAILOUT_AMOUNT), "warn")
-	for id in plots:
-		if id == location:
-			continue
-		var p: Dictionary = plots[id]
-		var away := day - int(p.get("last_visit", day))
-		if away > 0 and plot_stage_tier(id) >= FIXED_FROM_TIER:
-			p["reputation"] = Economy.reputation_decay(float(p["reputation"]), 1)
+	if prepared_day != day:
+		for id in plots:
+			if id == location:
+				continue
+			var p: Dictionary = plots[id]
+			var away := day - int(p.get("last_visit", day))
+			if away > 0 and plot_stage_tier(id) >= FIXED_FROM_TIER:
+				p["reputation"] = Economy.reputation_decay(float(p["reputation"]), 1)
+		prepared_day = day
 	var here := plot()
 	here["last_visit"] = day
 	if not stats["locations_visited"].has(location):
@@ -118,10 +126,16 @@ func food_on_sale() -> bool:
 
 ## Decide the real weather for the day that is about to start.
 func begin_day() -> void:
+	if weather_day == day:
+		return
 	if rng.randf() < Data.FORECAST_ACCURACY:
 		weather = forecast
 	else:
 		weather = _roll_weather()
+	weather_day = day
+	day_seed = rng.randi_range(1, 2147483647)
+	# Commit the opening checkpoint before any live sale. Reloads replay this day.
+	save()
 	changed.emit()
 
 # ---------------------------------------------------------------- queries
@@ -292,7 +306,7 @@ func portions_possible(item_id: String) -> int:
 
 func is_on_sale(item_id: String) -> bool:
 	var m: Dictionary = menu[item_id]
-	return m["unlocked"] and m["enabled"]
+	return m["unlocked"] and m["enabled"] and item_available(item_id)
 
 func competition() -> float:
 	return float(loc().get("competition", 0.0))
@@ -430,6 +444,8 @@ func claim_goal() -> bool:
 # ---------------------------------------------------------------- actions
 
 func _spend(amount: float) -> bool:
+	if not is_finite(amount) or amount < 0.0:
+		return false
 	if amount > money + 0.0001:
 		notify.emit(tr("ui.no_money"), "error")
 		return false
@@ -437,6 +453,8 @@ func _spend(amount: float) -> bool:
 	return true
 
 func buy_pack(ingredient: String, pack_index: int) -> bool:
+	if not Data.INGREDIENTS.has(ingredient) or not ingredient_available(ingredient) or pack_index < 0 or pack_index >= Data.INGREDIENTS[ingredient]["packs"].size():
+		return false
 	var pack: Array = Data.INGREDIENTS[ingredient]["packs"][pack_index]
 	if not _spend(float(pack[1])):
 		return false
@@ -520,6 +538,8 @@ func price_range(item_id: String) -> Array:
 	return Economy.price_range(item_id, loc(), stage_def())
 
 func set_price(item_id: String, price: float) -> void:
+	if not menu.has(item_id) or not is_finite(price):
+		return
 	var r := price_range(item_id)
 	menu[item_id]["price"] = snappedf(clampf(price, float(r[0]), float(r[1])), 1.0)
 	changed.emit()
@@ -536,6 +556,8 @@ func clamp_prices() -> Array:
 	return moved
 
 func set_recipe(item_id: String, key: String, value: int) -> void:
+	if not menu.has(item_id) or not Data.MENU_ITEMS[item_id]["recipe"] or not Data.RECIPE_SLIDERS.has(key):
+		return
 	var s: Dictionary = Data.RECIPE_SLIDERS[key]
 	menu[item_id]["recipe"][key] = clampi(value, int(s["min"]), int(s["max"]))
 	changed.emit()
@@ -562,6 +584,8 @@ func unlock_item(item_id: String) -> bool:
 	return true
 
 func enhance_item(item_id: String) -> bool:
+	if not menu.has(item_id) or not menu[item_id]["unlocked"] or not item_available(item_id):
+		return false
 	var level := int(menu[item_id]["level"])
 	var enh: Array = Data.MENU_ITEMS[item_id]["enhance"]
 	if level >= enh.size():
@@ -680,6 +704,7 @@ func sim_context() -> Dictionary:
 	var sd := stage_def()
 	var n_seats := seats()
 	return {
+		"day": day,
 		"location": location,
 		"weather": weather,
 		"hours": Data.location_hours(location),
@@ -750,6 +775,8 @@ func what_if(overrides: Dictionary) -> Dictionary:
 
 ## Sell one portion of an item. Returns false if ingredients are missing.
 func sell(item_id: String, price: float) -> bool:
+	if not menu.has(item_id) or not is_on_sale(item_id) or not is_finite(price) or price < 0.0:
+		return false
 	var needs := Economy.portion_ingredients(item_id, menu[item_id])
 	for ing in needs:
 		if int(inventory.get(ing, 0)) < int(needs[ing]):
@@ -757,11 +784,17 @@ func sell(item_id: String, price: float) -> bool:
 	for ing in needs:
 		inventory[ing] = int(inventory[ing]) - int(needs[ing])
 	money += price
-	total_served += 1
 	return true
 
 ## Close the books for the day. Returns the report dictionary shown to the player.
 func end_day(day_stats: Dictionary) -> Dictionary:
+	var ledger_day := int(day_stats.get("_day", day))
+	if ledger_day != day:
+		for report in history:
+			if int(report.get("day", -1)) == ledger_day:
+				return report
+		return {}
+	day_stats["_day"] = day
 	var rent := float(loc()["rent"])
 	var wages := daily_wages()
 	money -= rent + wages
@@ -867,6 +900,18 @@ func _file_text() -> String:
 	return f.get_as_text() if f else ""
 
 ## The newest valid save available: the user:// file or (web) the localStorage copy.
+func _number(value: Variant, fallback: float = 0.0) -> float:
+	if value is int or value is float or (value is String and value.is_valid_float()):
+		var result := float(value)
+		if is_finite(result): return result
+	return fallback
+
+func _dictionary(value: Variant) -> Dictionary:
+	return value if value is Dictionary else {}
+
+func _identifier(value: Variant, fallback: String = "") -> String:
+	return value if value is String else fallback
+
 func _read_save() -> Dictionary:
 	var best := {}
 	for text in [_file_text(), _web_backup()]:
@@ -875,7 +920,7 @@ func _read_save() -> Dictionary:
 		var parsed = JSON.parse_string(text)
 		if typeof(parsed) != TYPE_DICTIONARY:
 			continue
-		if best.is_empty() or float(parsed.get("saved_at", 0)) > float(best.get("saved_at", 0)):
+		if best.is_empty() or _number(parsed.get("saved_at", 0)) > _number(best.get("saved_at", 0)):
 			best = parsed
 	return best
 
@@ -887,7 +932,7 @@ func save_summary() -> Dictionary:
 	var d := _read_save()
 	if d.is_empty():
 		return {}
-	return {"day": int(d.get("day", 1)), "money": float(d.get("money", 0.0))}
+	return {"day": maxi(1, int(_number(d.get("day", 1), 1))), "money": _number(d.get("money", 0.0))}
 
 func save() -> void:
 	if not persist:
@@ -895,7 +940,7 @@ func save() -> void:
 	var data := {
 		"version": SAVE_VERSION, "saved_at": Time.get_unix_time_from_system(),
 		"money": money, "day": day, "popularity": popularity,
-		"stage": stage, "location": location, "weather": weather, "forecast": forecast,
+		"stage": stage, "location": location, "weather": weather, "forecast": forecast, "prepared_day": prepared_day, "weather_day": weather_day, "day_seed": day_seed,
 		"inventory": inventory, "avg_cost": avg_cost, "menu": menu, "marketing": marketing,
 		"rig": rig, "plots": plots, "goal_index": goal_index, "goals_claimed": goals_claimed, "stats": stats,
 		"history": history, "total_served": total_served, "bailouts": bailouts, "tutorial": tutorial,
@@ -915,57 +960,60 @@ func load_game() -> bool:
 	if parsed.is_empty():
 		return false
 	new_game()
-	money = float(parsed.get("money", money))
-	day = int(parsed.get("day", day))
-	popularity = float(parsed.get("popularity", popularity))
+	money = _number(parsed.get("money", money), money)
+	day = int(_number(parsed.get("day", day), day))
+	popularity = _number(parsed.get("popularity", popularity), popularity)
 	# saves from older versions may name places or weather that no longer exist
-	if Data.STAGES.has(String(parsed.get("stage", ""))):
-		stage = String(parsed["stage"])
-	if Data.LOCATIONS.has(String(parsed.get("location", ""))):
-		location = String(parsed["location"])
-	if Data.WEATHER.has(String(parsed.get("weather", ""))):
-		weather = String(parsed["weather"])
-	if Data.WEATHER.has(String(parsed.get("forecast", ""))):
-		forecast = String(parsed["forecast"])
+	if Data.STAGES.has(_identifier(parsed.get("stage"))):
+		stage = _identifier(parsed["stage"])
+	if Data.LOCATIONS.has(_identifier(parsed.get("location"))):
+		location = _identifier(parsed["location"])
+	if Data.WEATHER.has(_identifier(parsed.get("weather"))):
+		weather = _identifier(parsed["weather"])
+	if Data.WEATHER.has(_identifier(parsed.get("forecast"))):
+		forecast = _identifier(parsed["forecast"])
 	tutorial = GuideJourney.clean(parsed.get("tutorial", {}))
-	total_served = int(parsed.get("total_served", 0))
-	bailouts = int(parsed.get("bailouts", 0))
-	for ing in parsed.get("inventory", {}):
+	prepared_day = int(_number(parsed.get("prepared_day", day), day))
+	weather_day = int(_number(parsed.get("weather_day", 0)))
+	day_seed = int(_number(parsed.get("day_seed", 0)))
+	total_served = int(_number(parsed.get("total_served", 0)))
+	bailouts = int(_number(parsed.get("bailouts", 0)))
+	for ing in _dictionary(parsed.get("inventory", {})):
 		if inventory.has(ing):
-			inventory[ing] = int(parsed["inventory"][ing])
-	for ing in parsed.get("avg_cost", {}):
+			inventory[ing] = int(_number(parsed["inventory"][ing]))
+	for ing in _dictionary(parsed.get("avg_cost", {})):
 		if avg_cost.has(ing):
-			avg_cost[ing] = float(parsed["avg_cost"][ing])
-	for id in parsed.get("menu", {}):
+			avg_cost[ing] = _number(parsed["avg_cost"][ing], Data.reference_unit_price(ing))
+	for id in _dictionary(parsed.get("menu", {})):
 		if menu.has(id) and parsed["menu"][id] is Dictionary:
 			var m: Dictionary = parsed["menu"][id]
 			menu[id]["unlocked"] = bool(m.get("unlocked", false)) or bool(Data.MENU_ITEMS[id]["start"])
 			menu[id]["enabled"] = bool(m.get("enabled", false))
-			menu[id]["price"] = float(m.get("price", menu[id]["price"]))
-			menu[id]["level"] = int(m.get("level", 0))
+			menu[id]["price"] = _number(m.get("price", menu[id]["price"]), menu[id]["price"])
+			menu[id]["level"] = int(_number(m.get("level", 0)))
 			for k in Data.RECIPE_SLIDERS:
-				menu[id]["recipe"][k] = int(m.get("recipe", {}).get(k, menu[id]["recipe"][k]))
-	for id in parsed.get("marketing", {}):
+				menu[id]["recipe"][k] = int(_number(_dictionary(m.get("recipe", {})).get(k, menu[id]["recipe"][k]), menu[id]["recipe"][k]))
+	for id in _dictionary(parsed.get("marketing", {})):
 		if Data.MARKETING.has(id):
-			marketing[id] = int(parsed["marketing"][id])
-	history = parsed.get("history", [])
+			marketing[id] = int(_number(parsed["marketing"][id]))
+	history = parsed.get("history", []) if parsed.get("history") is Array else []
 	if parsed.get("rig", null) is Dictionary:
-		rig = {"stage": String(parsed["rig"].get("stage", "cart")), "stations": _int_dict(parsed["rig"].get("stations", {}))}
+		rig = {"stage": _identifier(parsed["rig"].get("stage"), "cart"), "stations": _int_dict(parsed["rig"].get("stations", {}))}
 	plots = {}
 	if parsed.get("plots", null) is Dictionary:
 		for loc_id in parsed["plots"]:
 			var p = parsed["plots"][loc_id]
 			if Data.LOCATIONS.has(loc_id) and p is Dictionary:
-				plots[loc_id] = {"stage": String(p.get("stage", "")), "stations": _int_dict(p.get("stations", {})),
-					"reputation": float(p.get("reputation", popularity)), "last_visit": int(p.get("last_visit", day))}
-	goal_index = int(parsed.get("goal_index", 0))
+				plots[loc_id] = {"stage": _identifier(p.get("stage")), "stations": _int_dict(p.get("stations", {})),
+					"reputation": _number(p.get("reputation", popularity), popularity), "last_visit": int(_number(p.get("last_visit", day), day))}
+	goal_index = int(_number(parsed.get("goal_index", 0)))
 	goals_claimed = parsed.get("goals_claimed", []) if parsed.get("goals_claimed", null) is Array else []
 	stats = _new_stats()
 	if parsed.get("stats", null) is Dictionary:
 		for k in stats:
 			if parsed["stats"].has(k):
-				stats[k] = parsed["stats"][k]
-	if int(parsed.get("version", 1)) < 3:
+				stats[k] = (parsed["stats"][k] if parsed["stats"][k] is Array else []) if k == "locations_visited" else _number(parsed["stats"][k])
+	if int(_number(parsed.get("version", 1), 1)) < 3:
 		_migrate_legacy(parsed)
 	_validate()
 	changed.emit()
@@ -975,14 +1023,14 @@ func _int_dict(d) -> Dictionary:
 	var out := {}
 	if d is Dictionary:
 		for k in d:
-			out[String(k)] = int(d[k])
+			out[str(k)] = int(_number(d[k]))
 	return out
 
 ## Saves from before the station system: vehicles become rig stages, one-off upgrades
 ## become station levels (or refunds where the station needs a stage you have not got).
 func _migrate_legacy(parsed: Dictionary) -> void:
 	var acc := {"refund": 0.0} # a dictionary so the lambda below can add to it
-	var veh := String(parsed.get("vehicle", "cart"))
+	var veh := _identifier(parsed.get("vehicle"), "cart")
 	rig["stage"] = "truck" if veh in ["truck", "truck2"] else "cart"
 	var st: Dictionary = rig["stations"]
 	var stage_stations: Array = Data.stage_def(rig_tier())["stations"]
@@ -1035,11 +1083,14 @@ func _validate() -> void:
 	tutorial = GuideJourney.clean(tutorial)
 	if is_nan(money) or is_inf(money):
 		money = 0.0
-	money = maxf(money, 0.0)
 	if is_nan(popularity) or is_inf(popularity):
 		popularity = Data.START_POPULARITY
 	popularity = clampf(popularity, 0.05, 1.0)
 	day = maxi(day, 1)
+	prepared_day = clampi(prepared_day, 0, day)
+	weather_day = clampi(weather_day, 0, day)
+	day_seed = clampi(day_seed, 0, 2147483647)
+	tutorial["started_day"] = mini(int(tutorial["started_day"]), day)
 	total_served = maxi(total_served, 0)
 	bailouts = clampi(bailouts, 0, Data.BAILOUT_MAX)
 	# rig: a known mobile stage with known stations inside their caps
@@ -1063,7 +1114,7 @@ func _validate() -> void:
 	_plot_entry(location)
 	for ing in inventory:
 		inventory[ing] = maxi(int(inventory[ing]), 0)
-		if float(avg_cost[ing]) <= 0.0 or is_nan(float(avg_cost[ing])):
+		if float(avg_cost[ing]) <= 0.0 or not is_finite(float(avg_cost[ing])):
 			avg_cost[ing] = Data.reference_unit_price(ing)
 	for id in menu:
 		var enh: Array = Data.MENU_ITEMS[id]["enhance"]
@@ -1081,24 +1132,33 @@ func _validate() -> void:
 	var known_goals := []
 	for g in goals_claimed:
 		for def in Data.GOALS:
-			if def["id"] == String(g):
-				known_goals.append(String(g))
+			if g is String and def["id"] == g and not known_goals.has(g):
+				known_goals.append(g)
 	goals_claimed = known_goals
-	for k in ["best_day_profit", "total_profit"]:
-		stats[k] = maxf(float(stats.get(k, 0.0)), 0.0) if not is_nan(float(stats.get(k, 0.0))) else 0.0
+	stats["best_day_profit"] = maxf(_number(stats.get("best_day_profit", 0.0)), 0.0)
+	stats["total_profit"] = _number(stats.get("total_profit", 0.0))
 	for k in ["best_day_served", "days_played", "levels_bought", "stages_built"]:
 		stats[k] = maxi(int(stats.get(k, 0)), 0)
 	var visited := []
 	for v in stats.get("locations_visited", []):
-		if Data.LOCATIONS.has(String(v)) and not visited.has(String(v)):
-			visited.append(String(v))
+		if v is String and Data.LOCATIONS.has(v) and not visited.has(v):
+			visited.append(v)
 	if not visited.has(location):
 		visited.append(location)
 	stats["locations_visited"] = visited
 	var clean := []
 	for r in history:
-		if r is Dictionary and Data.LOCATIONS.has(String(r.get("location", ""))) and Data.WEATHER.has(String(r.get("weather", ""))):
-			clean.append(r)
+		if r is Dictionary and Data.LOCATIONS.has(_identifier(r.get("location"))) and Data.WEATHER.has(_identifier(r.get("weather"))):
+			var row: Dictionary = r.duplicate(true)
+			for k in ["day", "stage", "served", "passers", "dine_in", "left_wait", "lost_rival", "too_pricey", "sold_out", "queue_full"]:
+				row[k] = maxi(0, int(_number(row.get(k, 0))))
+			for k in ["profit", "money", "revenue", "cogs", "rent", "wages", "spoil_cost", "satisfaction", "pop_delta", "popularity", "local_rep", "local_delta"]:
+				row[k] = _number(row.get(k, 0.0))
+			row["bottleneck"] = _identifier(row.get("bottleneck"))
+			row["sold"] = _int_dict(row.get("sold", {}))
+			row["spoiled"] = _int_dict(row.get("spoiled", {}))
+			row["util"] = _dictionary(row.get("util", {}))
+			clean.append(row)
 	history = clean
 	if history.size() > HISTORY_LIMIT:
 		history = history.slice(history.size() - HISTORY_LIMIT)

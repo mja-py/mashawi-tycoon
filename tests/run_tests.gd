@@ -31,8 +31,133 @@ func _ready() -> void:
 	_test_terrace_clearance(game)
 	_test_cast_appearances()
 	_test_guide_journey()
+	_test_logic_audit(game)
+	_test_reload_audit(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
+
+func _test_reload_audit(game) -> void:
+	game.new_game()
+	game.money = -125.0
+	game.stats["total_profit"] = -80.0
+	game.prepared_day = game.day
+	game.begin_day()
+	var seed_before: int = game.day_seed
+	var weather_before: String = game.weather
+	game.begin_day()
+	check(game.day_seed == seed_before and game.weather == weather_before, "repeated Open actions cannot reroll the day's weather or customers")
+	game.save()
+	check(game.load_game() and game.money == -125.0 and game.stats["total_profit"] == -80.0, "negative cash and lifetime losses survive actual save/load")
+	game.begin_day()
+	check(game.day_seed == seed_before and game.weather == weather_before, "reload cannot reroll a committed business day")
+	game.tutorial = GuideJourney.clean({"active": true, "step": 11, "started_day": 999})
+	game._validate()
+	check(game.tutorial["started_day"] == game.day, "corrupt future tutorial dates cannot strand the report lesson")
+	game.new_game()
+	_write_save(game, {"version": 4, "money": {}, "day": [], "saved_at": {}, "inventory": false, "avg_cost": [],
+		"menu": {"chicken_tikka": {"recipe": false, "price": {}, "level": []}}, "marketing": [], "history": {},
+		"rig": {"stage": {}, "stations": {"grill": {}}}, "stats": {"total_profit": {}, "locations_visited": [[], "creek"]}})
+	check(game.save_summary()["day"] == 1 and game.load_game(), "malformed nested save fields recover without a load-screen crash")
+	check(is_finite(game.money) and game.inventory["chicken"] == 0 and game.menu["chicken_tikka"]["recipe"]["sauce"] == 1, "recovered state keeps finite money and a usable recipe")
+	game.delete_save()
+	game.new_game()
+
+func _test_logic_audit(game) -> void:
+	game.new_game()
+	var coach = load("res://scripts/ui/play_guide.gd").new()
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["kind"] == "food": game.menu[id]["enabled"] = false
+	check(coach._food_disabled(), "mentor detects when every food dish is switched off")
+	game.menu["sandwich"]["enabled"] = true
+	check(not coach._food_disabled(), "mentor accepts an alternate food dish")
+	var lesson := GuideJourney.fresh()
+	lesson["step"] = GuideJourney.STEPS.find("stock")
+	check(GuideJourney.reached(lesson, {"portions": 0, "foodReady": true}), "stock lesson accepts a cookable alternate dish when chicken tikka is off")
+	coach.free()
+	var was_persistent: bool = game.persist
+	game.persist = false
+	game.new_game()
+	game.money = 100000.0
+	game.popularity = 0.9
+	game.rig["stage"] = "truck"
+	game.plot()["stage"] = "restaurant"
+	game.plot()["stations"] = {"doner": 1, "fryer": 1}
+	for ing in Data.INGREDIENTS: game.inventory[ing] = 100
+	check(game.unlock_item("shawarma") and game.unlock_item("fries"), "audit fixture owns its specialty equipment and dishes")
+	check(game.set_location("creek"), "audit fixture can leave its fixed restaurant")
+	var cash: float = game.money
+	var stock: Dictionary = game.inventory.duplicate()
+	check(not game.is_on_sale("shawarma") and not game.is_on_sale("fries"), "moving away cannot sell dishes without their local equipment")
+	check(not game.sell("shawarma", 15.0) and game.money == cash and game.inventory == stock, "missing equipment cannot produce an instant paid meal")
+	check(not game.enhance_item("shawarma"), "unavailable dishes cannot consume enhancement money")
+	game.new_game()
+	game.day = 5
+	game.plots["creek"] = {"stage": "restaurant", "stations": {}, "reputation": 0.8, "last_visit": 1}
+	game.prepare_day()
+	var rep: float = game.plots["creek"]["reputation"]
+	game.prepare_day()
+	check(is_equal_approx(rep, game.plots["creek"]["reputation"]), "reopening preparation cannot repeatedly decay another district's reputation")
+	game.money = -125.0
+	game._validate()
+	check(game.money == -125.0, "reload validation cannot forgive unpaid bills")
+	game.new_game()
+	cash = game.money
+	check(not game._spend(-25.0) and not game._spend(NAN) and not game._spend(INF) and game.money == cash, "invalid transaction amounts cannot mint or poison money")
+	game.new_game()
+	var ledger := {"served": 0, "revenue": 0.0, "cogs": 0.0, "satisfaction_sum": 0.0, "sold": {}, "util": {}}
+	game.end_day(ledger)
+	cash = game.money
+	var after_day: int = game.day
+	game.end_day(ledger)
+	check(game.day == after_day and game.money == cash and game.history.size() == 1, "a repeated close callback cannot settle the same day twice")
+	game.new_game()
+	for ing in Data.INGREDIENTS: game.inventory[ing] = 200
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	var sim := DaySim.new()
+	add_child(sim)
+	sim.start(game.sim_context(), world)
+	sim._rng.seed = 12
+	for i in range(12):
+		var buyer := world.spawn_guest(-1, world.pickup_slot(0))
+		buyer.wants = "food"
+		buyer.order_shown = true
+		sim._on_served(buyer, "chicken_tikka", 0.0, false)
+		buyer._finish()
+	var dishes := 0
+	for n in sim.stats["sold"].values(): dishes += int(n)
+	check(dishes > sim.stats["served"], "audit fixture includes actual add-on purchases")
+	check(game.total_served == sim.stats["served"], "add-ons cannot inflate lifetime customer goals")
+	sim.free()
+	world.free()
+	game.new_game()
+	game.rig["stage"] = "truck"
+	game.plot()["stage"] = "restaurant"
+	game.plot()["stations"] = {"counter": 7, "grill": 7, "seating": 4, "majlis": 1}
+	game.popularity = 0.9
+	for ing in Data.INGREDIENTS: game.inventory[ing] = 1000
+	cash = game.money
+	var fixed_rng := RandomNumberGenerator.new()
+	fixed_rng.seed = 27
+	var fast := FastSim.run(game.sim_context(), fixed_rng)
+	check(is_equal_approx(game.money - cash, float(fast["revenue"])), "headless balance revenue agrees with the actual cash credited")
+	check(game.total_served == fast["served"], "headless balance counts customers once")
+	game.new_game()
+	var main := get_parent()
+	var previous_phase: int = main.phase
+	var before_day: int = game.day
+	main.phase = main.Phase.PREP
+	main._on_day_finished({"_day": game.day})
+	check(game.day == before_day and main.phase == main.Phase.PREP, "close callbacks outside live service cannot advance the calendar")
+	main.phase = main.Phase.REPORT
+	main.start_day()
+	check(not main.sim.running and main.phase == main.Phase.REPORT, "a stale Open button cannot restart a finished day")
+	main.phase = main.Phase.DAY
+	main._on_day_finished({"_day": game.day - 1})
+	check(main.phase == main.Phase.DAY and game.day == before_day, "a previous day's callback cannot close a new session")
+	main.phase = previous_phase
+	game.persist = was_persistent
 
 func _test_guide_journey() -> void:
 	check(GuideJourney.station_for({"bottleneck": "arrivals"}) == "signage", "quiet streets need visibility rather than extra kitchen capacity")

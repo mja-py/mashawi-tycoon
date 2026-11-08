@@ -86,6 +86,7 @@ try {
     assert(service.workers.every(worker => worker.state === 0));
     assert.equal(result.save.history.length, 1);
     assert.equal(result.save.history[0].served, service.served);
+    assert.equal(result.save.total_served, service.served,'add-on dishes cannot count as additional lifetime guests');
     assert.deepEqual(logs.errors(), []);
     fs.writeFileSync(out + '/service-proof.json', JSON.stringify(result, null, 2));
     await page.screenshot({ path: out + '/4-report.png' });

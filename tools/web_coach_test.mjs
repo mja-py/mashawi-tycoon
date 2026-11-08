@@ -35,8 +35,12 @@ try{
    await hit('guide_close');await at('price',true);
    await hit('coach_close');await page.waitForFunction(()=>!window.godotPresentation?.coach);assert.equal((await save()).tutorial.active,false);
    await hit('graphics_hud');await hit('guide_settings');await hit('guide_practice');await at('price',true);
-   await hit('coach_next');await at('supplies');await hit('tab_supplies');await at('supplies',true);
-   await hit('coach_next');await at('stock');const cash=(await save()).money;await hit('stock_today');await at('stock',true);assert((await save()).money<cash,'a real stock purchase was made');
+   await hit('coach_next');await at('supplies');
+   // Exploring the menu must not strand the stock lesson with its dish switched off.
+   await hit('tab_menu');await hit('select_chicken_tikka');await hit('on_sale');
+   await hit('tab_supplies');await at('supplies',true);
+   await hit('coach_next');await at('stock');await hit('coach_next');
+   const cash=(await save()).money;await hit('stock_today');await at('stock',true);assert((await save()).money<cash,'a real stock purchase was made');assert.equal((await save()).menu.chicken_tikka.enabled,false,'the guide accepts the player choosing another food dish');
    await hit('coach_next');await at('open');await hit('open_shop');await waitPhase(page,'day');await at('open',true);
    await hit('coach_next');await at('order',true);await page.screenshot({path:`${out}/${lang}-3-order.png`});
    await hit('coach_next');await at('sale',true);let v=await view();assert(v.service.served>0&&v.service.purchases.every(p=>p.visible&&p.ordered),'mentor waits for real visible purchases');
