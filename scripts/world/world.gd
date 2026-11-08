@@ -61,6 +61,8 @@ var location_id := ""
 var _level: Node3D
 var _lamps: Array[OmniLight3D] = []
 var _rng := RandomNumberGenerator.new()
+var guest_rng := RandomNumberGenerator.new()
+var managed_customers := false
 ## static small parts of the level, flushed into _level as MultiMeshes
 var _batch := MeshBatch.new()
 var _sky_day := Color(0.55, 0.78, 0.98)
@@ -731,7 +733,7 @@ func spawn_walker(direction: int, potential_customer: bool = true, with_visuals:
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z
 	if Paving.DESIGNS.has(location_id):
 		z = ARRIVAL_Z if potential_customer else PROMENADE_Z + 0.45
-	var start := Vector3(-WALK_EDGE * direction, 0, z + randf_range(-0.1, 0.1))
+	var start := Vector3(-WALK_EDGE * direction, 0, z + (guest_rng.randf_range(-0.1, 0.1) if potential_customer else 0.0))
 	return spawn_guest(direction, start, potential_customer, with_visuals)
 
 func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
@@ -760,6 +762,13 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 			_next_passer += 1
 		_rigged_guests += 1
 	c.setup(model_id, direction, start, WALK_EDGE * direction, -1.25 * direction)
+	if potential_customer:
+		c.speed = Customer.WALK_SPEED * guest_rng.randf_range(0.85, 1.2)
+	else:
+		c.speed = Customer.WALK_SPEED
+	if c.model:
+		ModelLib.play_loop(c.model, "walk", c.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED)
+	c.set_process(not managed_customers)
 	c.decided = not potential_customer
 	walkers += 1
 	c.gone.connect(func(_c):

@@ -7,8 +7,13 @@ const browser=await launchChrome();
 try {
  const context=await browser.newContext({viewport:{width:1600,height:900},deviceScaleFactor:1});
  const page=await context.newPage(),logs=watchConsole(page);await armReady(page);
- await page.goto(url+'?dev='+encodeURIComponent('--cast-review --lang=en --scale3d=1'));
- await page.waitForSelector('#play',{state:'visible',timeout:180000});await page.click('#play');await waitReady(page,180000);
- await page.waitForTimeout(1000);await page.screenshot({path:out+'/approved-character-family.png'});
+ const poses=process.argv[4]==='--poses';
+ const cases=poses ? [{name:'family',flags:''}, ...[1,3].flatMap(actor=>['idle','order','collect','line-full','price','angry','sit'].map(clip=>({name:`${actor===1?'woman':'man'}-${clip}`,flags:`--cast-detail=${actor} --cast-clip=${clip} --cast-time=0.8 --cast-bg=264d3e`})))] : [{name:'approved-character-family',flags:process.argv[4]||''}];
+ for(const item of cases){
+  await page.goto(url+'?dev='+encodeURIComponent('--cast-review --lang=en --scale3d=1 '+item.flags));
+  await page.waitForSelector('#play',{state:'visible',timeout:180000});await page.click('#play');await waitReady(page,180000);
+  await page.waitForTimeout(500);await page.screenshot({path:out+'/'+item.name+'.png'});
+  console.log('Reviewed '+item.name);
+ }
  assert.deepEqual(logs.errors(),[]);await context.close();console.log('Approved character family (web renderer): PASS');
 } finally {await browser.close()}

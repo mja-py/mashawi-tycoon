@@ -2,31 +2,28 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmo5ovb25jf7g"
-path="res://.godot/imported/village-evening_Material_0_baseColor.jpg-7b336f033e849c129c208de6146f324d.ctex"
+uid="uid://dml838x115pib"
+path="res://.godot/imported/beach-walker_Material_0_baseColor.png-f245e01b55b90c5b1f6013bcd5050374.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "cc11e577402ee467e20a3ce3bb8b3235"
 }
 
 [deps]
 
-source_file="res://assets/models/customers/village-evening_Material_0_baseColor.jpg"
-dest_files=["res://.godot/imported/village-evening_Material_0_baseColor.jpg-7b336f033e849c129c208de6146f324d.ctex"]
+source_file="res://assets/models/customers/beach-walker_Material_0_baseColor.png"
+dest_files=["res://.godot/imported/beach-walker_Material_0_baseColor.png-f245e01b55b90c5b1f6013bcd5050374.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=0
 compress/high_quality=false
-compress/lossy_quality=0.83
+compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

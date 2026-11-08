@@ -36,7 +36,7 @@ var seat: Dictionary = {}
 var _path: Array[Vector3] = []
 var _seat_trail: Array[Vector3] = []
 var _bubble_tween: Tween
-## Skip accelerates only customer movement; meshes and UI animate at normal speed.
+## Actor-local multipliers stay at one; DaySim owns the shared playback clock.
 var simulation_speed := 1.0
 var movement_speed := 1.0
 var eating_left := 0.0
@@ -237,7 +237,7 @@ func _process(delta: float) -> void:
 			_after_beat = Callable()
 			next.call()
 		return
-	# Skip moves feet faster while preserving the time needed to read an interaction.
+	# DaySim advances feet and service beats on the same fixed clock.
 	delta *= movement_speed
 	match state:
 		State.WALK:

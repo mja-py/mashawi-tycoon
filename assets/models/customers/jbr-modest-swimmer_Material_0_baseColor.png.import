@@ -2,31 +2,28 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cvqskayxwpsk3"
-path="res://.godot/imported/beach-walker_Material_0_baseColor.jpg-36c1ea8b6fc2c4da396912a50028b6f7.ctex"
+uid="uid://b0mwagnlsjjyf"
+path="res://.godot/imported/jbr-modest-swimmer_Material_0_baseColor.png-32f57ceecca0f6350a62ea4b8ea16643.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "557442e34b40e3ba76b64dc778bca934"
 }
 
 [deps]
 
-source_file="res://assets/models/customers/beach-walker_Material_0_baseColor.jpg"
-dest_files=["res://.godot/imported/beach-walker_Material_0_baseColor.jpg-36c1ea8b6fc2c4da396912a50028b6f7.ctex"]
+source_file="res://assets/models/customers/jbr-modest-swimmer_Material_0_baseColor.png"
+dest_files=["res://.godot/imported/jbr-modest-swimmer_Material_0_baseColor.png-32f57ceecca0f6350a62ea4b8ea16643.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=0
 compress/high_quality=false
-compress/lossy_quality=0.84
+compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

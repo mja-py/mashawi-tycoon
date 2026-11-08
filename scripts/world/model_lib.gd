@@ -39,7 +39,11 @@ static func spawn(name: String, parent: Node, pos: Vector3 = Vector3.ZERO, rot_y
 	return n
 
 static func animation_player(root: Node) -> AnimationPlayer:
-	return root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if root.has_meta("_animation_player"):
+		return root.get_meta("_animation_player") as AnimationPlayer
+	var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	root.set_meta("_animation_player", player)
+	return player
 
 static func spawn_guest(id: String, parent: Node, pos := Vector3.ZERO, height := 0.66) -> Node3D:
 	if GUEST_VARIANTS.has(id):

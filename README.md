@@ -17,8 +17,11 @@ Reopen **How to play** from the title screen or Settings; gameplay pauses while 
 The approved plum Creek abaya character anchors the cast's style. The guide's charcoal
 abaya and the teal souq outfit share her sculpt, face and rig; clothing palettes add no
 duplicate model downloads. The male vendor uses the mature Creek kandura character.
-Active character files are approximately 0.50–0.70 MB each. The guide uses a bounded,
+Active character files are approximately 0.62–0.85 MB each, with lossless atlas imports
+to prevent dark or white facial seams. The guide uses a bounded,
 supersampled portrait and real-time animation independent of trading speed.
+Normal play, 2×, 4× and Skip share the same business simulation; readable service
+beats slow the whole clock together, so faster play does not penalize sales.
 
 Buy supplies, tune your recipe and prices, pick a spot in Dubai, invest in your stand
 and marketing, then open and watch the day play out on a low-poly Gulf street with

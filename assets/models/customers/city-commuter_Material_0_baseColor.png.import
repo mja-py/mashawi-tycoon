@@ -2,19 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://qns0vwquppmo"
-path="res://.godot/imported/filipina-server_Material_0_baseColor.jpg-35b336a5d11ad1afafe1aec03d5135ee.ctex"
+uid="uid://ctq6t535yc26a"
+path="res://.godot/imported/city-commuter_Material_0_baseColor.png-4745785bf615ff766c209492da845e3b.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "4d2e589d3816ab5d2845564708a44f9d"
 }
 
 [deps]
 
-source_file="res://assets/models/crew/filipina-server_Material_0_baseColor.jpg"
-dest_files=["res://.godot/imported/filipina-server_Material_0_baseColor.jpg-35b336a5d11ad1afafe1aec03d5135ee.ctex"]
+source_file="res://assets/models/customers/city-commuter_Material_0_baseColor.png"
+dest_files=["res://.godot/imported/city-commuter_Material_0_baseColor.png-4745785bf615ff766c209492da845e3b.ctex"]
 
 [params]
 
@@ -26,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

@@ -182,7 +182,7 @@ func _test_later_item_handoff(game) -> void:
 	sim.finish_quickly()
 	check(rendered_guest.simulation_speed == 1.0, "Skip keeps the visible cast moving at its normal pace")
 	var player := ModelLib.animation_player(rendered_guest.model)
-	var walk_rate := rendered_guest.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED * 2.0
+	var walk_rate := rendered_guest.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED
 	check(is_equal_approx(player.speed_scale, walk_rate), "Skip keeps existing footsteps in sync with movement")
 	rendered_guest.slot = 100
 	rendered_guest.position.z = World.PROMENADE_Z
@@ -231,8 +231,8 @@ func _test_skip_pickup(game) -> void:
 	check(not sim._pickup_ready(buyer), "an active handoff holds the pickup counter")
 	sim._close()
 	check(reports.is_empty(), "the closing curtain waits for the active handoff")
-	buyer._process(DaySim.HANDOFF_SECONDS)
-	sim._process(DaySim.HANDOFF_SECONDS)
+	for tick in range(45):
+		sim._process(DaySim.STEP)
 	check(reports.size() == 1 and sim.stats["served"] == 1, "Skip settles the actual purchase exactly once")
 	sim.queue_free()
 	world.queue_free()
@@ -282,11 +282,8 @@ func _test_restaurant_service(game) -> void:
 	var dirty_blocked := true
 	for i in range(1000):
 		for worker in world.plot.dining_staff:
-			worker._process(0.05)
 			if worker.state == DiningStaff.State.CLEAN:
 				saw_cleaning = true
-		if diner.state != Customer.State.DONE:
-			diner._process(0.05)
 		sim._process(0.05)
 		if diner.purchase_shown:
 			saw_delivery = true

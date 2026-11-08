@@ -23,6 +23,11 @@ var finishing := false
 var stats: Dictionary = {}
 var tp: Throughput
 var _rng := RandomNumberGenerator.new()
+const STEP := 1.0 / 60.0
+var _accumulator := 0.0
+var playback_speed := 1.0
+var _life_rng := RandomNumberGenerator.new()
+var _seeded_movement := false
 var _car_timer := 0.0
 var _ambient_timer := 0.0
 var _warned := {}
@@ -45,6 +50,10 @@ func start(context: Dictionary, w: World) -> void:
 	_reserved_ingredients.clear()
 	purchase_log.clear()
 	world.set_customer_speed(1.0)
+	world.managed_customers = true
+	_accumulator = 0.0
+	_seeded_movement = false
+	playback_speed = 1.0
 	ctx = context
 	if world.plot:
 		ctx["seats"] = mini(int(ctx["seats"]), world.plot.seats.size())
@@ -78,6 +87,8 @@ func start(context: Dictionary, w: World) -> void:
 	tp.table_clean = _table_clean
 	tp.meal_finished = _meal_finished
 	if world.plot:
+		for worker in world.plot.dining_staff:
+			worker.set_process(false)
 		world.plot.service_open = true
 		world.plot.service_stats = {"deliveries": 0, "cleaned": 0}
 	running = true
@@ -87,20 +98,62 @@ func start(context: Dictionary, w: World) -> void:
 	clock_changed.emit(hour)
 	stats_changed.emit(stats)
 
+## All business actors consume identical fixed simulation ticks at every speed.
+func set_playback_speed(value: float) -> void:
+	playback_speed = value
+	Engine.time_scale = effective_speed()
+
+func effective_speed() -> float:
+	if _handoff_left > 0.0:
+		return minf(playback_speed, 2.0)
+	if is_instance_valid(world) and world._level:
+		for guest in world._level.get_children():
+			if guest is Customer and guest.beat_left > 0.0:
+				return minf(playback_speed, 2.0)
+		if world.plot:
+			for worker in world.plot.dining_staff:
+				if worker.state in [DiningStaff.State.COLLECT, DiningStaff.State.DELIVER, DiningStaff.State.CLEAN]:
+					return minf(playback_speed, 2.0)
+	return playback_speed
+
 func _process(delta: float) -> void:
 	if not running:
 		return
+	if not _seeded_movement:
+		world.guest_rng.seed = _rng.seed ^ 73691
+		_life_rng.seed = _rng.seed ^ 97231
+		_seeded_movement = true
+	_accumulator += delta
+	var ticks := 0
+	var budget_speed := maxf(Engine.time_scale, 0.01)
+	while running and _accumulator + 0.0000001 >= STEP and ticks < 64:
+		_accumulator -= STEP
+		for worker in world.plot.dining_staff:
+			worker._process(STEP)
+		for guest in world._level.get_children():
+			if guest is Customer and guest.state != Customer.State.DONE:
+				guest._process(STEP)
+		_tick(STEP)
+		ticks += 1
+		if running:
+			var next_speed := effective_speed()
+			if next_speed < budget_speed:
+				# A newly started gesture gets its readable pace immediately, even
+				# when this frame arrived with a large Skip time budget.
+				_accumulator *= next_speed / budget_speed
+				budget_speed = next_speed
+	if running:
+		world.set_time(hour, ctx["weather"])
+		clock_changed.emit(hour)
+		Engine.time_scale = effective_speed()
+
+func _tick(delta: float) -> void:
 	_handoff_left = move_toward(_handoff_left, 0.0, delta)
-	if finishing:
-		delta *= FINISH_SPEED
 	var game_min := delta * 60.0 / Data.REAL_SECONDS_PER_GAME_HOUR
 	if not _closing:
 		hour = minf(end_hour, hour + game_min / 60.0)
-	if not finishing:
-		world.set_time(hour, ctx["weather"])
-		clock_changed.emit(hour)
 	# passers-by
-	if not _closing and not finishing and _showcase_step < SHOWCASE_BEATS.size():
+	if not _closing and _showcase_step < SHOWCASE_BEATS.size():
 		_showcase_time += delta
 		while _showcase_step < SHOWCASE_BEATS.size() and _showcase_time >= SHOWCASE_BEATS[_showcase_step]:
 			_showcase_guest(_showcase_step)
@@ -113,21 +166,21 @@ func _process(delta: float) -> void:
 		for i in range(arrivals):
 			_spawn_passer()
 	# background life
-	if not finishing and not _closing:
+	if not _closing:
 		_car_timer -= delta
 		if _car_timer <= 0.0:
 			world.spawn_car()
-			_car_timer = _rng.randf_range(2.5, 7.0) / maxf(0.4, float(loc["traffic"]))
+			_car_timer = _life_rng.randf_range(2.5, 7.0) / maxf(0.4, float(loc["traffic"]))
 		_ambient_timer -= delta
 		if _ambient_timer <= 0.0:
 			if not DevTools.has("character-demo") and world.walkers < World.MAX_WALKERS:
-				world.spawn_walker(1 if _rng.randf() < 0.5 else -1, false)
-			_ambient_timer = _rng.randf_range(3.0, 9.0) / maxf(0.4, float(loc["traffic"]))
+				world.spawn_walker(1 if _life_rng.randf() < 0.5 else -1, false)
+			_ambient_timer = _life_rng.randf_range(3.0, 9.0) / maxf(0.4, float(loc["traffic"]))
 	# the pipeline
 	var before := tp.queue_payloads()
 	var before_pickup := tp.waiting_payloads()
 	# Queue patience and dining follow the visible pace, including during Skip.
-	var pipeline_min := game_min * 2.0 / FINISH_SPEED if finishing else game_min
+	var pipeline_min := game_min
 	tp.tick(pipeline_min, hour)
 	if before != tp.queue_payloads():
 		_reflow()
@@ -138,7 +191,7 @@ func _process(delta: float) -> void:
 			if is_instance_valid(customer) and not _seat_of.has(customer) and customer.slot != 100 + i:
 				customer.go_to_slot(100 + i, world.pickup_slot(i))
 	_bottleneck_watch(pipeline_min)
-	_stats_tick += delta / FINISH_SPEED if finishing else delta
+	_stats_tick += delta / maxf(Engine.time_scale, 1.0)
 	if _stats_tick > 0.25:
 		_stats_tick = 0.0
 		if finishing:
@@ -163,7 +216,7 @@ func finish_quickly() -> bool:
 	if not running or finishing:
 		return false
 	finishing = true
-	world.set_customer_speed(FINISH_SPEED)
+	set_playback_speed(FINISH_SPEED)
 	if world.cart:
 		world.cart.set_serving(false)
 	return true
@@ -174,7 +227,7 @@ func _stop_chance(best: float, queue_len: int) -> float:
 
 func _spawn_passer() -> void:
 	stats["passers"] = int(stats["passers"]) + 1
-	if DevTools.has("character-demo") and not finishing and world.walkers >= World.MAX_RIGGED_GUESTS:
+	if DevTools.has("character-demo") and world.walkers >= World.MAX_RIGGED_GUESTS:
 		return
 	# Reserve the animation budget for likely visitors. Ambient walkers still pass
 	# by separately, and each visitor makes the same price/queue decision on arrival.
@@ -593,7 +646,14 @@ func _publish_close() -> void:
 	if not running:
 		return
 	running = false
+	Engine.time_scale = 1.0
+	world.managed_customers = false
+	for guest in world._level.get_children():
+		if guest is Customer:
+			guest.set_process(true)
 	if world.plot:
+		for worker in world.plot.dining_staff:
+			worker.set_process(true)
 		world.plot.service_open = false
 		world.plot.set_serving(false)
 	stats["left_wait"] = int(stats["left_wait"]) # already counted as they gave up

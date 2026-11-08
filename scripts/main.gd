@@ -343,7 +343,7 @@ func start_day(skip_weather_roll: bool = false) -> void:
 
 func set_speed(s: float) -> void:
 	speed = s
-	Engine.time_scale = 1.0 if sim.finishing else s
+	sim.set_playback_speed(s)
 
 func skip_day() -> void:
 	if phase != Phase.DAY or not sim.finish_quickly():
@@ -398,6 +398,8 @@ func _cast_review() -> void:
 	world.sun.shadow_enabled = false
 	world.env.environment.background_mode = Environment.BG_COLOR
 	world.env.environment.background_color = Color("d9c3a0")
+	if DevTools.has("cast-bg"):
+		world.env.environment.background_color = Color(DevTools.get_flag("cast-bg"))
 	world.env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	world.env.environment.ambient_light_color = Color("fff0df")
 	world.env.environment.ambient_light_energy = 0.8
@@ -407,10 +409,18 @@ func _cast_review() -> void:
 		ModelLib.spawn_guest("souq-abaya", world, Vector3(0.55, 0, 0), 1.65),
 		ModelLib.spawn_crew(false, world, Vector3(1.65, 0, 0), 0, 1.65)]
 	for actor in actors:
-		ModelLib.play_loop(actor, "idle")
+		var clip := DevTools.get_flag("cast-clip", "idle")
+		ModelLib.play_loop(actor, clip)
 		var animation := ModelLib.animation_player(actor)
-		animation.advance(0.5)
+		animation.advance(float(DevTools.get_flag("cast-time", "0.5")))
 		animation.pause()
+	if DevTools.has("cast-detail"):
+		var selected := clampi(int(DevTools.get_flag("cast-detail")), 0, actors.size() - 1)
+		for i in actors.size():
+			actors[i].visible = i == selected
+		actors[selected].position = Vector3.ZERO
+		world.camera.position = Vector3(0, 1.42, 3)
+		world.camera.size = 0.7
 
 ## Dev: lay out every model of a folder in a labelled grid to compare them.
 func _gallery(folder: String) -> void:

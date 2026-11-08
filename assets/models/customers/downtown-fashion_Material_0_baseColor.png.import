@@ -2,31 +2,28 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ckr1pdhwqpnrq"
-path="res://.godot/imported/jbr-modest-swimmer_Material_0_baseColor.jpg-9f1599c29197149a7d8c9737eefbc57d.ctex"
+uid="uid://dha1v0yo8hm4j"
+path="res://.godot/imported/downtown-fashion_Material_0_baseColor.png-a3016c20012edf2c64a93c441511977b.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "d43eb4b6fe2a5b3d7828a5608b3b194e"
 }
 
 [deps]
 
-source_file="res://assets/models/customers/jbr-modest-swimmer_Material_0_baseColor.jpg"
-dest_files=["res://.godot/imported/jbr-modest-swimmer_Material_0_baseColor.jpg-9f1599c29197149a7d8c9737eefbc57d.ctex"]
+source_file="res://assets/models/customers/downtown-fashion_Material_0_baseColor.png"
+dest_files=["res://.godot/imported/downtown-fashion_Material_0_baseColor.png-a3016c20012edf2c64a93c441511977b.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=0
 compress/high_quality=false
-compress/lossy_quality=0.83
+compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

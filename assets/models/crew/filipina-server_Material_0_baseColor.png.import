@@ -2,31 +2,28 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cjbvc4mswi6ib"
-path="res://.godot/imported/downtown-fashion_Material_0_baseColor.jpg-ee7df3a9b23be77fb633fc7a3c831332.ctex"
+uid="uid://dvt0xumr6khe0"
+path="res://.godot/imported/filipina-server_Material_0_baseColor.png-11e1e11621a68add86d36b9ed49f2ec4.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "4179f06fde9d6f1c2683f56777fc896c"
 }
 
 [deps]
 
-source_file="res://assets/models/customers/downtown-fashion_Material_0_baseColor.jpg"
-dest_files=["res://.godot/imported/downtown-fashion_Material_0_baseColor.jpg-ee7df3a9b23be77fb633fc7a3c831332.ctex"]
+source_file="res://assets/models/crew/filipina-server_Material_0_baseColor.png"
+dest_files=["res://.godot/imported/filipina-server_Material_0_baseColor.png-11e1e11621a68add86d36b9ed49f2ec4.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=0
 compress/high_quality=false
-compress/lossy_quality=0.83
+compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

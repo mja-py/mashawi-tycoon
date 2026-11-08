@@ -2,25 +2,25 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://csxywagwy58m8"
-path="res://.godot/imported/creek-abaya_Material_0_baseColor.jpg-1d8cb5eec46d987f3902bd3e897a520d.ctex"
+uid="uid://baqfokcrc4ite"
+path="res://.godot/imported/creek-kandura_Material_0_baseColor.png-0ecea60f0741877459aeb7eba0ad299f.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "f2ee95251feb7430646e8dde2577082a"
+"md5": "255eaef89f5fde2001f216ebf1e2ba68"
 }
 
 [deps]
 
-source_file="res://assets/models/customers/creek-abaya_Material_0_baseColor.jpg"
-dest_files=["res://.godot/imported/creek-abaya_Material_0_baseColor.jpg-1d8cb5eec46d987f3902bd3e897a520d.ctex"]
+source_file="res://assets/models/customers/creek-kandura_Material_0_baseColor.png"
+dest_files=["res://.godot/imported/creek-kandura_Material_0_baseColor.png-0ecea60f0741877459aeb7eba0ad299f.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=0
 compress/high_quality=false
-compress/lossy_quality=0.84
+compress/lossy_quality=0.7
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
