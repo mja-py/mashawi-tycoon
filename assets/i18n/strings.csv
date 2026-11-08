@@ -475,3 +475,50 @@ ui.graphics_smooth,60 FPS · Smooth,60 إطارًا · حركة سلسة
 ui.graphics_scale,3D resolution,دقة المشهد ثلاثي الأبعاد
 ui.graphics_auto,Auto,تلقائي
 ui.graphics_hint,Lower resolution lightens the 3D scene and keeps the menus sharp.,خفض الدقة يخفف حمل المشهد ثلاثي الأبعاد وتبقى القوائم واضحة.
+ui.credits_button,Credits,الحقوق
+ui.copyright,Copyright (c) 2026 Mohammad Jassem. All rights reserved.,حقوق النشر (c) 2026 محمد جاسم. جميع الحقوق محفوظة.
+ui.credits_models,Original game and commissioned character artwork: Mohammad Jassem.,اللعبة الأصلية ورسوم الشخصيات المكلّفة: محمد جاسم.
+ui.credits_license,Proprietary game. See LICENSE.txt in the GitHub repository for permitted use and third-party exceptions.,لعبة مملوكة. راجع LICENSE.txt في مستودع GitHub للاستخدام المسموح واستثناءات أعمال الأطراف الأخرى.
+guide.title,A little help from the grill,نصائح من عند الشواية
+guide.help,How to play,كيف ألعب
+guide.host,Your grill partner,شريكتك في المشاوي
+guide.try,LET’S TRY THIS,خلّنا نجرّب
+guide.back,Back,السابق
+guide.next,Next,التالي
+guide.show_menu,Show me the menu,افتح لي القائمة
+guide.ready,Let’s prepare!,يلا نجهّز!
+guide.welcome.title,A favourite starts small,البداية بسيطة… والطموح كبير
+guide.welcome.say,"Ahlan! Come beside me. We’ll turn this little grill into a Dubai favourite, one happy customer at a time. Before we open, let’s stock the kitchen, choose fair prices and give people a reason to come back.",يا هلا! تعال عند الشواية. بنخلّي مشاوينا من الأماكن المفضلة في دبي، زبون راضي وراء زبون. قبل ما نفتح، نجهّز المكونات ونختار أسعار مناسبة ونقدّم أكل يرجّعهم لنا.
+guide.welcome.tip,Prepare → open → watch service → learn from the day’s report.,جهّز المحل، افتح، تابع الخدمة، وتعلّم من تقرير اليوم.
+guide.welcome.fact,Pick any chapter above. Close whenever you like; reopen How to play from Settings. Your street pauses while we chat.,اختر أي فصل من الأرقام فوق. تقدر تطلع وترجع من «كيف ألعب» في الإعدادات. اللعب يتوقف مؤقتًا وإحنا نتكلم.
+guide.stock.title,"Fresh food, ready for today",مكونات جاهزة لليوم
+guide.stock.say,"First, open Supplies. Our tikka needs bread, chicken, vegetables, sauce and charcoal. “Stock today” quotes what today’s menu and forecast need, using what’s already in your kitchen.",أول شي افتح المؤن. تكة الدجاج تحتاج خبز ودجاج وخضار وصلصة وفحم. «تموين اليوم» يحسب احتياج قائمتك وتوقع الطقس ويخصم الموجود عندك.
+guide.stock.tip,"Review the quote, then buy. Keep money for rent, wages and tomorrow.",راجع عرض التموين وبعدها اشترِ. خلّ مبلغ للإيجار والرواتب وباچر.
+guide.stock.fact,The quote includes a small buffer and reserves daily costs. Meat and vegetables spoil overnight; a cold box reduces that loss. Hot beach days bring more drink demand.,العرض يشمل احتياط بسيط ويحجز التكاليف اليومية. اللحم والخضار تفسد بالليل؛ التبريد يقلّل الهدر. في حر الشاطئ يزيد الطلب على المشروبات.
+guide.price.title,The right price for this crowd,السعر المناسب لزبائن المكان
+guide.price.say,"Choose a dish in Menu. Compare its ingredient cost with its price, and leave room for rent and wages. Try small price changes and watch complaints in the report. A higher allowed price doesn’t promise more profit.",اختَر صنف من القائمة. قارن تكلفة مكوناته بسعر البيع، وخلّ هامش يغطي الإيجار والرواتب. غيّر السعر شوي شوي وراقب شكاوى السعر في التقرير. أعلى سعر مسموح مو شرط يربّحك أكثر.
+guide.price.tip,Creek families watch value. Metro commuters need value and speed. Downtown and Mall guests expect better quality at premium prices.,عائلات الخور تهتم بالقيمة. زبائن المترو يبون سعر مناسب وسرعة. زبائن داون تاون والمول يتوقعون جودة أعلى مع السعر الأعلى.
+guide.price.fact,,
+guide.price.live,Here at %s: Chicken Tikka costs %s in ingredients and sells for %s.,هني في %s: مكونات تكة الدجاج تكلف %s وسعر بيعها %s.
+guide.price.extra,Al Seef: start with accessible prices. JBR: balance tourist prices with drink demand. Global Village: compete on value and promote when you can serve the crowd.,السيف: ابدأ بأسعار مناسبة. جي بي آر: وازن سعر السياح مع طلب المشروبات. القرية العالمية: نافس بالقيمة وروّج يوم تقدر تخدم الزحمة.
+guide.quality.title,Let the flavour earn the price,خلّ الطعم يستاهل السعر
+guide.quality.say,Tap a dish to adjust its recipe. More meat and vegetables improve quality and raise ingredient costs. Sauce needs balance: two portions taste better than three. Buy a dish enhancement for a lasting quality boost.,اضغط على الصنف وعدّل وصفته. زيادة اللحم والخضار تحسّن الجودة وترفع تكلفة المكونات. الصلصة تحتاج توازن: حصتين أفضل من ثلاث. تطوير الصنف يعطيه تحسين دائم في الجودة.
+guide.quality.tip,Try 2 meat + 2 vegetables + 2 sauce on Chicken Tikka. Compare quality and cost before setting its price.,جرّب تكة الدجاج بلحم 2 وخضار 2 وصلصة 2. قارن الجودة والتكلفة قبل تحديد السعر.
+guide.quality.fact,Recipe controls appear on supported dishes. Enhancements improve quality; a faster grill improves capacity; refrigeration reduces waste.,تعديل الوصفة متاح للأصناف اللي تدعمه. تطوير الصنف يحسّن الجودة، والشواية الأسرع تزيد الإنتاج، والتبريد يقلّل الهدر.
+guide.build.title,Upgrade the part holding you back,طوّر الشي اللي يعطّل شغلك
+guide.build.say,"A full queue? Upgrade the counter. Orders waiting to cook? Upgrade the grill. A bigger stand fits new equipment. Buy a doner, fryer or sweets counter, then unlock its dishes in Menu and stock their ingredients.",الطابور ممتلئ؟ طوّر الكاونتر. الطلبات متأخرة بالمطبخ؟ طوّر الشواية. المحل الأكبر يسع معدات جديدة. اشترِ جهاز الشاورما أو القلاية أو ركن الحلويات، وبعدين افتح أصنافهم في القائمة واشترِ مكوناتها.
+guide.build.tip,Read the day report’s bottleneck before spending. Each new stage reveals the equipment it can fit.,شوف سبب التعطّل في تقرير اليوم قبل ما تصرف. كل مرحلة جديدة تفتح المعدات اللي تسعها.
+guide.build.fact,Counter: faster ordering and queue room. Grill and karak: faster preparation. Cold box: less overnight waste. Seating and majlis: room for diners; workers deliver and clear tables.,الكاونتر: طلبات أسرع ومساحة للطابور. الشواية والكرك: تحضير أسرع. التبريد: هدر أقل بالليل. الجلسات والمجلس: أماكن للزبائن، والموظفة توصل وتنظّف.
+guide.build.extra,"Signage attracts passers-by. Lights help evening traffic. Music helps satisfaction and attraction. Shade softens heat and sandstorm losses. Fixed plots stay in their location; your cart, stall and truck travel with you.",اللوحة تجذب المارة. الإضاءة تساعد زبائن المساء. الموسيقى تزيد الرضا والجذب. المظلة تخفف أثر الحر والعواصف. المحل الثابت يبقى بموقعه؛ العربة والكشك المتنقل والشاحنة ينتقلون معك.
+guide.promote.title,Invite a crowd you can serve,اعزم زحمة تقدر تخدمها
+guide.promote.say,"Choose a promotion after stocking enough food and making space in the kitchen. Fliers are a short trial; longer campaigns last several days. Competition is strong at the Mall and Global Village, where promotions have a bigger effect.",اختَر حملة بعد ما تجهّز المؤن وتتأكد إن مطبخك يتحمل. المنشورات تجربة قصيرة، والحملات الأطول تعرّف الناس عليك عدة أيام. المنافسة قوية بالمول والقرية العالمية، والترويج تأثيره أكبر هناك.
+guide.promote.tip,"Check the campaign cost, duration and forecast. Advertising a sold-out or overloaded kitchen wastes an opportunity.",راجع سعر الحملة ومدتها وتوقع الطقس. الإعلان مع نفاد المؤن أو تأخر المطبخ يضيّع الفرصة.
+guide.promote.fact,"Compare results in the report: more traffic helps when you can turn it into happy, profitable orders.",قارن النتيجة في التقرير: زيادة الزبائن تفيد يوم تتحول لطلبات مربحة وزبائن راضين.
+guide.stars.title,"Earn a name, unlock the next step",اكسب سمعة وافتح خطوتك الياية
+guide.stars.say,"The five stars show your reputation. Quality, fair value and short waits build it; unhappy customers can bring it down. Locations need enough stars and the right stand stage. Bigger fixed plots also need local reputation and money.",الخمس نجوم تبين سمعتك. الجودة والسعر المناسب والخدمة السريعة يرفعونها، والزبون المتضايق ممكن ينزلها. المواقع تحتاج نجوم كفاية ومرحلة محل مناسبة. المحلات الثابتة الأكبر تحتاج سمعة محلية ومبلغ البناء بعد.
+guide.stars.tip,Visit Goals and claim each completed reward. Read the lock message for the exact requirement before saving for an unlock.,ادخل الأهداف واستلم مكافأة كل هدف مكتمل. اقرأ سبب القفل عشان تعرف المطلوب قبل ما توفّر له.
+guide.stars.fact,Metro: 1 star + stall. JBR: 1.5 + stall. Downtown: 2.25 + truck. Mall: 2.5 + truck. Global Village: 3 + truck. Stars measure reputation and cannot be spent.,المترو: نجمة + كشك متنقل. جي بي آر: 1.5 + كشك متنقل. داون تاون: 2.25 + شاحنة. المول: 2.5 + شاحنة. القرية العالمية: 3 + شاحنة. النجوم تقيس السمعة وما تنصرف كفلوس.
+guide.day.title,Let’s welcome our first customer,يلا نستقبل أول زبون
+guide.day.say,"Stock your ingredients and keep at least one food dish on sale, then tap Open shop. Watch who orders takeaway and who stays at a table. Skip speeds up the day; taken orders, meals and table cleaning finish before the report.",جهّز المكونات وخلّ صنف أكل واحد على الأقل معروض، وبعدين اضغط «افتح المحل». تابع منو يطلب سفري ومنو يجلس. التخطي يسرّع اليوم؛ الطلبات المقبولة والأكل وتنظيف الطاولات يخلصون قبل التقرير.
+guide.day.tip,"After closing, check profit, price complaints, stockouts and waits. Change one thing, then compare the next day.",بعد الإغلاق راجع الربح وشكاوى السعر ونفاد المؤن والانتظار. عدّل شي واحد وقارن اليوم الياي.
+guide.day.fact,"Reopen this guide from Settings. For cooler iPhone play, choose 30 fps and reduce 3D resolution; 60 fps is also available.",تقدر ترجع للدليل من الإعدادات. لتخفيف حرارة الآيفون اختَر 30 إطار وقلّل دقة المشهد؛ خيار 60 إطار متوفر بعد.

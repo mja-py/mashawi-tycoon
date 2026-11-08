@@ -9,7 +9,7 @@ extends Node3D
 const PLOT_POS := Vector3(0.0, 0.0, -1.62)
 ## Half-width of the hole the street rows leave for the plot, per stage.
 ## The truck (stage 2) needs a short gap too, or its body sits inside the houses.
-const GAP := [1.05, 1.65, 1.8, 2.4, 3.0, 3.6]
+const GAP := [1.05, 1.65, 1.8, 3.65, 3.95, 4.95]
 const SEAT_CAP := [0, 0, 0, 10, 12, 16]
 const FIXED := 3
 const MAX_SMOKE := 3
@@ -32,6 +32,8 @@ const CREW_Y := 0.16
 const CHIMNEY_Z := -0.5
 ## terrace
 const CHAIR_X := 0.218
+const TABLE_PITCH := 1.05
+const FIRST_TABLE_X := -1.03
 const ROWS := [0.28, -0.63]
 const AISLE_Z := -0.17
 const FRONT_AISLE_Z := 0.74
@@ -705,10 +707,10 @@ func _layout_terrace() -> void:
 		return
 	_music_spot = Vector3(-_gap + 0.24, 0, -0.99)
 	for r in range(ROWS.size()):
-		var x := -0.79
-		while x - 0.28 >= -_gap + 0.03:
+		var x := FIRST_TABLE_X
+		while x - 0.34 >= -_gap + 0.03:
 			_slots.append(Vector3(x, 0, ROWS[r]))
-			x -= 0.64
+			x -= TABLE_PITCH
 
 func _build_terrace(n: Node3D, b: MeshBatch) -> void:
 	var left := -_gap + 0.03

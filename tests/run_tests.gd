@@ -28,8 +28,53 @@ func _ready() -> void:
 	_test_later_item_handoff(game)
 	_test_skip_pickup(game)
 	_test_restaurant_service(game)
+	_test_terrace_clearance(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
+
+func _test_terrace_clearance(game) -> void:
+	# All districts use the same furnishing and routing contract at every fixed stage.
+	var world := World.new()
+	add_child(world)
+	for location in Data.LOCATIONS:
+		for tier in range(Plot.FIXED, Data.PLOT_STAGES.size()):
+			for lounge in [0, 10]:
+				if tier == Plot.FIXED and lounge > 0:
+					continue
+				game.new_game()
+				game.location = location
+				game.rig["stage"] = "truck"
+				game.plot()["stage"] = Data.PLOT_STAGES[tier]["id"]
+				game.plot()["stations"] = {"seating": 25, "majlis": lounge}
+				if world.location_id == location:
+					world.reload()
+				else:
+					world.set_location(location)
+				var site: Plot = world.plot
+				var tag := "%s/%s/majlis:%d" % [location, game.plot()["stage"], lounge]
+				check(site.seats.size() == Plot.SEAT_CAP[tier], tag + " retains full dining capacity")
+				var clear_routes := true
+				var clear_furniture := true
+				for i in site.tables.size():
+					var center: Vector3 = site.tables[i]["pos"]
+					for j in range(i):
+						var other: Vector3 = site.tables[j]["pos"]
+						if is_equal_approx(center.z, other.z) and absf(center.x - other.x) < 1.0:
+							clear_furniture = false
+					var route := site.staff_table_route(i)
+					for k in range(route.size() - 1):
+						var start := Vector2(route[k].x, route[k].z)
+						var end := Vector2(route[k + 1].x, route[k + 1].z)
+						for chair in site.seats:
+							var p: Vector3 = chair["pos"]
+							var point := Vector2(p.x, p.z)
+							# 10 cm furniture radius + 12 cm worker clearance.
+							if point.distance_to(Geometry2D.get_closest_point_to_segment(point, start, end)) < 0.22:
+								clear_routes = false
+				check(clear_furniture, tag + " leaves walking space between table sets")
+				check(clear_routes, tag + " worker routes clear every chair")
+	world.free()
+	game.new_game()
 
 func _test_mobile_stages_and_lighting(game) -> void:
 	game.new_game()

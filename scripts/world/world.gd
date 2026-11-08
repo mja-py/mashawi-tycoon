@@ -38,7 +38,7 @@ const ROAD_ROT := 0.0
 
 var camera: Camera3D
 ## Orthographic camera size per plot stage (wider plots need more room).
-const STAGE_CAM := [3.6, 3.9, 4.4, 5.0, 5.3, 5.6]
+const STAGE_CAM := [3.6, 3.9, 4.4, 5.4, 5.7, 6.2]
 const PLAY_CAMERA_ROTATION := Vector3(-33, 14, 0)
 const SOUQ_CAMERA_ROTATION := Vector3(-19, -9, 0)
 const SOUQ_CART_CAM := 3.10
@@ -254,6 +254,8 @@ func set_location(id: String) -> void:
 			focus = Vector3(0.03, 0.48, -1.20)
 	if tier == 2:
 		_play_rotation.x = maxf(_play_rotation.x, -21.0)
+	if tier >= Plot.FIXED:
+		focus.x -= 0.65
 	camera.rotation_degrees = _play_rotation
 	_cam_base = focus + camera.transform.basis.z * 22.0
 	camera.position = _cam_base
@@ -418,7 +420,9 @@ func _build_creek() -> void:
 		tries += 1
 		var x := _rng.randf_range(-8.5, 8.5)
 		var z := _rng.randf_range(-4.8, -2.1)
-		if absf(x) < maxf(1.6, _gap + 0.4) and z > -2.9:
+		# Leave room for crowns as well as trunks behind the taller fixed roofs.
+		var tree_limit := -3.85 if _gap >= Plot.footprint(Plot.FIXED) else -2.9
+		if absf(x) < maxf(1.6, _gap + 0.75) and z > tree_limit:
 			continue
 		var ok := true
 		for p in placed:
@@ -442,8 +446,9 @@ func _build_creek() -> void:
 		CoastalProps.place(_batch, "limestone", _plant_at(p, _rng.randf() * TAU, _rng.randf_range(0.68, 0.95)))
 	for bx in [-3.4, 3.6]:
 		_bench(Vector3(bx, 0.008, -1.3), 0.0, 1.27, true)
-		_scenery("furniture/table-set", Vector3(bx + 0.2, 0, -3.05), 25.0, 0.88)
-		_batch.add_cyl(0.40, 0.018, Color("b6a285"), _at(Vector3(bx + 0.2, -0.007, -3.05)), 0.0, 24)
+		if _clear_of_gap(bx + 0.2, 0.55):
+			_scenery("furniture/table-set", Vector3(bx + 0.2, 0, -3.05), 25.0, 0.88)
+			_batch.add_cyl(0.40, 0.018, Color("b6a285"), _at(Vector3(bx + 0.2, -0.007, -3.05)), 0.0, 24)
 	for x in [-2.4, 2.5]:
 		if absf(x) >= _gap + 1.0:
 			CoastalProps.place(_batch, "shrub", _plant_at(Vector3(x, 0, -1.30), x, 0.95))
@@ -563,7 +568,8 @@ func _build_mall() -> void:
 		x += w + 0.1
 		k += 1
 	for cx in [-6.0, -2.0, 2.0, 6.0]:
-		_batch.add_cyl(0.08, 1.9, Color(0.88, 0.88, 0.86), _at(Vector3(cx, 0.95, -0.62)))
+		if _clear_of_gap(cx, 0.12, 0.15):
+			_batch.add_cyl(0.08, 1.9, Color(0.88, 0.88, 0.86), _at(Vector3(cx, 0.95, -0.62)))
 		_scenery("nature/pot_large", Vector3(cx + 0.5, 0, 1.4), 0, 0.8)
 		CoastalProps.palm(_batch, _plant_at(Vector3(cx + 0.5, 0.12, 1.4), cx, 0.47))
 	for bx in [-4.2, 4.4]:
@@ -573,7 +579,7 @@ func _build_gv() -> void:
 	# Global Village: souk stalls, lanterns and Gulf facades
 	_gulf_row(-3.4, 1.3, 0.4)
 	_gulf_row(FRONT_Z, 1.0, 0.3, 0.6)
-	_village_gateway(Vector3(-maxf(1.62, _gap - 0.35), 0, -2.64))
+	_village_gateway(Vector3(-maxf(1.62, _gap + 0.75), 0, -2.64))
 	for x in [-5.2, -3.0, 3.0, 5.2]:
 		if not _clear_of_gap(x, 0.5, 0.05):
 			continue

@@ -4,6 +4,16 @@ A 2.5D Dubai charcoal-grill (mashawi) stand business sim in the spirit of the cl
 *Lemonade Tycoon*, built with **Godot 4.7** for Android (and desktop). Arabic (RTL) by
 default with an English toggle on the title screen; prices in AED.
 
+Copyright (c) 2026 Mohammad Jassem. All rights reserved. This is a proprietary game;
+see [LICENSE.txt](LICENSE.txt) for permitted use and third-party asset exceptions.
+The in-game **Credits** button contains the attribution notice.
+
+New games open a replayable eight-chapter guide hosted by the animated abaya vendor.
+It explains supplies, location pricing, recipes and quality, equipment, promotions,
+reputation and unlocks, and the daily service loop in Arabic and English. During
+preparation, its **Show me the menu** button opens the relevant real controls.
+Reopen **How to play** from the title screen or Settings; gameplay pauses while it is open.
+
 Buy supplies, tune your recipe and prices, pick a spot in Dubai, invest in your stand
 and marketing, then open and watch the day play out on a low-poly Gulf street with
 Emirati locals in kandura and abaya alongside residents and tourists.
@@ -12,7 +22,7 @@ Emirati locals in kandura and abaya alongside residents and tourists.
 
 | Place             | Rent    | Crowd                                      |
 |-------------------|---------|--------------------------------------------|
-| Al Fahidi Corner  | free    | quiet lane under the wind towers           |
+| Souk Al Seef      | free    | heritage Creek promenade and local shoppers |
 | Creek Park        | AED 125 | families, weather sensitive                |
 | Metro Station     | AED 200 | commuters in a hurry, won't wait           |
 | JBR Beach         | AED 275 | tourists, drinks sell by the crate in heat |
@@ -24,10 +34,12 @@ Menu (Dubai cafeteria style, priced per skewer): Chicken Tikka, Mutton Tikka, Ke
 Each dish can be enhanced up to three times. Grilled dishes use the meat / salad / sauce recipe.
 Weather: sunny, heatwave, cloudy, sandstorm, winter breeze.
 
-Progression: the Street Cart reaches Al Fahidi and Creek Park; the **Food Truck** (AED 2,500) opens the
-Metro, JBR and Downtown; the **Big Grill Truck** (AED 7,000) opens the Mall Food Court and Global Village,
-where rival stalls take over half your customers unless you promote (promotions count x1.8 to x2.0 there).
-The **Sweets Counter** upgrade (needs the Food Truck) adds saffron milk cake, sago halwa and Omani halwa.
+Progression: cart → stall (AED 2,000) → truck (AED 6,000), followed by location-owned
+kiosks, restaurants and flagships. The Metro and JBR require a stall plus reputation;
+Downtown, the Mall and Global Village require a truck plus reputation. Promotions
+have a stronger effect against Mall and Global Village competition (x1.8 and x2.0).
+The truck can fit a sweets counter; buy it, unlock the dishes, then stock ingredients
+for saffron milk cake, sago halwa and Omani halwa.
 
 Strings live in `assets/i18n/strings.csv` (keys, en, ar); all data names are keys.
 

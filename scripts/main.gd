@@ -283,7 +283,7 @@ func show_title() -> void:
 func new_game() -> void:
 	_enter_prep(Game.new_game, func():
 		if hud:
-			hud.show_dialog(tr("ui.w_title"), [tr("ui.w1"), tr("ui.w2"), tr("ui.w3"), tr("ui.w4")], tr("ui.w_go")))
+			hud.show_guide(true))
 
 func continue_game() -> void:
 	_enter_prep(Game.load_game)

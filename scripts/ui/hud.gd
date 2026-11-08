@@ -43,6 +43,9 @@ var stock_outlook_button: Button
 const TouchScroll := preload("res://scripts/ui/touch_scroll.gd")
 const CardRoll := preload("res://scripts/ui/card_roll.gd")
 const MenuArt := preload("res://scripts/ui/menu_art.gd")
+const GameGuide := preload("res://scripts/ui/game_guide.gd")
+var guide_step := 0
+var _guide: Control
 
 var panel_scroll: ScrollContainer
 var panel_roll: CardRoll
@@ -244,6 +247,8 @@ func _publish_menu_targets() -> void:
 		view["service"] = main.sim.service_view()
 		view["graphics"] = {"cap": Engine.max_fps, "choice": main.render_scale, "scale": get_viewport().scaling_3d_scale,
 			"fps": Engine.get_frames_per_second(), "open": _graphics_open, "clock": main.sim.hour}
+	if is_instance_valid(_guide) and _guide.is_visible_in_tree():
+		view["guide"] = _guide.test_view()
 	JavaScriptBridge.eval("window.godotPresentation = " + JSON.stringify(view))
 
 ## Keep bars and panels out of notches / rounded corners on phones.
@@ -614,6 +619,7 @@ func _build_title() -> void:
 	v.add_child(_divider())
 	v.add_child(_label(tr("ui.subtitle"), "Muted", HORIZONTAL_ALIGNMENT_CENTER))
 	var new_btn := _button(tr("ui.new_game"), "Primary", Vector2(0, 64))
+	_menu_target(new_btn, "new_game")
 	new_btn.pressed.connect(func():
 		Sfx.play("confirm")
 		var s: Dictionary = Game.save_summary()
@@ -643,7 +649,14 @@ func _build_title() -> void:
 	var graphics := _graphics_button("graphics_title", tr("ui.graphics"))
 	graphics.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tools_row.add_child(graphics)
-	v.add_child(_label(tr("ui.credits"), "Small", HORIZONTAL_ALIGNMENT_CENTER))
+	var help := _menu_target(_button(tr("guide.help"), "Ghost", Vector2(0, 54)), "guide_title")
+	help.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	help.pressed.connect(func(): show_guide(true))
+	tools_row.add_child(help)
+	var credits := _menu_target(_button(tr("ui.credits_button"), "Ghost", Vector2(0, 54)), "credits_title")
+	credits.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	credits.pressed.connect(_show_credits)
+	tools_row.add_child(credits)
 
 # ================================================================= phases
 
@@ -962,6 +975,9 @@ func _show_graphics() -> void:
 	_graphics_choices("ui.graphics_scale", "scale", main.RENDER_SCALES, names, main.render_scale,
 		func(value: int): main.set_graphics(main.frame_cap, value))
 	report_body.add_child(_label(tr("ui.graphics_hint"), "Muted"))
+	var help := _menu_target(_button(tr("guide.help"), "Ghost", Vector2(0, 52)), "guide_settings")
+	help.pressed.connect(show_guide)
+	report_body.add_child(help)
 	report_panel.custom_minimum_size = Vector2(minf(680.0, root.size.x - 16.0), 0.0)
 	_show_report_overlay()
 
@@ -987,8 +1003,30 @@ func close_graphics() -> bool:
 	if not _graphics_open:
 		return false
 	report_dim.hide()
+	# Release the portrait's 3D viewport as soon as the conversation closes.
+	if is_instance_valid(_guide):
+		_guide.get_parent().remove_child(_guide)
+		_guide.queue_free()
+		_guide = null
 	Sfx.play("close")
 	return true
+
+func show_guide(restart: bool = false) -> void:
+	if restart:
+		guide_step = 0
+	_graphics_open = true
+	main.set_graphics_open(true)
+	for child in report_body.get_children():
+		report_body.remove_child(child)
+		child.queue_free()
+	_guide = GameGuide.new()
+	report_body.add_child(_guide)
+	_guide.setup(self, guide_step)
+	_apply_safe_area()
+	_show_report_overlay()
+
+func _show_credits() -> void:
+	show_dialog(tr("ui.credits_button"), [tr("ui.copyright"), tr("ui.credits_models"), tr("ui.credits"), tr("ui.credits_license")], tr("ui.close"))
 
 ## Simple modal with a title, a few lines and one button (reuses the report overlay).
 ## `on_ok` runs after the main button closes it; `alt` adds a second (ghost) button that
@@ -1014,6 +1052,7 @@ func show_dialog(title: String, lines: Array, button: String, on_ok: Callable = 
 				on_alt.call())
 		foot.add_child(cancel)
 	var ok := _button(button, "Primary", Vector2(220, 64))
+	_menu_target(ok, "dialog_ok")
 	ok.pressed.connect(func():
 		Sfx.play("confirm")
 		report_dim.visible = false
