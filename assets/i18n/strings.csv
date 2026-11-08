@@ -523,3 +523,72 @@ guide.day.title,Let’s welcome our first customer,يلا نستقبل أول ز
 guide.day.say,"Stock your ingredients and keep at least one food dish on sale, then tap Open shop. Watch who orders takeaway and who stays at a table. Skip speeds up the day; taken orders, meals and table cleaning finish before the report.",جهّز المكونات وخلّ صنف أكل واحد على الأقل معروض، وبعدين اضغط «افتح المحل». تابع منو يطلب سفري ومنو يجلس. التخطي يسرّع اليوم؛ الطلبات المقبولة والأكل وتنظيف الطاولات يخلصون قبل التقرير.
 guide.day.tip,"After closing, check profit, price complaints, stockouts and waits. Change one thing, then compare the next day.",بعد الإغلاق راجع الربح وشكاوى السعر ونفاد المؤن والانتظار. عدّل شي واحد وقارن اليوم الياي.
 guide.day.fact,"Reopen this guide from Settings. For cooler iPhone play, choose 30 fps and reduce 3D resolution; 60 fps is also available.",تقدر ترجع للدليل من الإعدادات. لتخفيف حرارة الآيفون اختَر 30 إطار وقلّل دقة المشهد؛ خيار 60 إطار متوفر بعد.
+coach.practice,Play with me,خلّنا نلعب سوا
+coach.progress,%d/%d · %s,%d/%d · %s
+coach.next,Got it — next,فهمت، نكمل
+coach.show,Show me,ورّيني
+coach.finish,I’m ready!,أنا جاهز!
+coach.pause,Pause the guide; resume from How to play,وقف الدليل؛ ارجع له من «كيف ألعب»
+coach.save_later,Save for later,أوفّر له بعدين
+coach.keep_growing,I’ll work on it,بسعى له
+coach.margin,%s: ingredients %s · price %s.,%s: المكونات %s · السعر %s.
+coach.restock,We need ingredients before opening. Visit Supplies and stock today.,نحتاج مكونات قبل ما نفتح. ادخل المؤن وجهّز تموين اليوم.
+coach.report.live,"You served %d guests. Profit: %s. Price complaints: %d; left waiting: %d. Look at the report, then tap Next day.",خدمت %d زبون. الربح: %s. شكاوى السعر: %d؛ اللي راحوا من الانتظار: %d. راجع التقرير واضغط اليوم التالي.
+coach.campaign.wait,Keep money for food and wages first. You can inspect this campaign and save it for later.,خلّ فلوس للأكل والرواتب أول. شوف الحملة وخلّها لبعدين إذا الميزانية ما تسمح.
+coach.welcome.title,Beside the grill,عند الشواية
+coach.welcome.say,"Ahlan! You make the decisions; I’ll help you practise. Let’s prepare a dish, serve real guests and learn from the results.",يا هلا! القرارات لك وأنا أساعدك تتدرّب. نجهّز صنف، نخدم زبائن ونتعلّم من النتيجة.
+coach.welcome.done,We’ll take it one action at a time.,بنمشي خطوة خطوة.
+coach.menu.title,Choose what we sell,نختار اللي نبيعه
+coach.menu.say,Tap Menu below. I’ll stay beside you while you use the real controls.,اضغط القائمة تحت. ببقى وياك وإنت تجرّب الأزرار بنفسك.
+coach.menu.done,That’s our menu. Let’s open the chicken tikka dish.,هذي قائمتنا. الحين نفتح تكة الدجاج.
+coach.dish.title,Meet your first dish,أول صنف عندنا
+coach.dish.say,Tap the chicken tikka card. Swipe the dish cards if you need to find it.,اضغط بطاقة تكة الدجاج. اسحب بطاقات الأصناف إذا احتجت تدورها.
+coach.dish.done,"Here you control the price, recipe and enhancements. Let’s start with flavour.",هني تتحكّم بالسعر والوصفة وتطوير الصنف. نبدأ بالطعم.
+coach.recipe.title,Try the recipe,جرّب الوصفة
+coach.recipe.say,Set sauce to 2 using + or −. Watch quality and ingredient cost change; extra ingredients aren’t free.,خلّ الصلصة 2 بأزرار + و−. راقب الجودة وتكلفة المكونات؛ الزيادة لها تكلفة.
+coach.recipe.done,Two sauce portions give a balanced flavour. Recipe changes affect every portion we make.,حصتين صلصة يعطون طعم متوازن. تعديل الوصفة يأثّر على كل وجبة نحضّرها.
+coach.price.title,Price for this neighbourhood,سعر يناسب المكان
+coach.price.say,Change the price once with + or −. Start gently at Al Seef; a higher price needs quality to match.,غيّر السعر مرة بزر + أو −. ابدأ بسعر مناسب بالسيف؛ السعر الأعلى يحتاج جودة تستاهله.
+coach.price.done,You changed the real selling price. We’ll check price complaints in today’s report.,غيّرت سعر البيع فعليًا. بنراجع شكاوى السعر في تقرير اليوم.
+coach.supplies.title,Prepare the kitchen,نجهّز المطبخ
+coach.supplies.say,"Tap Supplies. Now our recipe and prices are set, we can stock the ingredients we actually need.",اضغط المؤن. بعد ما ضبطنا الوصفة والسعر، نجهّز المكونات اللي نحتاجها.
+coach.supplies.done,The ingredient cards show what’s in the kitchen. Stock today calculates a top-up for this menu.,بطاقات المكونات تبين المخزون. تموين اليوم يحسب اللي ينقصنا للقائمة الحالية.
+coach.stock.title,Buy today’s ingredients,تموين اليوم
+coach.stock.say,"Check the Stock today quote, then tap it to buy. The game keeps rent and wages aside.",راجع مبلغ تموين اليوم وبعدين اضغطه للشراء. اللعبة تحجز مبلغ الإيجار والرواتب.
+coach.stock.done,"We have ingredients for real orders now. Leftover meat and vegetables can spoil, so watch tomorrow’s stock.",الحين عندنا مكونات لطلبات فعلية. اللحم والخضار الباقية ممكن تفسد؛ راقب مخزون باچر.
+coach.open.title,Open the grill,نفتح المحل
+coach.open.say,Tap Open shop below. No rush: service runs at 1× while you learn.,اضغط افتح المحل تحت. خذ راحتك؛ الخدمة تبدأ بسرعة عادية وإنت تتعلّم.
+coach.open.done,We’re open! Watch the promenade: guests decide whether to join our queue.,فتحنا! تابع الممشى؛ الزبائن يقررون إذا يدخلون الطابور.
+coach.order.title,Watch the order,تابع الطلب
+coach.order.say,Watch a guest join the line and order at the counter. Passing by alone doesn’t count as a purchase.,تابع الزبون وهو يدخل الطابور ويطلب من الكاونتر. المرور لحاله ما يعتبر شراء.
+coach.order.done,That guest placed an order. Preparation takes time; a long queue can make others leave.,الزبون طلب الحين. التحضير ياخذ وقت والطابور الطويل ممكن يخلّي غيره يروح.
+coach.sale.title,Follow the handoff,تابع تسليم الوجبة
+coach.sale.say,Watch for the handoff and receipt. Takeaway guests collect; seated guests wait for a worker to deliver.,راقب تسليم الوجبة والإيصال. السفري يستلم ويمشي؛ واللي يجلس ينتظر الموظفة توصل له.
+coach.sale.done,Our first sale! Ingredients became a meal and cash. Revenue still has food costs and bills to cover.,أول بيعة! المكونات صارت وجبة ودخل. تذكّر إن الإيراد لازم يغطي المكونات والمصاريف.
+coach.finish.title,Try the day controls,جرّب سرعة اليوم
+coach.finish.say,"Try 2× or 4× below, or Skip to finish sooner. Every accepted order still gets its service animation.",جرّب سرعة 2 أو 4 تحت، أو تخطَّ لإنهاء اليوم أسرع. كل طلب مقبول يكمل حركة خدمته.
+coach.finish.done,The day is complete. Let’s see what the numbers tell us.,خلص اليوم. نشوف الأرقام وش تقول لنا.
+coach.report.title,Learn from today,نتعلّم من اليوم
+coach.report.say,"Read profit, waits and price complaints in the report. Tap Next day when you’re ready.",راجع الربح والانتظار وشكاوى السعر في التقرير. اضغط اليوم التالي يوم تخلص.
+coach.report.done,You’ve completed a full trading day. Now we’ll choose a useful upgrade.,كملت يوم شغل كامل. الحين نختار تطوير يفيدنا.
+coach.upgrade.title,Improve the bottleneck,نطوّر اللي يعطّلنا
+coach.upgrade.say,"Inspect %s. Compare its effect and cost with the report. Buy a level if it fits your budget, or save for later.",شوف %s. قارن تأثيره وتكلفته بالتقرير. اشترِ مستوى إذا يناسب ميزانيتك أو وفّر له بعدين.
+coach.upgrade.done,Good decision about %s. Upgrade the part causing waits; a bigger building alone won’t fix every queue.,قرارك بخصوص %s واضح. طوّر الشي اللي يسبّب الانتظار؛ المبنى الأكبر بروحه ما يحل كل الزحمة.
+coach.campaign.title,Invite guests wisely,نروّج بذكاء
+coach.campaign.say,"Inspect Fliers in Promotions. Start it only when you have stock and capacity, or choose Save for later.",شوف المنشورات في الإعلانات. شغّلها يوم عندك مؤن وقدرة تخدم الزحمة، أو خلّها لبعدين.
+coach.campaign.done,Advertising is your choice. More guests help only when we can serve them; compare results after the campaign.,الإعلان قرارك. زيادة الزبائن تفيد يوم نقدر نخدمهم؛ قارن النتيجة بعد الحملة.
+coach.goals.title,Reputation and rewards,السمعة والمكافآت
+coach.goals.say,Open Goals. Claim a ready reward; otherwise read your next target. Happy guests build stars and unlock places.,افتح الأهداف. استلم المكافأة الجاهزة أو شوف هدفك الياي. رضا الزبائن يبني النجوم ويفتح أماكن.
+coach.goals.done,"Stars are reputation, not money to spend. New places and equipment need the stars and stand stage shown on their locks.",النجوم سمعة مب فلوس تنصرف. المواقع والمعدات تحتاج النجوم ومرحلة المحل المكتوبة عند القفل.
+coach.graduate.title,Your next day is yours,اليوم الياي لك
+coach.graduate.say,"You’ve practised the full loop. Restock, change one thing, then compare the next report. Find me in How to play whenever you need me.",تدرّبت على دورة اللعب كاملة. موّن، غيّر شي واحد وقارن التقرير الياي. تلقاني في «كيف ألعب» متى ما احتجتني.
+coach.graduate.done,Let’s make this little grill a Dubai favourite.,نخلّي شوايتنا من الأماكن المفضلة في دبي.
+coach.upgrade.attract,"Quiet street? Inspect Signage to attract passers. Buy if the budget allows, or save for later.",الممشى هادي؟ شوف اللوحة عشان تجذب المارة. اشترِ إذا الميزانية تسمح أو خلّها لبعدين.
+coach.upgrade.attract_done,"When guests are scarce, visibility helps more than extra cooking capacity. Check whether the next day brings more orders.",يوم الزبائن قليلين، الظهور يفيد أكثر من زيادة معدات الطبخ. راقب إذا الطلبات تزيد اليوم الياي.
+coach.price.fahidi,Try + or − once. Keep Al Seef prices accessible for local shoppers.,جرّب + أو − مرة. خلّ أسعار السيف مناسبة للمتسوقين وأهل المنطقة.
+coach.price.creek,Try + or − once. Creek families look for good value; check the ingredient cost before raising prices.,جرّب + أو − مرة. عائلات الخور تدور القيمة؛ قارن تكلفة المكونات قبل ترفع السعر.
+coach.price.metro,Try + or − once. Commuters value speed and a fair price; expensive food can lose their stop.,جرّب + أو − مرة. زبائن المترو يبون سرعة وسعر مناسب؛ الغلا ممكن يخلّيهم يمشون.
+coach.price.jbr,Try + or − once. Beach visitors buy more drinks in hot weather; premium food prices still need quality.,جرّب + أو − مرة. زوار الشاطئ يطلبون مشروبات أكثر بالحر؛ وسعر الأكل الأعلى يحتاج جودة.
+coach.price.downtown,Try + or − once. Downtown guests accept premium prices when the quality earns them.,جرّب + أو − مرة. زبائن داون تاون يقبلون سعر أعلى يوم الجودة تستاهله.
+coach.price.mall,Try + or − once. Mall guests expect quality; strong competition makes value matter too.,جرّب + أو − مرة. زبائن المول يتوقعون جودة؛ ومع المنافسة القوية القيمة لها دور بعد.
+coach.price.gv,Try + or − once. Global Village has plenty of choice; win guests with value and a kitchen that keeps up.,جرّب + أو − مرة. بالقرية العالمية الخيارات وايدة؛ اكسب الزبون بالقيمة وخدمة تلحق على الزحمة.

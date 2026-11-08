@@ -35,6 +35,8 @@ try {
       await hit('dialog_ok');
       await hit('new_game');
       await waitPhase(page,'prep');
+      await page.waitForFunction(()=>window.godotPresentation?.coach?.topic==='welcome');
+      await hit('coach_close');await hit('graphics_hud');await hit('guide_settings');
       await page.waitForFunction(()=>window.godotPresentation?.guide?.step===0);
       await page.waitForTimeout(700);
       const before = await page.evaluate(()=>JSON.parse(localStorage.getItem('mashawi_save')));

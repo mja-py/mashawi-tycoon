@@ -30,8 +30,41 @@ func _ready() -> void:
 	_test_restaurant_service(game)
 	_test_terrace_clearance(game)
 	_test_cast_appearances()
+	_test_guide_journey()
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
+
+func _test_guide_journey() -> void:
+	check(GuideJourney.station_for({"bottleneck": "arrivals"}) == "signage", "quiet streets need visibility rather than extra kitchen capacity")
+	check(GuideJourney.station_for({"bottleneck": "grill"}) == "grill", "kitchen delays lead the mentor to the actual bottleneck")
+	check(GuideJourney.clean({"station": "signage"})["station"] == "signage", "an attraction recommendation survives save validation")
+	check(GuideJourney.clean(null) == GuideJourney.fresh(), "old saves do not force onboarding on existing players")
+	var bad := GuideJourney.clean({"active": true, "step": 999, "price": NAN, "station": "bogus", "started_day": -5})
+	check(bad["step"] == GuideJourney.STEPS.size() - 1 and bad["price"] == 0.0 and bad["station"] == "counter" and bad["started_day"] == 1, "malformed tutorial progress stays inside valid bounds")
+	check(not GuideJourney.clean({"active": true, "completed": true})["active"], "completed lessons do not reopen automatically")
+	var state := GuideJourney.fresh()
+	var view := {"panel": "menu", "dish": "chicken_tikka", "sauce": 1, "price": 10.0, "portions": 0,
+		"phase": "prep", "ordered": false, "served": 0, "day": 1, "level": 0, "campaign": false, "claimed": 0}
+	for topic in ["recipe", "stock", "order", "sale", "finish", "report", "upgrade", "campaign", "goals"]:
+		state["step"] = GuideJourney.STEPS.find(topic)
+		check(not GuideJourney.reached(state, view), "%s requires a real outcome; opening a window is insufficient" % topic)
+	state["step"] = GuideJourney.STEPS.find("price")
+	state["price"] = 10.0
+	check(not GuideJourney.reached(state, view), "price lesson waits for a real edit")
+	view["price"] = 11.0
+	check(GuideJourney.reached(state, view), "price change completes the price objective")
+	view["sauce"] = 2
+	state["step"] = GuideJourney.STEPS.find("recipe")
+	check(GuideJourney.reached(state, view), "the balanced recipe completes its objective")
+	view["served"] = 1
+	state["step"] = GuideJourney.STEPS.find("sale")
+	check(GuideJourney.reached(state, view), "an actual sale completes the service objective")
+	state["step"] = GuideJourney.STEPS.find("report")
+	view["day"] = 2
+	view["phase"] = "report"
+	check(not GuideJourney.reached(state, view), "report lesson waits for the player's Next day action")
+	view["phase"] = "prep"
+	check(GuideJourney.reached(state, view), "returning from the report completes the full-day loop")
 
 func _test_cast_appearances() -> void:
 	var stage := Node3D.new()
@@ -520,10 +553,12 @@ func _test_save_load(game) -> void:
 	game.goal_index = 2
 	game.goals_claimed = ["first_30", "counter1"]
 	game.money = 777.0
+	game.tutorial = GuideJourney.clean({"active": true, "step": 4, "done": true, "price": 14.0})
 	game.save()
 	game.new_game()
 	check(game.load_game(), "load ok")
 	check(game.money == 777.0, "money restored")
+	check(game.tutorial["active"] and game.tutorial["step"] == 4 and game.tutorial["done"] and game.tutorial["price"] == 14.0, "mentor progress and action baselines survive reload")
 	check(game.menu["chicken_tikka"]["price"] == 15.0, "price restored")
 	check(game.menu["chicken_tikka"]["recipe"]["meat"] == 3, "recipe restored")
 	check(game.rig["stage"] == "truck" and game.plot()["stage"] == "kiosk", "stages restored")

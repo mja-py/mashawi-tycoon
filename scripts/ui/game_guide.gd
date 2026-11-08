@@ -124,6 +124,11 @@ func setup(owner_hud: CanvasLayer, start: int) -> void:
 	back = hud._menu_target(hud._button(tr("guide.back"), "Ghost", Vector2(128, 58)), "guide_back")
 	back.pressed.connect(func(): _show_step(step - 1))
 	footer.add_child(back)
+	if hud.main.phase == hud.main.Phase.PREP:
+		var practice: Button = hud._menu_target(hud._button(tr("coach.practice"), "Primary", Vector2(0, 58)), "guide_practice")
+		practice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		practice.pressed.connect(hud.start_tutorial)
+		footer.add_child(practice)
 	try_it = hud._menu_target(hud._button(tr("guide.show_menu"), "Ghost", Vector2(0, 58)), "guide_try")
 	try_it.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	try_it.pressed.connect(_try_menu)

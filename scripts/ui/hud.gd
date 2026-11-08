@@ -46,6 +46,8 @@ const MenuArt := preload("res://scripts/ui/menu_art.gd")
 const GameGuide := preload("res://scripts/ui/game_guide.gd")
 var guide_step := 0
 var _guide: Control
+const PlayGuide := preload("res://scripts/ui/play_guide.gd")
+var coach: Control
 
 var panel_scroll: ScrollContainer
 var panel_roll: CardRoll
@@ -130,6 +132,9 @@ func _build_all() -> void:
 
 ## Rebuild every control in the new language and direction (only offered on the title screen).
 func _on_language_changed() -> void:
+	if is_instance_valid(coach):
+		coach.dispose()
+		coach = null
 	current_panel = ""
 	root.queue_free()
 	_build_all()
@@ -212,10 +217,9 @@ func _process(_delta: float) -> void:
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 			DisplayServer.window_get_size().x, DisplayServer.window_get_size().y]
 
-## Dev-only geometry for real browser taps across phone sizes and RTL/LTR layouts.
+## Stable control IDs for mentor highlights; geometry is published only in test mode.
 func _menu_target(b: Button, id: String) -> Button:
-	if DevTools.has("uitest"):
-		b.set_meta("menu_target", id)
+	b.set_meta("menu_target", id)
 	return b
 
 func _publish_menu_targets() -> void:
@@ -227,6 +231,8 @@ func _publish_menu_targets() -> void:
 	buttons.append_array(report_dim.find_children("*", "Button", true, false))
 	buttons.append_array(title_screen.find_children("*", "Button", true, false))
 	buttons.append_array(top_bar.find_children("*", "Button", true, false))
+	if is_instance_valid(coach):
+		buttons.append_array(coach.find_children("*", "Button", true, false))
 	for node in buttons:
 		var b := node as Button
 		if not b.is_visible_in_tree() or not b.has_meta("menu_target"):
@@ -240,7 +246,7 @@ func _publish_menu_targets() -> void:
 	JavaScriptBridge.eval("window.godotMenuTargets = " + JSON.stringify(targets))
 	var bounds := panel_dim.get_global_rect()
 	var panel_bounds := panel.get_global_rect().intersection(bounds)
-	var view := {"menuBottom": panel_bounds.end.y / vp.y, "tabsTop": prep_bar.get_global_rect().position.y / vp.y,
+	var view := {"menuTop": panel_bounds.position.y, "menuBottom": panel_bounds.end.y / vp.y, "tabsTop": prep_bar.get_global_rect().position.y / vp.y,
 		"curtain": _curtain_amount if curtain.visible else 0.0, "closing": closing_progress.value if closing_progress.visible and day_bar.visible else -1.0,
 		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text}
 	if main:
@@ -250,6 +256,8 @@ func _publish_menu_targets() -> void:
 			"fps": Engine.get_frames_per_second(), "open": _graphics_open, "clock": main.sim.hour}
 	view["portraitCount"] = root.find_children("*", "SubViewport", true, false).size()
 	view["logicalSize"] = {"width": vp.x, "height": vp.y}
+	if is_instance_valid(coach):
+		view["coach"] = coach.test_view()
 	if is_instance_valid(_guide) and _guide.is_visible_in_tree():
 		view["guide"] = _guide.test_view()
 	JavaScriptBridge.eval("window.godotPresentation = " + JSON.stringify(view))
@@ -284,12 +292,18 @@ func _apply_safe_area() -> void:
 	var w := vp.x - root.offset_left + root.offset_right
 	var h := vp.y - root.offset_top + root.offset_bottom
 	# Panels use the whole width between the bars: phones are wide but short.
-	if panel:
-		panel_dim.offset_top = maxf(TOP_BAR_HEIGHT, top_bar.get_combined_minimum_size().y) + PANEL_GAP
-		panel_dim.offset_bottom = -maxf(BOTTOM_BAR_HEIGHT, prep_bar.get_combined_minimum_size().y) - PANEL_GAP
-		panel.custom_minimum_size = Vector2(w - 16.0, maxf(0.0, h + panel_dim.offset_bottom - panel_dim.offset_top))
+	_layout_prep_panel(Vector2(w, h))
 	if report_panel:
 		report_panel.custom_minimum_size = Vector2(minf(1100.0, w - 16.0), maxf(300.0, h - 16.0))
+
+func _layout_prep_panel(area: Vector2 = Vector2.ZERO) -> void:
+	if not panel: return
+	if area == Vector2.ZERO: area = root.size
+	panel_dim.offset_top = maxf(TOP_BAR_HEIGHT, top_bar.get_combined_minimum_size().y) + PANEL_GAP
+	if is_instance_valid(coach):
+		panel_dim.offset_top += coach.reserve_height()
+	panel_dim.offset_bottom = -maxf(BOTTOM_BAR_HEIGHT, prep_bar.get_combined_minimum_size().y) - PANEL_GAP
+	panel.custom_minimum_size = Vector2(area.x - 16.0, maxf(0.0, area.y + panel_dim.offset_bottom - panel_dim.offset_top))
 
 # ================================================================= builders
 
@@ -665,6 +679,9 @@ func _build_title() -> void:
 # ================================================================= phases
 
 func show_title() -> void:
+	if is_instance_valid(coach):
+		coach.dispose()
+		coach = null
 	close_panel()
 	report_dim.visible = false
 	prep_bar.visible = false
@@ -729,6 +746,7 @@ func show_finishing(from_hour: float, end_hour: float) -> void:
 func show_report(r: Dictionary) -> void:
 	day_bar.visible = false
 	_refresh()
+	_detach_coach_card()
 	for c in report_body.get_children():
 		c.queue_free()
 	var head := HBoxContainer.new()
@@ -961,6 +979,7 @@ func _show_graphics() -> void:
 	_graphics_open = true
 	main.set_graphics_open(true)
 	Sfx.play("open")
+	_detach_coach_card()
 	for child in report_body.get_children():
 		report_body.remove_child(child)
 		child.queue_free()
@@ -1015,12 +1034,62 @@ func close_graphics() -> bool:
 	Sfx.play("close")
 	return true
 
+func _detach_coach_card() -> void:
+	if is_instance_valid(coach):
+		coach.detach_card()
+
+func start_tutorial(restart: bool = false) -> void:
+	if main.phase == main.Phase.TITLE:
+		return
+	close_graphics()
+	if restart or Game.tutorial["completed"]:
+		Game.tutorial = GuideJourney.fresh()
+		Game.tutorial["started_day"] = Game.day
+	if int(Game.tutorial["step"]) == 0:
+		Game.tutorial["started_day"] = Game.day
+	Game.tutorial["active"] = true
+	if not is_instance_valid(coach):
+		coach = PlayGuide.new()
+		root.add_child(coach)
+		coach.setup(self)
+	Game.save()
+	_layout_prep_panel()
+
+func pause_tutorial() -> void:
+	Game.tutorial["active"] = false
+	if is_instance_valid(coach):
+		coach.dispose()
+		coach = null
+	if main.phase != main.Phase.DAY:
+		Game.save()
+	_layout_prep_panel()
+
+func resume_tutorial() -> void:
+	if Game.tutorial["active"]:
+		# A live day is not restored by the game's save system. Recheck stock,
+		# rather than leave a resumed lesson waiting for a non-existent buyer.
+		if int(Game.tutorial["step"]) in range(7, 12) and Game.day <= int(Game.tutorial["started_day"]):
+			Game.tutorial["step"] = 5
+			Game.tutorial["done"] = false
+		start_tutorial()
+
+func guide_target(id: String, clipped: bool = true) -> Control:
+	if id.is_empty(): return null
+	for node in root.find_children("*", "Button", true, false):
+		if not node.is_visible_in_tree() or node.is_queued_for_deletion() or node.get_meta("menu_target", "") != id:
+			continue
+		if panel_roll.is_ancestor_of(node) and not panel_roll.is_focused_control(node): continue
+		if clipped and panel_scroll.is_ancestor_of(node) and not panel_scroll.get_global_rect().encloses(node.get_global_rect()): continue
+		return node
+	return null
+
 func show_guide(restart: bool = false) -> void:
 	if restart:
 		guide_step = 0
 	_graphics_open = true
 	main.set_graphics_open(true)
 	main.set_guide_open()
+	_detach_coach_card()
 	for child in report_body.get_children():
 		report_body.remove_child(child)
 		child.queue_free()
@@ -1037,6 +1106,7 @@ func _show_credits() -> void:
 ## `on_ok` runs after the main button closes it; `alt` adds a second (ghost) button that
 ## just closes the dialog (or runs `on_alt`).
 func show_dialog(title: String, lines: Array, button: String, on_ok: Callable = Callable(), alt: String = "", on_alt: Callable = Callable()) -> void:
+	_detach_coach_card()
 	for c in report_body.get_children():
 		c.queue_free()
 	report_body.add_child(_label(title, "Title"))
@@ -1646,7 +1716,7 @@ func _fill_goals() -> void:
 			rw += "  +" + (tr("ui.r_stars") % Loc.ltr("%.1f" % (float(reward["popularity"]) * 5.0)))
 		v.add_child(_label(rw, "Small"))
 		if Game.goal_ready():
-			var b := _button(tr("ui.g_claim"), "Primary", Vector2(230, 52))
+			var b := _menu_target(_button(tr("ui.g_claim"), "Primary", Vector2(230, 52)), "claim_goal")
 			b.pressed.connect(func():
 				if Game.claim_goal():
 					Sfx.play("confirm"))

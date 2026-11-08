@@ -39,6 +39,7 @@ var bailouts: int = 0
 var goal_index: int = 0
 var goals_claimed: Array = []
 var stats: Dictionary = {}
+var tutorial: Dictionary = GuideJourney.fresh()
 var rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
@@ -75,6 +76,7 @@ func new_game() -> void:
 	goal_index = 0
 	goals_claimed = []
 	stats = _new_stats()
+	tutorial = GuideJourney.fresh()
 	forecast = _roll_weather()
 	weather = forecast
 	_plot_entry(location)
@@ -896,7 +898,7 @@ func save() -> void:
 		"stage": stage, "location": location, "weather": weather, "forecast": forecast,
 		"inventory": inventory, "avg_cost": avg_cost, "menu": menu, "marketing": marketing,
 		"rig": rig, "plots": plots, "goal_index": goal_index, "goals_claimed": goals_claimed, "stats": stats,
-		"history": history, "total_served": total_served, "bailouts": bailouts,
+		"history": history, "total_served": total_served, "bailouts": bailouts, "tutorial": tutorial,
 	}
 	var text := JSON.stringify(data)
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -925,6 +927,7 @@ func load_game() -> bool:
 		weather = String(parsed["weather"])
 	if Data.WEATHER.has(String(parsed.get("forecast", ""))):
 		forecast = String(parsed["forecast"])
+	tutorial = GuideJourney.clean(parsed.get("tutorial", {}))
 	total_served = int(parsed.get("total_served", 0))
 	bailouts = int(parsed.get("bailouts", 0))
 	for ing in parsed.get("inventory", {}):
@@ -1029,6 +1032,7 @@ func _migrate_legacy(parsed: Dictionary) -> void:
 ## Bring a loaded save inside today's rules: price ranges change between versions, and a
 ## corrupt or hand-edited file must never produce NaN money or an impossible menu.
 func _validate() -> void:
+	tutorial = GuideJourney.clean(tutorial)
 	if is_nan(money) or is_inf(money):
 		money = 0.0
 	money = maxf(money, 0.0)

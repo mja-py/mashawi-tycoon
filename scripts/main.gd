@@ -298,10 +298,12 @@ func show_title() -> void:
 func new_game() -> void:
 	_enter_prep(Game.new_game, func():
 		if hud:
-			hud.show_guide(true))
+			hud.start_tutorial(true))
 
 func continue_game() -> void:
-	_enter_prep(Game.load_game)
+	_enter_prep(Game.load_game, func():
+		if hud:
+			hud.resume_tutorial())
 
 ## Title -> prep behind a short curtain (the street is rebuilt for the saved place).
 func _enter_prep(load_state: Callable, then: Callable = Callable()) -> void:

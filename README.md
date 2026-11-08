@@ -8,11 +8,13 @@ Copyright (c) 2026 Mohammad Jassem. All rights reserved. This is a proprietary g
 see [LICENSE.txt](LICENSE.txt) for permitted use and third-party asset exceptions.
 The in-game **Credits** button contains the attribution notice.
 
-New games open a replayable eight-chapter guide hosted by the animated abaya vendor.
-It explains supplies, location pricing, recipes and quality, equipment, promotions,
-reputation and unlocks, and the daily service loop in Arabic and English. During
-preparation, its **Show me the menu** button opens the relevant real controls.
-Reopen **How to play** from the title screen or Settings; gameplay pauses while it is open.
+New games include a hands-on mentor who stays beside the real game. She responds to
+recipe and price edits, ingredient purchases, a customer's order and handoff, and
+the first day's report. Then she helps you review an upgrade, decide whether to
+promote, and work toward stars and rewards. Purchases remain your choice.
+Progress saves automatically. Pause the guidance whenever you like, then resume
+from **Settings → How to play → Play with me**. The eight reference chapters are
+also available in Arabic and English; reading them pauses the street.
 
 The approved plum Creek abaya character anchors the cast's style. The guide's charcoal
 abaya and the teal souq outfit share her sculpt, face and rig; clothing palettes add no

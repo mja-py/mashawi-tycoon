@@ -5,6 +5,10 @@ extends TextureRect
 const MAX_EDGE := 768
 const SUPERSAMPLE := 2.0
 const FRAME_SECONDS := 1.0 / 30.0
+var max_edge := MAX_EDGE
+var mentor_mode := false
+var _gesture_left := 0.0
+var _breath := 0.0
 var actor: Node3D
 var _viewport: SubViewport
 var _animation: AnimationPlayer
@@ -57,19 +61,33 @@ func _resize() -> void:
 	var logical := get_viewport_rect().size
 	var pixels := size * display / logical * SUPERSAMPLE
 	# Never allocate a large Retina surface just because the device reports a high DPR.
-	pixels *= minf(1.0, MAX_EDGE / maxf(pixels.x, pixels.y))
+	pixels *= minf(1.0, max_edge / maxf(pixels.x, pixels.y))
 	_viewport.size = Vector2i(maxi(2, int(ceilf(pixels.x))), maxi(2, int(ceilf(pixels.y))))
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 func gesture() -> void:
 	ModelLib.play_once(actor, "interact-right")
+	if mentor_mode:
+		_gesture_left = 0.65
 
 func _process(delta: float) -> void:
 	# Fast-forward applies to the street, while our host speaks at a natural pace.
 	_elapsed += delta / maxf(Engine.time_scale, 0.01)
 	if _elapsed + 0.0001 < FRAME_SECONDS:
 		return
-	_animation.advance(minf(_elapsed, 0.1))
+	var advance := minf(_elapsed, 0.1)
+	_animation.advance(advance)
+	if mentor_mode:
+		_breath += advance
+		actor.position.y = sin(_breath * 1.7) * 0.002
+		if _gesture_left > 0.0:
+			_gesture_left = maxf(0.0, _gesture_left - advance)
+			if _gesture_left == 0.0:
+				ModelLib.play_loop(actor, "idle")
+		if _gesture_left == 0.0 and _animation.current_animation == "idle" and _animation.current_animation_position >= 0.3:
+			# Keep the mentor facing the player instead of scanning the promenade.
+			_animation.seek(0.3, true)
+			_animation.pause()
 	_elapsed = fmod(_elapsed, FRAME_SECONDS)
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_frames += 1
