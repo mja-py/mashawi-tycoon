@@ -101,6 +101,13 @@ func _test_later_item_handoff(game) -> void:
 	var rendered_guest := world.spawn_guest(-1, world.pickup_slot(0))
 	sim.finish_quickly()
 	check(rendered_guest.simulation_speed == 1.0, "Skip keeps the visible cast moving at its normal pace")
+	var player := ModelLib.animation_player(rendered_guest.model)
+	var walk_rate := rendered_guest.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED * 2.0
+	check(is_equal_approx(player.speed_scale, walk_rate), "Skip keeps existing footsteps in sync with movement")
+	rendered_guest.slot = 100
+	rendered_guest.position.z = World.PROMENADE_Z
+	rendered_guest.leave()
+	check(is_equal_approx(player.speed_scale, walk_rate), "takeaway footsteps stay in sync while walking away")
 	sim.queue_free()
 	world.queue_free()
 	game.new_game()

@@ -692,6 +692,8 @@ func set_customer_speed(value: float) -> void:
 			if node is Customer:
 				node.simulation_speed = value if node.model == null else 1.0
 				node.movement_speed = minf(value, 2.0) if node.model else 1.0
+				if node.model and node.state in [Customer.State.WALK, Customer.State.TO_SLOT, Customer.State.TO_SEAT, Customer.State.LEAVE]:
+					ModelLib.play_loop(node.model, "walk", node.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED * node.movement_speed)
 
 func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z

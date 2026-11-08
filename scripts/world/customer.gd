@@ -200,7 +200,7 @@ func _start_leaving() -> void:
 	state = State.LEAVE
 	target = Vector3(exit_x, 0, position.z)
 	if model:
-		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED * movement_speed)
 	_face_direction()
 
 func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.78) -> void:
