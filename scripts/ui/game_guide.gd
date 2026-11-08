@@ -18,6 +18,7 @@ var back: Button
 var next: Button
 var try_it: Button
 var chapters: Array[Button] = []
+var _scroll: ScrollContainer
 
 func setup(owner_hud: CanvasLayer, start: int) -> void:
 	hud = owner_hud
@@ -27,6 +28,10 @@ func setup(owner_hud: CanvasLayer, start: int) -> void:
 	var header := HBoxContainer.new()
 	add_child(header)
 	header.add_child(hud._label(tr("guide.title"), "Heading"))
+	var swipe: Label = hud._label(tr("guide.swipe"), "Small")
+	swipe.size_flags_horizontal = Control.SIZE_SHRINK_END
+	swipe.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	header.add_child(swipe)
 	var close: Button = hud._menu_target(hud._button(tr("ui.close"), "Ghost", Vector2(112, 52)), "guide_close")
 	close.pressed.connect(hud.close_graphics)
 	header.add_child(close)
@@ -94,6 +99,7 @@ func setup(owner_hud: CanvasLayer, start: int) -> void:
 	heading.add_theme_font_size_override("font_size", 34)
 	speech.add_child(heading)
 	var scroll := TouchScroll.new()
+	_scroll = scroll
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -199,4 +205,5 @@ func _try_menu() -> void:
 func test_view() -> Dictionary:
 	return {"step": step, "topic": TOPICS[step], "title": heading.text,
 		"dialogue": dialogue.text, "tip": tip.text, "fact": fact.text,
+		"scroll": _scroll.scroll_vertical, "scrollNeeded": _scroll.get_v_scroll_bar().max_value > _scroll.size.y + 1.0,
 		"fits": hud.root.get_global_rect().encloses(hud.report_panel.get_global_rect())}

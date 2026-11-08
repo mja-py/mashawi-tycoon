@@ -43,6 +43,15 @@ try {
         assert(g.fits,`${lang} chapter ${i} fits safe viewport`);
         assert(g.dialogue.length>40 && !g.dialogue.startsWith('guide.'),'localized dialogue');
         if(i===0 || i===2 || i===4 || i===6) await page.screenshot({path:`${out}/${lang}-${i}-${g.topic}.png`});
+        if(g.scrollNeeded) {
+          await page.mouse.move(width*.56,height*.74); await page.mouse.down();
+          for(let j=1;j<=12;j++) {
+            await page.mouse.move(width*.56,height*(.74-j*.028)); await page.waitForTimeout(20);
+          }
+          await page.waitForTimeout(180); await page.mouse.up(); await page.waitForTimeout(300);
+          assert((await guide()).scroll>0,`${lang} chapter ${i}: the extra advice is reachable by swiping`);
+          if(i===2 || i===6) await page.screenshot({path:`${out}/${lang}-${i}-more-tips.png`});
+        }
         await hit('guide_next');
       }
       await page.waitForFunction(()=>!window.godotPresentation?.guide && window.godotState?.panel==='supplies');
