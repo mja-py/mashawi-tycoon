@@ -14,6 +14,12 @@ reputation and unlocks, and the daily service loop in Arabic and English. During
 preparation, its **Show me the menu** button opens the relevant real controls.
 Reopen **How to play** from the title screen or Settings; gameplay pauses while it is open.
 
+The approved plum Creek abaya character anchors the cast's style. The guide's charcoal
+abaya and the teal souq outfit share her sculpt, face and rig; clothing palettes add no
+duplicate model downloads. The male vendor uses the mature Creek kandura character.
+Active character files are approximately 0.50–0.70 MB each. The guide uses a bounded,
+supersampled portrait and real-time animation independent of trading speed.
+
 Buy supplies, tune your recipe and prices, pick a spot in Dubai, invest in your stand
 and marketing, then open and watch the day play out on a low-poly Gulf street with
 Emirati locals in kandura and abaya alongside residents and tourists.

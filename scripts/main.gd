@@ -16,6 +16,8 @@ var speed := 1.0
 var frame_cap := 60
 var render_scale := 0
 var _graphics_open := false
+var _guide_open := false
+var _guide_backdrop_scale := 1.0
 var _quality_time := 0.0
 var _quality_frames := 0
 var _quality_warmup := 4.0
@@ -129,12 +131,22 @@ func _load_graphics() -> void:
 
 func set_graphics_open(open: bool) -> void:
 	_graphics_open = open
+	if not open and _guide_open:
+		get_viewport().scaling_3d_scale = _guide_backdrop_scale
+		_guide_open = false
 	# Pause the street and simulation so settings can still accept input.
 	var mode := Node.PROCESS_MODE_DISABLED if open else Node.PROCESS_MODE_INHERIT
 	world.process_mode = mode
 	sim.process_mode = mode
 	_quality_frames = 0
 	_quality_time = 0.0
+
+func set_guide_open() -> void:
+	if not _guide_open:
+		_guide_backdrop_scale = get_viewport().scaling_3d_scale
+		_guide_open = true
+		# Spend pixels on the host while the dimmed street is behind an opaque card.
+		get_viewport().scaling_3d_scale = minf(_guide_backdrop_scale, 0.5)
 
 func _apply_dev_flags() -> void:
 	if DevTools.has("location"):
@@ -168,6 +180,9 @@ func _apply_dev_flags() -> void:
 	if DevTools.has("autodays"):
 		Game.persist = false
 		_autoplay(int(DevTools.get_flag("autodays")))
+		return
+	if DevTools.has("cast-review"):
+		_cast_review()
 		return
 	if DevTools.has("gallery"):
 		_gallery(DevTools.get_flag("gallery"))
@@ -371,6 +386,31 @@ func _check_scripts() -> void:
 				print("[check] FAILED ", dir, "/", f)
 	print("[check] %d scripts, %d failed" % [total, bad])
 	get_tree().quit(1 if bad > 0 else 0)
+
+## Dev: compare the approved reference and shared outfit variants.
+func _cast_review() -> void:
+	Game.persist = false
+	hud.root.hide()
+	world.camera.rotation = Vector3.ZERO
+	world.camera.position = Vector3(0, 0.82, 6)
+	world.camera.size = 2.5
+	world.sun.rotation_degrees = Vector3(-25, -28, 0)
+	world.sun.shadow_enabled = false
+	world.env.environment.background_mode = Environment.BG_COLOR
+	world.env.environment.background_color = Color("d9c3a0")
+	world.env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	world.env.environment.ambient_light_color = Color("fff0df")
+	world.env.environment.ambient_light_energy = 0.8
+	var actors: Array[Node3D] = [
+		ModelLib.spawn_guest("creek-abaya", world, Vector3(-1.65, 0, 0), 1.65),
+		ModelLib.spawn_crew(true, world, Vector3(-0.55, 0, 0), 0, 1.65),
+		ModelLib.spawn_guest("souq-abaya", world, Vector3(0.55, 0, 0), 1.65),
+		ModelLib.spawn_crew(false, world, Vector3(1.65, 0, 0), 0, 1.65)]
+	for actor in actors:
+		ModelLib.play_loop(actor, "idle")
+		var animation := ModelLib.animation_player(actor)
+		animation.advance(0.5)
+		animation.pause()
 
 ## Dev: lay out every model of a folder in a labelled grid to compare them.
 func _gallery(folder: String) -> void:

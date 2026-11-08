@@ -245,8 +245,11 @@ func _publish_menu_targets() -> void:
 		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text}
 	if main:
 		view["service"] = main.sim.service_view()
+		view["warmedCast"] = main.world.warmed_cast.keys()
 		view["graphics"] = {"cap": Engine.max_fps, "choice": main.render_scale, "scale": get_viewport().scaling_3d_scale,
 			"fps": Engine.get_frames_per_second(), "open": _graphics_open, "clock": main.sim.hour}
+	view["portraitCount"] = root.find_children("*", "SubViewport", true, false).size()
+	view["logicalSize"] = {"width": vp.x, "height": vp.y}
 	if is_instance_valid(_guide) and _guide.is_visible_in_tree():
 		view["guide"] = _guide.test_view()
 	JavaScriptBridge.eval("window.godotPresentation = " + JSON.stringify(view))
@@ -457,6 +460,7 @@ func _build_day_bar() -> void:
 		b.pressed.connect(func(): _set_speed(s))
 		h.add_child(b)
 		speed_buttons[s] = b
+		_menu_target(b, "speed_%d" % int(s))
 	var skip := _button(tr("ui.skip"), "Ghost", Vector2(170, 56))
 	skip_button = skip
 	_menu_target(skip_button, "skip_day")
@@ -1016,6 +1020,7 @@ func show_guide(restart: bool = false) -> void:
 		guide_step = 0
 	_graphics_open = true
 	main.set_graphics_open(true)
+	main.set_guide_open()
 	for child in report_body.get_children():
 		report_body.remove_child(child)
 		child.queue_free()

@@ -2,13 +2,14 @@ extends VBoxContainer
 ## A replayable conversation. Uses the existing cast; no extra downloaded models.
 
 const TouchScroll := preload("res://scripts/ui/touch_scroll.gd")
+const CharacterPortrait := preload("res://scripts/ui/character_portrait.gd")
 const TOPICS := ["welcome", "stock", "price", "quality", "build", "promote", "stars", "day"]
 const PANELS := ["", "supplies", "menu", "menu", "build", "promote", "goals", "supplies"]
 const ART := ["food/chicken-skewer", "food/chicken-tray", "food/mutton-skewer", "food/salad-bowl", "icons/stand-big", "icons/fliers", "icons/flagship", "food/tikka-sandwich"]
 
 var hud: CanvasLayer
 var step := 0
-var actor: Node3D
+var _portrait: TextureRect
 var heading: Label
 var dialogue: Label
 var tip: Label
@@ -57,37 +58,12 @@ func setup(owner_hud: CanvasLayer, start: int) -> void:
 	conversation.add_child(portrait)
 	var host := VBoxContainer.new()
 	portrait.add_child(host)
-	var viewport_box := SubViewportContainer.new()
-	viewport_box.stretch = true
+	var viewport_box := CharacterPortrait.new()
+	_portrait = viewport_box
 	viewport_box.custom_minimum_size = Vector2(200, 220)
 	viewport_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	viewport_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	host.add_child(viewport_box)
-	var vp := SubViewport.new()
-	vp.size = Vector2i(256, 300)
-	vp.transparent_bg = true
-	vp.own_world_3d = true
-	vp.msaa_3d = Viewport.MSAA_2X
-	viewport_box.add_child(vp)
-	actor = ModelLib.spawn_crew(true, vp, Vector3.ZERO, -5, 1.65)
-	ModelLib.play_loop(actor, "idle")
-	var camera := Camera3D.new()
-	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 1.22
-	vp.add_child(camera)
-	camera.position = Vector3(0, 1.14, 3)
-	camera.current = true
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-25, -28, 0)
-	light.light_energy = 1.1
-	vp.add_child(light)
-	var environment := WorldEnvironment.new()
-	environment.environment = Environment.new()
-	environment.environment.background_mode = Environment.BG_CLEAR_COLOR
-	environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.environment.ambient_light_color = Color("fff0df")
-	environment.environment.ambient_light_energy = 0.8
-	vp.add_child(environment)
 	var nameplate: Label = hud._label(tr("guide.host"), "Light", HORIZONTAL_ALIGNMENT_CENTER)
 	nameplate.add_theme_font_size_override("font_size", 24)
 	host.add_child(nameplate)
@@ -189,8 +165,7 @@ func _show_step(index: int) -> void:
 	next.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for i in chapters.size():
 		chapters[i].set_pressed_no_signal(i == step)
-	if actor:
-		ModelLib.play_once(actor, "interact-right")
+	_portrait.gesture()
 	Sfx.play("tick")
 	if dialogue.get_parent().get_parent() is ScrollContainer:
 		dialogue.get_parent().get_parent().scroll_vertical = 0
@@ -204,6 +179,7 @@ func _try_menu() -> void:
 
 func test_view() -> Dictionary:
 	return {"step": step, "topic": TOPICS[step], "title": heading.text,
+		"portrait": _portrait.test_view(),
 		"dialogue": dialogue.text, "tip": tip.text, "fact": fact.text,
 		"scroll": _scroll.scroll_vertical, "scrollNeeded": _scroll.get_v_scroll_bar().max_value > _scroll.size.y + 1.0,
 		"fits": hud.root.get_global_rect().encloses(hud.report_panel.get_global_rect())}

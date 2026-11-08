@@ -3,13 +3,19 @@ extends RefCounted
 ## Loads Kenney GLB scenes by short name ("roads/road-straight") with caching.
 
 static var _cache := {}
+static var _appearance_materials := {}
 const GUEST_HEIGHTS := {
-	"souq-woman": 1.64, "souq-man": 1.75,
+	"souq-man": 1.75,
+	"souq-abaya": 1.63,
 	"creek-kandura": 1.74, "creek-abaya": 1.63,
 	"beach-walker": 1.67, "city-commuter": 1.76,
 	"jbr-modest-swimmer": 1.65, "jbr-local-swimmer": 1.76, "village-evening": 1.66,
 	"downtown-fashion": 1.71, "downtown-tailored": 1.79,
 }
+const GUEST_VARIANTS := {
+	"souq-abaya": {"base": "creek-abaya", "appearance": "souq-abaya"},
+}
+const CLOTHING_PALETTE := preload("res://scripts/world/clothing_palette.gdshader")
 
 static func scene(name: String) -> PackedScene:
 	if _cache.has(name):
@@ -36,14 +42,46 @@ static func animation_player(root: Node) -> AnimationPlayer:
 	return root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 
 static func spawn_guest(id: String, parent: Node, pos := Vector3.ZERO, height := 0.66) -> Node3D:
+	if GUEST_VARIANTS.has(id):
+		var variant: Dictionary = GUEST_VARIANTS[id]
+		return _spawn_appearance(variant["base"], variant["appearance"], parent, pos, 0, height)
 	return spawn("customers/" + id, parent, pos, 0, height / float(GUEST_HEIGHTS[id]))
 
 ## Fit the rigged stand crew to the scale of the cart and kiosk.
 static func spawn_crew(female: bool, parent: Node, pos: Vector3, rot_y_deg: float, height: float) -> Node3D:
-	var path := "crew/abaya-lady" if female else "crew/kandura-man"
-	var fitted_scale := height / (1.622 if female else 1.714)
-	# The source feet sit about 1 cm below the rig origin in the idle clip.
-	return spawn(path, parent, pos + Vector3.UP * 0.011 * fitted_scale, rot_y_deg, fitted_scale)
+	var base := "creek-abaya" if female else "creek-kandura"
+	var appearance := "vendor-abaya" if female else "vendor-kandura"
+	var actor := _spawn_appearance(base, appearance, parent, pos, rot_y_deg, height)
+	# Crew and customers share the approved adult sculpt and rig. The serving clip
+	# gets its own resource because crew loop it while customers collect only once.
+	var ap := animation_player(actor)
+	var library := ap.get_animation_library("").duplicate() as AnimationLibrary
+	library.add_animation("interact-right", ap.get_animation("collect").duplicate(true))
+	ap.remove_animation_library("")
+	ap.add_animation_library("", library)
+	return actor
+
+static func _spawn_appearance(base: String, appearance: String, parent: Node, pos: Vector3, angle: float, height: float) -> Node3D:
+	var actor := spawn("customers/" + base, parent, pos, angle, height / float(GUEST_HEIGHTS[base]))
+	if actor == null:
+		return null
+	if appearance == "vendor-kandura":
+		return actor # Preserve the reviewed man's original skin, beard and kandura.
+	for mesh in actor.find_children("*", "MeshInstance3D", true, false):
+		for surface in mesh.mesh.get_surface_count():
+			var source := mesh.get_active_material(surface) as StandardMaterial3D
+			if source == null:
+				continue
+			var key := appearance + "|" + str(source.get_rid())
+			if not _appearance_materials.has(key):
+				var material := ShaderMaterial.new()
+				material.shader = CLOTHING_PALETTE
+				material.set_shader_parameter("atlas", source.albedo_texture)
+				var color: Color = {"vendor-abaya": Color("242b2c"), "souq-abaya": Color("22484b")}[appearance]
+				material.set_shader_parameter("target_hsv", Vector3(color.h, color.s, color.v))
+				_appearance_materials[key] = material
+			mesh.set_surface_override_material(surface, _appearance_materials[key])
+	return actor
 
 static func play_loop(root: Node, anim: String, speed: float = 1.0) -> void:
 	var ap := animation_player(root)

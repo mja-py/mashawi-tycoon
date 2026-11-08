@@ -25,13 +25,13 @@ const MAX_RIGGED_GUESTS := 6
 ## The first few faces establish each district. The same compact set is reused
 ## in different combinations for service customers and background walkers.
 const DISTRICT_CAST := {
-	"fahidi": ["creek-kandura", "creek-abaya", "souq-man", "souq-woman", "city-commuter", "beach-walker"],
-	"creek": ["beach-walker", "creek-abaya", "creek-kandura", "souq-woman", "souq-man"],
-	"metro": ["city-commuter", "souq-man", "creek-kandura", "souq-woman", "city-commuter", "creek-abaya"],
-	"jbr": ["jbr-modest-swimmer", "jbr-local-swimmer", "beach-walker", "souq-man", "creek-abaya", "souq-woman"],
-	"downtown": ["downtown-fashion", "downtown-tailored", "city-commuter", "village-evening", "creek-kandura", "souq-woman"],
-	"mall": ["creek-abaya", "city-commuter", "creek-kandura", "souq-woman", "souq-man", "beach-walker"],
-	"gv": ["village-evening", "downtown-tailored", "creek-kandura", "downtown-fashion", "souq-woman", "souq-man"],
+	"fahidi": ["creek-kandura", "creek-abaya", "souq-man", "souq-abaya", "city-commuter", "beach-walker"],
+	"creek": ["beach-walker", "creek-abaya", "creek-kandura", "village-evening", "souq-man"],
+	"metro": ["city-commuter", "souq-man", "creek-kandura", "souq-abaya", "city-commuter", "creek-abaya"],
+	"jbr": ["jbr-modest-swimmer", "jbr-local-swimmer", "beach-walker", "souq-man", "creek-abaya", "beach-walker"],
+	"downtown": ["downtown-fashion", "downtown-tailored", "city-commuter", "village-evening", "creek-kandura", "creek-abaya"],
+	"mall": ["creek-abaya", "city-commuter", "creek-kandura", "souq-abaya", "souq-man", "beach-walker"],
+	"gv": ["village-evening", "downtown-tailored", "creek-kandura", "downtown-fashion", "creek-abaya", "souq-man"],
 }
 const BUILDING_ROT := 0.0
 const ROAD_ROT := 0.0
@@ -70,6 +70,7 @@ var _rigged_guests := 0
 var _next_guest := 0
 var _next_passer := 2
 var customer_speed := 1.0
+var warmed_cast := {}
 
 func _ready() -> void:
 	_setup_camera()
@@ -278,7 +279,32 @@ func set_location(id: String) -> void:
 	if float(Data.LOCATIONS[id].get("competition", 0.0)) > 0.0:
 		_rival_stalls()
 	_batch.flush(_level)
+	if DisplayServer.get_name() != "headless":
+		_warm_district.call_deferred(_level)
 	set_time(Data.location_hours(id)[0], Game.weather)
+
+## Upload each district's cast before its first on-screen order, one actor per frame.
+## The ground occludes these temporary instances; they never join the simulation.
+func _warm_district(level: Node3D) -> void:
+	if level != _level or not is_instance_valid(level):
+		return
+	var cast: Array = DISTRICT_CAST[location_id].duplicate()
+	for id in cast:
+		if warmed_cast.has(id):
+			continue
+		await get_tree().process_frame
+		if not is_instance_valid(level) or level != _level or is_queued_for_deletion():
+			return
+		var actor := ModelLib.spawn_guest(id, level, Vector3(0, -1.2, -1.6))
+		if actor == null:
+			continue
+		for mesh in actor.find_children("*", "GeometryInstance3D", true, false):
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ModelLib.play_loop(actor, "idle")
+		await RenderingServer.frame_post_draw
+		if is_instance_valid(actor):
+			actor.queue_free()
+		warmed_cast[id] = true
 
 ## Stage tier sold from at a location (the rig, or the fixed plot built there).
 func _stage_at(id: String) -> int:
@@ -653,7 +679,7 @@ func _rival_stalls() -> void:
 		l.modulate = col.darkened(0.2)
 		l.position = Vector3(0, 1.34, 0.32)
 		st.add_child(l)
-		var vendor_id := "souq-woman" if i % 2 != 0 else "souq-man"
+		var vendor_id := "creek-abaya" if i % 2 != 0 else "souq-man"
 		var vendor := ModelLib.spawn_guest(vendor_id, st, Vector3(0, 0, -0.45))
 		if vendor:
 			ModelLib.play_loop(vendor, "idle")

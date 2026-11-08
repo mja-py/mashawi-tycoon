@@ -1,0 +1,14 @@
+// Render the approved character family through the production web renderer.
+import assert from 'node:assert/strict';
+import {launchChrome,watchConsole,armReady,waitReady,outDir} from './web_test_lib.mjs';
+const url=process.argv[2]||'http://localhost:8080/';
+const out=outDir(process.argv[3]||'/tmp/mashawi-cast');
+const browser=await launchChrome();
+try {
+ const context=await browser.newContext({viewport:{width:1600,height:900},deviceScaleFactor:1});
+ const page=await context.newPage(),logs=watchConsole(page);await armReady(page);
+ await page.goto(url+'?dev='+encodeURIComponent('--cast-review --lang=en --scale3d=1'));
+ await page.waitForSelector('#play',{state:'visible',timeout:180000});await page.click('#play');await waitReady(page,180000);
+ await page.waitForTimeout(1000);await page.screenshot({path:out+'/approved-character-family.png'});
+ assert.deepEqual(logs.errors(),[]);await context.close();console.log('Approved character family (web renderer): PASS');
+} finally {await browser.close()}

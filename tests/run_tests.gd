@@ -29,8 +29,43 @@ func _ready() -> void:
 	_test_skip_pickup(game)
 	_test_restaurant_service(game)
 	_test_terrace_clearance(game)
+	_test_cast_appearances()
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
+
+func _test_cast_appearances() -> void:
+	var stage := Node3D.new()
+	add_child(stage)
+	for location in World.DISTRICT_CAST:
+		for id in World.DISTRICT_CAST[location]:
+			check(id != "souq-woman" and ModelLib.GUEST_HEIGHTS.has(id), "%s uses reviewed cast %s" % [location, id])
+	var original := ModelLib.spawn_guest("creek-abaya", stage)
+	var guest := ModelLib.spawn_guest("souq-abaya", stage)
+	var woman := ModelLib.spawn_crew(true, stage, Vector3.ZERO, 0, 0.66)
+	var man := ModelLib.spawn_crew(false, stage, Vector3.ZERO, 0, 0.66)
+	for actor in [guest, woman, man]:
+		check(actor != null and ModelLib.animation_player(actor).has_animation("walk"), "shared sculpt appearance keeps its rig")
+	for actor in [woman, man]:
+		check(ModelLib.animation_player(actor).has_animation("interact-right"), "crew appearance keeps a serving animation")
+	var collect := ModelLib.animation_player(original).get_animation("collect")
+	var loop_mode := collect.loop_mode
+	ModelLib.play_loop(woman, "interact-right")
+	check(collect.loop_mode == loop_mode, "looping crew service cannot change customer collection")
+	var base_mesh: MeshInstance3D = original.find_children("*", "MeshInstance3D", true, false)[0]
+	var crew_mesh: MeshInstance3D = woman.find_children("*", "MeshInstance3D", true, false)[0]
+	check(base_mesh.mesh == crew_mesh.mesh, "female appearances share the approved geometry")
+	check(base_mesh.get_active_material(0) != crew_mesh.get_active_material(0), "a colorway cannot recolor the original customer")
+	var another := ModelLib.spawn_crew(true, stage, Vector3.ZERO, 0, 0.66)
+	var another_mesh: MeshInstance3D = another.find_children("*", "MeshInstance3D", true, false)[0]
+	check(another_mesh.get_active_material(0) == crew_mesh.get_active_material(0), "repeated appearances reuse their material and texture")
+	stage.free()
+	var main := get_parent()
+	var before: float = get_viewport().scaling_3d_scale
+	main.set_graphics_open(true)
+	main.set_guide_open()
+	check(get_viewport().scaling_3d_scale <= 0.5, "guide background uses a bounded rendering budget")
+	main.set_graphics_open(false)
+	check(is_equal_approx(get_viewport().scaling_3d_scale, before), "closing the guide restores the player's 3D quality")
 
 func _test_terrace_clearance(game) -> void:
 	# All districts use the same furnishing and routing contract at every fixed stage.
