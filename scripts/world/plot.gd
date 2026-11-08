@@ -61,7 +61,6 @@ var _fans: Array = []
 var _smokes: Array = []
 var _crew: Array = []
 var _t := 0.0
-var simulation_speed := 1.0
 ## {idx, table, pos, facing, route (plot space), y_off, who}
 var seats: Array = []
 ## {pos, node (plate holder), dirty, left}
@@ -74,6 +73,10 @@ var _applied := false
 var _stall_board: Label3D
 var _truck_board: Label3D
 var _extractor: Node3D
+var dining_staff: Array[DiningStaff] = []
+var service_open := false
+var clean_seconds := 1.4
+var service_stats := {"deliveries": 0, "cleaned": 0}
 
 func _init() -> void:
 	cart = MashawiStand.new()
@@ -134,6 +137,7 @@ func apply(state: Dictionary) -> void:
 	if _alive(_helper):
 		# a second pair of hands once the grill or the counter is busy enough
 		_helper.visible = int(stations.get("grill", 0)) >= 4 or int(stations.get("counter", 0)) >= 4
+	_configure_dining_staff(stations)
 	if any:
 		_night_set = false
 		set_night(_night)
@@ -201,6 +205,10 @@ func _free_key(k: String) -> void:
 		remove_child(n)
 		n.queue_free()
 	if k.begins_with("seating:"):
+		for worker in dining_staff:
+			remove_child(worker)
+			worker.queue_free()
+		dining_staff.clear()
 		seats.clear()
 		tables.clear()
 
@@ -265,7 +273,7 @@ static func _holds(who) -> bool:
 
 func free_seat() -> Dictionary:
 	for s in seats:
-		if _holds(s["who"]):
+		if _holds(s["who"]) or bool(s.get("needs_clean", false)):
 			continue
 		if bool(tables[int(s["table"])]["dirty"]):
 			continue
@@ -285,24 +293,40 @@ func release_seat(idx: int, who: Customer) -> void:
 		return
 	var table := int(seats[idx]["table"])
 	seats[idx]["who"] = null
+	seats[idx]["needs_clean"] = bool(tables[table]["meals"][idx % 2].visible)
 	for s in seats:
 		if int(s["table"]) == table and _holds(s["who"]):
 			return
-	set_table_dirty(table, true)
+	if seats[idx]["needs_clean"] or tables[table]["node"].visible:
+		set_table_dirty(table, true)
 
-func show_meal(table: int) -> void:
+func show_meal(table: int, item: String = "", seat_index: int = -1) -> Node3D:
 	if table >= 0 and table < tables.size() and _alive(tables[table]["node"]):
 		tables[table]["node"].show()
+		var meal: Node3D = tables[table]["meals"][maxi(seat_index, 0) % 2]
+		meal.show()
+		if not item.is_empty():
+			return ModelLib.served_food(meal, item, 0.095)
+	return null
 
 func set_table_dirty(table: int, dirty: bool) -> void:
 	if table < 0 or table >= tables.size():
 		return
 	var t: Dictionary = tables[table]
 	t["dirty"] = dirty
-	# nobody on the sim side buses tables yet: clear them after the cleaning time
-	t["left"] = maxf(float(Data.STATIONS["seating"].get("clean_min", 3.0)) * Data.REAL_SECONDS_PER_GAME_HOUR / 60.0, 1.0)
+	t["assigned"] = false
 	if _alive(t["node"]):
 		(t["node"] as Node3D).visible = dirty
+	if not dirty:
+		for s in seats:
+			if int(s["table"]) == table:
+				s["needs_clean"] = false
+		for meal in t["meals"]:
+			meal.hide()
+			for food in meal.get_children():
+				if food.name.begins_with("Served_"):
+					meal.remove_child(food)
+					food.queue_free()
 
 func dirty_tables() -> Array:
 	var out := []
@@ -310,6 +334,58 @@ func dirty_tables() -> Array:
 		if tables[i]["dirty"]:
 			out.append(i)
 	return out
+
+func unclaimed_dirty_table() -> int:
+	for i in range(tables.size()):
+		if tables[i]["dirty"] and not tables[i]["assigned"]:
+			return i
+	return -1
+
+func _configure_dining_staff(stations: Dictionary) -> void:
+	var count := 0
+	if stage >= FIXED and not tables.is_empty():
+		count = mini(3, 1 + (1 if stage >= 4 and seats.size() >= 4 else 0) + (1 if int(stations.get("staffroom", 0)) > 0 else 0))
+	clean_seconds = maxf(0.9, 1.6 - 0.12 * int(stations.get("washroom", 0)))
+	while dining_staff.size() > count:
+		var worker: DiningStaff = dining_staff.pop_back()
+		remove_child(worker)
+		worker.queue_free()
+	while dining_staff.size() < count:
+		var worker := DiningStaff.new()
+		add_child(worker)
+		worker.setup(self, dining_staff.size())
+		dining_staff.append(worker)
+
+func staff_home(index: int) -> Vector3:
+	return Vector3(ENTRY_X + 0.26 * index, DECK_Y, FRONT_AISLE_Z + 0.14)
+
+func staff_pickup() -> Vector3:
+	return Vector3(K_X - 0.4, DECK_Y, 0.62)
+
+func staff_table_route(table: int) -> Array[Vector3]:
+	var point: Vector3 = tables[table]["pos"]
+	var aisle := AISLE_Z if point.z < AISLE_Z else FRONT_AISLE_Z
+	return [Vector3(ENTRY_X, DECK_Y, FRONT_AISLE_Z), Vector3(ENTRY_X, DECK_Y, aisle),
+		Vector3(point.x, DECK_Y, aisle), Vector3(point.x, DECK_Y, point.z + 0.31)]
+
+func can_deliver() -> bool:
+	for worker in dining_staff:
+		if worker.available():
+			return true
+	return false
+
+func deliver_meal(customer: Customer, item: String, done: Callable) -> bool:
+	for worker in dining_staff:
+		if worker.available():
+			worker.deliver(customer, item, done)
+			return true
+	return false
+
+func staff_busy() -> bool:
+	for worker in dining_staff:
+		if worker.state != DiningStaff.State.IDLE:
+			return true
+	return false
 
 func set_serving(on: bool) -> void:
 	cart.set_serving(on)
@@ -352,11 +428,6 @@ func _process(delta: float) -> void:
 	for f in _fans:
 		if is_instance_valid(f):
 			(f as Node3D).rotation.y = sin(_t * 0.8) * 0.7
-	for t in tables:
-		if t["dirty"]:
-			t["left"] = float(t["left"]) - delta * simulation_speed
-			if float(t["left"]) <= 0.0:
-				set_table_dirty(tables.find(t), false)
 
 # ---------------------------------------------------------------- helpers
 
@@ -679,10 +750,16 @@ func _build_seating(n: Node3D, count: int, lounge: int) -> void:
 		meal.position = p + Vector3.UP * (tabletop + 0.019)
 		meal.visible = false
 		n.add_child(meal)
-		PlotBuilders.spawn("plate", meal, Vector3(-0.062, 0, 0), 0, 0.18, false)
-		PlotBuilders.spawn("plate", meal, Vector3(0.062, 0, 0), 0, 0.18, false)
-		PlotBuilders.spawn("cup", meal, Vector3(0, 0, -0.063), 0, 0.18, false)
-		tables.append({"pos": p, "node": meal, "dirty": false, "left": 0.0})
+		var meals: Array[Node3D] = []
+		for side in [-1.0, 1.0]:
+			var place := Node3D.new()
+			place.position.x = side * 0.062
+			place.hide()
+			meal.add_child(place)
+			PlotBuilders.spawn("plate", place, Vector3.ZERO, 0, 0.18, false)
+			PlotBuilders.spawn("cup", place, Vector3(0, 0, -0.063), 0, 0.12, false)
+			meals.append(place)
+		tables.append({"pos": p, "node": meal, "meals": meals, "dirty": false, "assigned": false})
 		for side in [-1.0, 1.0]:
 			var chair := p + Vector3(side * CHAIR_X, 0, 0)
 			if is_majlis:
@@ -697,7 +774,7 @@ func _build_seating(n: Node3D, count: int, lounge: int) -> void:
 			if p.z < AISLE_Z:
 				route = [Vector3(ENTRY_X, 0, FRONT_AISLE_Z), Vector3(ENTRY_X, 0, AISLE_Z), Vector3(chair.x, 0, AISLE_Z)]
 			seats.append({"idx": seats.size(), "table": i, "pos": Vector3(chair.x, 0, chair.z), "facing": -side * PI / 2.0,
-				"route": route, "y_off": 0.027, "who": null})
+				"route": route, "y_off": 0.027, "who": null, "needs_clean": false})
 	b.flush(n)
 
 func _majlis_rug(b: MeshBatch, p: Vector3) -> void:

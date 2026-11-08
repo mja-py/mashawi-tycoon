@@ -9,7 +9,7 @@ var rng: RandomNumberGenerator
 var queue: Array = []            # [{payload, item, wait}]
 var backlog: Dictionary = {}     # station -> [{payload, item, wait}]
 var seated: Array = []           # [{payload, left}]
-var dirty: Array = []            # minutes until each dirty table is clean again
+var dirty: Array = []            # [{left, table}], released by cleaning for visual days
 var stats := {"served": 0, "left_wait": 0, "max_queue": 0, "dine_in": 0, "wait_sum": 0.0, "kitchen_wait_sum": 0.0}
 var on_served: Callable          # (payload, item, wait_min, dine_in)
 var on_gave_up: Callable         # (payload, reason)
@@ -18,6 +18,9 @@ var on_left_seat: Callable       # (payload)
 var counter_ready: Callable
 var pickup_ready: Callable
 var waiting_in_line: Callable
+var dining_choice: Callable     # (payload, item) -> bool, reserves an actual seat
+var table_clean: Callable       # (table) -> bool
+var meal_finished: Callable     # (payload) -> bool
 var _acc_counter := 0.0
 var _acc: Dictionary = {}
 var _busy: Dictionary = {}
@@ -98,6 +101,12 @@ func tick(dt_min: float, _hour: float) -> void:
 			break
 		_acc_counter -= 1.0
 		var e: Dictionary = queue.pop_front()
+		var dine := seats_free() > 0 and rng.randf() < float(ctx.get("dine_in_share", 0.0))
+		if dine and dining_choice.is_valid():
+			dine = dining_choice.call(e["payload"], e["item"])
+		e["dine_in"] = dine
+		if dine:
+			seated.append({"payload": e["payload"], "left": float(ctx.get("dwell_min", 18.0)), "active": false})
 		var kind := String(Data.MENU_ITEMS[e["item"]].get("station_kind", ""))
 		var station := String(_station_of_kind.get(kind, ""))
 		if station != "" and backlog.has(station):
@@ -145,26 +154,28 @@ func tick(dt_min: float, _hour: float) -> void:
 		if not bool(seated[i].get("active", true)):
 			continue
 		seated[i]["left"] -= dt_min
-		if seated[i]["left"] <= 0.0:
+		var payload = seated[i]["payload"]
+		if seated[i]["left"] <= 0.0 and (not meal_finished.is_valid() or meal_finished.call(payload)):
 			var e: Dictionary = seated[i]
 			seated.remove_at(i)
-			dirty.append(float(ctx.get("clean_min", 3.0)))
+			var table := -1
 			if on_left_seat.is_valid():
-				on_left_seat.call(e["payload"])
+				table = int(on_left_seat.call(e["payload"]))
+			dirty.append({"left": float(ctx.get("clean_min", 3.0)), "table": table})
 	for i in range(dirty.size() - 1, -1, -1):
-		dirty[i] -= dt_min
-		if dirty[i] <= 0.0:
+		dirty[i]["left"] -= dt_min
+		var ready: bool = table_clean.call(int(dirty[i]["table"])) if table_clean.is_valid() else float(dirty[i]["left"]) <= 0.0
+		if ready:
 			dirty.remove_at(i)
 
 func _serve(e: Dictionary) -> void:
 	stats["served"] = int(stats["served"]) + 1
 	stats["wait_sum"] = float(stats["wait_sum"]) + float(e["wait"])
-	var dine := false
-	if seats_free() > 0 and rng.randf() < float(ctx.get("dine_in_share", 0.0)):
-		dine = true
-		# a visual sim activates the seat once the guest has walked to the chair (seat_taken)
-		seated.append({"payload": e["payload"], "left": float(ctx.get("dwell_min", 18.0)), "active": not bool(ctx.get("visual", false))})
+	var dine := bool(e.get("dine_in", false))
+	if dine:
 		stats["dine_in"] = int(stats["dine_in"]) + 1
+		if not bool(ctx.get("visual", false)):
+			seat_taken(e["payload"])
 	if on_served.is_valid():
 		on_served.call(e["payload"], e["item"], float(e["wait"]), dine)
 
@@ -173,6 +184,18 @@ func seat_taken(payload) -> void:
 	for e in seated:
 		if e["payload"] == payload:
 			e["active"] = true
+
+func close_queue() -> void:
+	for e in queue:
+		if on_gave_up.is_valid():
+			on_gave_up.call(e["payload"], "closing")
+	queue.clear()
+
+func has_orders() -> bool:
+	for orders in backlog.values():
+		if not orders.is_empty():
+			return true
+	return false
 
 ## Share of the day each stage was busy (seating = average occupancy).
 func utilisation() -> Dictionary:

@@ -687,12 +687,11 @@ func set_time(hour: float, weather_id: String) -> void:
 
 func set_customer_speed(value: float) -> void:
 	customer_speed = value
-	if plot:
-		plot.simulation_speed = value
 	if _level:
 		for node in _level.get_children():
 			if node is Customer:
 				node.simulation_speed = value if node.model == null else 1.0
+				node.movement_speed = minf(value, 2.0) if node.model else 1.0
 
 func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z
@@ -701,20 +700,16 @@ func spawn_walker(direction: int, potential_customer: bool = true, with_visuals:
 	var start := Vector3(-WALK_EDGE * direction, 0, z + randf_range(-0.1, 0.1))
 	return spawn_guest(direction, start, potential_customer, with_visuals)
 
-func spawn_skip_guest() -> Customer:
-	return spawn_guest(-1, pickup_slot(0) + Vector3(0.32, 0.0, 0.24), true, true, true)
-
-func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true, with_visuals: bool = true, presentation_only: bool = false) -> Customer:
+func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	# Keep room for service actors when the promenade already has passersby.
-	var limit := MAX_RIGGED_GUESTS if potential_customer else MAX_RIGGED_GUESTS - 2
-	# Skip can still show a pickup when the existing cast fills the promenade.
-	if presentation_only:
-		limit += 1
+	var guest_limit := MAX_RIGGED_GUESTS + (2 if plot and plot.stage >= Plot.FIXED else 0)
+	var limit := guest_limit if potential_customer else guest_limit - 2
 	var rigged := with_visuals and _rigged_guests < limit
-	if not rigged and (not potential_customer or presentation_only):
+	if not rigged and not potential_customer:
 		return null
 	var c := Customer.new()
 	c.simulation_speed = 1.0 if rigged else customer_speed
+	c.movement_speed = minf(customer_speed, 2.0) if rigged else 1.0
 	c.on_promenade = Paving.DESIGNS.has(location_id)
 	if plot:
 		c.order_facing = plot.service_front(false)
@@ -731,12 +726,10 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 			_next_passer += 1
 		_rigged_guests += 1
 	c.setup(model_id, direction, start, WALK_EDGE * direction, -1.25 * direction)
-	c.decided = not potential_customer or presentation_only
-	if not presentation_only:
-		walkers += 1
+	c.decided = not potential_customer
+	walkers += 1
 	c.gone.connect(func(_c):
-		if not presentation_only:
-			walkers -= 1
+		walkers -= 1
 		if rigged:
 			_rigged_guests -= 1)
 	return c
@@ -805,20 +798,8 @@ func _show_handoff_food(parcel: Node3D, sold_items: Array[String]) -> bool:
 		var item: Dictionary = Data.MENU_ITEMS[id]
 		if item["start"]:
 			continue
-		var model_path: String = item["model"]
-		var bounds := AABB()
-		for part in ModelLib.meshes_of(model_path):
-			var box: AABB = part[1] * (part[0] as Mesh).get_aabb()
-			bounds = box if not bounds.has_volume() else bounds.merge(box)
-		var span := maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z))
-		if span <= 0.001:
-			continue
-		var fit := 0.145 / span
-		var anchor := Vector3(bounds.get_center().x, bounds.position.y, bounds.get_center().z)
-		var food := ModelLib.spawn(model_path, parcel, Vector3.UP * 0.028 - anchor * fit, 0, fit)
+		var food := ModelLib.served_food(parcel, id)
 		if food:
-			food.name = "Served_" + id
-			PlotBuilders.no_shadow(food)
 			ModelLib.box(parcel, Vector3(0.17, 0.021, 0.16), Vector3.UP * 0.015, Color("c88c53"))
 			return true
 	return false

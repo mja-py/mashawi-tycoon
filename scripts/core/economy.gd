@@ -246,7 +246,7 @@ static func seat_capacity(seats: int, dwell_min: float, clean_min: float) -> flo
 static func dine_in_share(stage: Dictionary, seats: int) -> float:
 	if seats <= 0:
 		return 0.0
-	return float(stage.get("dine_in", 0.0)) * clampf(seats / 12.0, 0.0, 1.0)
+	return float(stage.get("dine_in", 0.0)) * clampf(seats / 4.0, 0.0, 1.0)
 
 static func spend_multiplier(majlis_level: int = 0) -> float:
 	return DINE_IN_SPEND + 0.03 * majlis_level

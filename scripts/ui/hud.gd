@@ -241,6 +241,7 @@ func _publish_menu_targets() -> void:
 		"curtain": _curtain_amount if curtain.visible else 0.0, "closing": closing_progress.value if closing_progress.visible and day_bar.visible else -1.0,
 		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text}
 	if main:
+		view["service"] = main.sim.service_view()
 		view["graphics"] = {"cap": Engine.max_fps, "choice": main.render_scale, "scale": get_viewport().scaling_3d_scale,
 			"fps": Engine.get_frames_per_second(), "open": _graphics_open, "clock": main.sim.hour}
 	JavaScriptBridge.eval("window.godotPresentation = " + JSON.stringify(view))

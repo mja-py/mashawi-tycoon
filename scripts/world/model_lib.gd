@@ -69,7 +69,7 @@ static func play_once(root: Node, anim: String, then: String = "idle") -> void:
 		ap.queue(then)
 		ap.get_animation(then).loop_mode = Animation.LOOP_LINEAR
 
-static func hand_position(actor: Node3D) -> Vector3:
+static func hand_position(actor: Node3D, bone_name: String = "RightHand") -> Vector3:
 	var skeleton: Skeleton3D
 	if actor.has_meta("_hand_skeleton"):
 		skeleton = actor.get_meta("_hand_skeleton") as Skeleton3D
@@ -81,10 +81,27 @@ static func hand_position(actor: Node3D) -> Vector3:
 			skeleton = rigs[0] as Skeleton3D
 			actor.set_meta("_hand_skeleton", skeleton)
 	if skeleton:
-		var hand := skeleton.find_bone("RightHand")
+		var hand := skeleton.find_bone(bone_name)
 		if hand >= 0:
 			return skeleton.to_global(skeleton.get_bone_global_pose(hand).origin)
 	return actor.to_global(Vector3(-0.17, 0.41, 0.16))
+
+static func served_food(parent: Node3D, item_id: String, width: float = 0.145) -> Node3D:
+	var path: String = Data.MENU_ITEMS[item_id]["model"]
+	var bounds := AABB()
+	for part in meshes_of(path):
+		var box: AABB = part[1] * (part[0] as Mesh).get_aabb()
+		bounds = box if not bounds.has_volume() else bounds.merge(box)
+	var span := maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z))
+	if span <= 0.001:
+		return null
+	var fit := width / span
+	var anchor := Vector3(bounds.get_center().x, bounds.position.y, bounds.get_center().z)
+	var food := spawn(path, parent, Vector3.UP * 0.028 - anchor * fit, 0, fit)
+	if food:
+		food.name = "Served_" + item_id
+		PlotBuilders.no_shadow(food)
+	return food
 
 ## Shared flat material per (colour, emission). Callers must not mutate the
 ## result; use flat_material_unique() when the material is changed later.

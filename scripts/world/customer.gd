@@ -12,6 +12,7 @@ enum State { WALK, TO_SLOT, QUEUED, TO_SEAT, SEATED, REACT, LEAVE, DONE }
 
 const WALK_SPEED := 0.8
 const WALK_ANIMATION_SPEED := 1.30
+const DINING_SLOT := 200
 
 var state: State = State.WALK
 var dir: int = 1
@@ -24,6 +25,7 @@ var model: Node3D
 var bubble: Label3D
 var wants: String = "food"
 var forced_stop := false
+var decision_roll := -1.0
 var on_promenade := false
 var order_facing := World.CART_POS
 var pickup_facing := World.CART_POS
@@ -36,6 +38,9 @@ var _seat_trail: Array[Vector3] = []
 var _bubble_tween: Tween
 ## Skip accelerates only customer movement; meshes and UI animate at normal speed.
 var simulation_speed := 1.0
+var movement_speed := 1.0
+var eating_left := 0.0
+var purchase_shown := false
 var order_shown := false
 var beat_left := 0.0
 var _yaw := 0.0
@@ -54,7 +59,7 @@ func setup(model_id: String, direction: int, start: Vector3, end_x: float, decid
 		return
 	model = ModelLib.spawn_guest(model_id, self)
 	if model:
-		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED * movement_speed)
 	_face_direction()
 	if model:
 		model.rotation.y = _yaw
@@ -79,7 +84,7 @@ func face_point(point: Vector3) -> void:
 
 func _walk_towards(pos: Vector3) -> void:
 	if model:
-		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED * movement_speed)
 		face_point(pos)
 
 func go_to_slot(index: int, pos: Vector3) -> void:
@@ -220,6 +225,7 @@ func react(anim: String) -> void:
 
 func _process(delta: float) -> void:
 	delta *= simulation_speed
+	eating_left = move_toward(eating_left, 0.0, delta)
 	if model:
 		model.rotation.y = rotate_toward(model.rotation.y, _yaw, 10.0 * delta)
 		if is_instance_valid(_bag):
@@ -231,6 +237,8 @@ func _process(delta: float) -> void:
 			_after_beat = Callable()
 			next.call()
 		return
+	# Skip moves feet faster while preserving the time needed to read an interaction.
+	delta *= movement_speed
 	match state:
 		State.WALK:
 			position.x += dir * speed * delta

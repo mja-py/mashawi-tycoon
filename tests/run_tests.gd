@@ -27,6 +27,7 @@ func _ready() -> void:
 	_test_mobile_stages_and_lighting(game)
 	_test_later_item_handoff(game)
 	_test_skip_pickup(game)
+	_test_restaurant_service(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
 
@@ -124,29 +125,101 @@ func _test_skip_pickup(game) -> void:
 	sim.sale_completed.connect(func(items: Array[String], _total: float): receipts.append(items))
 	sim.finished.connect(func(stats: Dictionary): reports.append(stats))
 	sim.finish_quickly()
-	for i in range(2):
-		var buyer := world.spawn_walker(-1, true, false)
-		buyer.wants = "side"
-		sim._on_served(buyer, "fries", 0.0, false)
-	var guest := sim._skip_guest
-	check(guest != null and guest.state == Customer.State.TO_SLOT and guest.simulation_speed == 1.0,
-		"Skip gives the buyer a visible approach at normal speed")
-	check(world.walkers == 2 and sim.stats["served"] == 2 and game.inventory["fries"] == 28,
-		"Skip presentation leaves trading and arrival counts independent")
-	if guest != null:
-		guest.position = world.pickup_slot(0)
-		guest._process(0.0)
-		check(guest.state == Customer.State.REACT and world.find_child("Served_fries", true, false) != null,
-			"Skip animates collection of the purchased dish at the pickup counter")
-		check(receipts == [["fries"]], "concurrent Skip sales share one handoff at a time")
-		var stock: Dictionary = game.inventory.duplicate()
-		sim._close()
-		check(reports.is_empty(), "the closing curtain waits for the active handoff")
-		guest._process(DaySim.HANDOFF_SECONDS)
-		check(guest.state == Customer.State.TO_SEAT or guest.state == Customer.State.LEAVE,
-			"the buyer walks away after collection")
-		check(reports.size() == 1 and sim.stats["served"] == 2 and game.inventory == stock,
-			"Skip settles once and the animation consumes no stock")
+	var invisible := world.spawn_walker(-1, true, false)
+	sim._on_served(invisible, "fries", 0.0, false)
+	check(sim.stats["served"] == 0 and receipts.is_empty() and game.inventory["fries"] == 30,
+		"Skip cannot charge an invisible customer")
+	var buyer := world.spawn_guest(-1, world.pickup_slot(0))
+	buyer.wants = "side"
+	buyer.slot = 100
+	buyer.state = Customer.State.QUEUED
+	check(sim._pickup_ready(buyer), "the actual Skip buyer reaches the pickup point")
+	sim._on_served(buyer, "fries", 0.0, false)
+	check(buyer.state == Customer.State.REACT and buyer.purchase_shown and receipts == [["fries"]],
+		"each Skip receipt belongs to the actual buyer's animated collection")
+	check(world.find_child("Served_fries", true, false) != null and game.inventory["fries"] == 29,
+		"Skip hands over the purchased dish and consumes one portion")
+	sim._on_served(buyer, "fries", 0.0, false)
+	check(receipts.size() == 1 and game.inventory["fries"] == 29, "a repeated service callback cannot charge the buyer twice")
+	check(not sim._pickup_ready(buyer), "an active handoff holds the pickup counter")
+	sim._close()
+	check(reports.is_empty(), "the closing curtain waits for the active handoff")
+	buyer._process(DaySim.HANDOFF_SECONDS)
+	sim._process(DaySim.HANDOFF_SECONDS)
+	check(reports.size() == 1 and sim.stats["served"] == 1, "Skip settles the actual purchase exactly once")
+	sim.queue_free()
+	world.queue_free()
+	game.new_game()
+
+func _test_restaurant_service(game) -> void:
+	game.new_game()
+	game.money = 100000.0
+	game.rig["stage"] = "truck"
+	game.plot()["stage"] = "restaurant"
+	game.plot()["stations"] = {"counter": 6, "grill": 6, "seating": 3}
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 30
+	var needs := Economy.portion_ingredients("chicken_tikka", game.menu["chicken_tikka"])
+	game.inventory["chicken"] = int(needs["chicken"])
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	var sim := DaySim.new()
+	add_child(sim)
+	sim.start(game.sim_context(), world)
+	check(world.plot.dining_staff.size() == 2, "restaurant seating brings two service workers")
+	var diner := world.spawn_guest(-1, world.queue_slot(0))
+	diner.wants = "side"
+	check(sim._choose_dining(diner, "chicken_tikka"), "a diner reserves a clean chair before cooking")
+	var table := int(diner.seat["table"])
+	var seat := int(diner.seat["idx"])
+	sim._on_ordered(diner, "grill")
+	check(diner.state == Customer.State.TO_SEAT, "dine-in customers walk to their booked table")
+	diner._sit_down()
+	sim.tp.seated.append({"payload": diner, "left": 1.0, "active": false})
+	var receipts: Array[Array] = []
+	var reports: Array[Dictionary] = []
+	sim.sale_completed.connect(func(items: Array[String], _total: float): receipts.append(items))
+	sim.finished.connect(func(stats: Dictionary): reports.append(stats))
+	var starting_money: float = game.money
+	sim._on_served(diner, "chicken_tikka", 0.0, true)
+	check(sim.stats["served"] == 0 and game.money == starting_money and not sim.tp.seated[0]["active"],
+		"food in transit creates no receipt and the diner waits to eat")
+	check(not sim._stock_available("chicken_tikka"), "food on the server's tray is reserved against competing sales")
+	check(not world.plot.tables[table]["node"].visible, "a waiting table starts without a meal")
+	sim.finish_quickly()
+	sim._close()
+	var saw_delivery := false
+	var saw_dirty := false
+	var saw_cleaning := false
+	var dirty_blocked := true
+	for i in range(1000):
+		for worker in world.plot.dining_staff:
+			worker._process(0.05)
+			if worker.state == DiningStaff.State.CLEAN:
+				saw_cleaning = true
+		if diner.state != Customer.State.DONE:
+			diner._process(0.05)
+		sim._process(0.05)
+		if diner.purchase_shown:
+			saw_delivery = true
+		if world.plot.tables[table]["dirty"]:
+			saw_dirty = true
+			var free := world.plot.free_seat()
+			dirty_blocked = dirty_blocked and (free.is_empty() or int(free["table"]) != table)
+		if not sim.running:
+			break
+	check(saw_delivery and receipts == [["chicken_tikka"]] and sim.stats["served"] == 1,
+		"the server visibly delivers before recording a single sale")
+	check(saw_dirty and saw_cleaning and world.plot.service_stats["cleaned"] == 1,
+		"a real worker clears the used table after the diner leaves")
+	check(dirty_blocked, "a dirty table stays unavailable for the whole clearing job")
+	check(not world.plot.tables[table]["dirty"] and not world.plot.seats[seat]["needs_clean"],
+		"the table becomes available after clearing finishes")
+	check(sim.tp.seated.is_empty() and sim._pending_deliveries.is_empty() and reports.size() == 1,
+		"closing drains deliveries, diners, and cleaning before settling once")
+	check(is_equal_approx(game.money - starting_money, float(sim.stats["revenue"])) and game.inventory["chicken"] == 0,
+		"dine-in payment matches revenue and consumes the reserved portion once")
 	sim.queue_free()
 	world.queue_free()
 	game.new_game()
