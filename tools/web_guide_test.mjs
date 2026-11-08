@@ -8,6 +8,7 @@ const out = outDir(process.argv[3] || '/tmp/mashawi-guide');
 const browser = await launchWebKit();
 try {
   for (const [lang, profile, width, height] of [['en','iPhone SE',667,375],['ar','iPhone 14',844,390]]) {
+    if(process.argv[4] && lang!==process.argv[4]) continue;
     const context = await browser.newContext({...devices[profile], viewport:{width,height}, locale:lang,
       recordVideo:{dir:out,size:{width:1000,height:562}}});
     try {
@@ -79,11 +80,21 @@ try {
       await page.setViewportSize({width,height});
       await page.waitForFunction(()=>window.godotState?.paused===false);
       assert.equal(await page.evaluate(()=>window.godotPresentation.graphics.clock),clock,'rotation keeps the guide pause intact');
+      // Godot relayout and the dev-only button geometry update on subsequent frames.
+      await page.waitForFunction(()=>window.godotPresentation?.guide?.fits);
+      await page.waitForTimeout(600);
       await hit('guide_close');
       await page.waitForFunction(clock=>window.godotPresentation.graphics.clock>clock,clock);
       const errors=logs.errors(); fs.writeFileSync(`${out}/${lang}-console.json`,JSON.stringify(logs.logs,null,2));
       assert.deepEqual(errors,[],`no game or browser errors: ${errors.join('\n')}`);
       console.log(`${lang}: 8 localized chapters, first-new-game launch, safe layout, all 6 real-menu handoffs, replay, back, close, credits, active-day pause and rotation: PASS`);
+    } catch(error) {
+      const page=context.pages()[0];
+      if(page) {
+        await page.screenshot({path:`${out}/${lang}-failure.png`});
+        fs.writeFileSync(`${out}/${lang}-failure.json`,JSON.stringify(await page.evaluate(()=>({state:window.godotState,view:window.godotPresentation,targets:window.godotMenuTargets})),null,2));
+      }
+      throw error;
     } finally {await context.close();}
   }
 } finally {await browser.close();}
