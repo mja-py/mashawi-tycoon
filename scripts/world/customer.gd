@@ -36,9 +36,6 @@ var seat: Dictionary = {}
 var _path: Array[Vector3] = []
 var _seat_trail: Array[Vector3] = []
 var _bubble_tween: Tween
-## Actor-local multipliers stay at one; DaySim owns the shared playback clock.
-var simulation_speed := 1.0
-var movement_speed := 1.0
 var eating_left := 0.0
 var purchase_shown := false
 var order_shown := false
@@ -47,19 +44,18 @@ var _yaw := 0.0
 var _after_beat: Callable
 var _bag: Node3D
 
-func setup(model_id: String, direction: int, start: Vector3, end_x: float, decide_x: float) -> void:
+func setup(model_id: String, direction: int, start: Vector3, end_x: float, decide_x: float, walk_speed: float) -> void:
 	dir = direction
 	position = start
 	exit_x = end_x
 	decision_x = decide_x
-	speed = WALK_SPEED * randf_range(0.85, 1.2)
-	# A virtual customer still walks, queues, eats and pays through the same rules,
-	# without allocating a mesh, skeleton, material, speech label or GPU shader.
+	speed = walk_speed
+	# Only guests with a model can take part in service.
 	if model_id.is_empty():
 		return
 	model = ModelLib.spawn_guest(model_id, self)
 	if model:
-		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED * movement_speed)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
 	_face_direction()
 	if model:
 		model.rotation.y = _yaw
@@ -84,7 +80,7 @@ func face_point(point: Vector3) -> void:
 
 func _walk_towards(pos: Vector3) -> void:
 	if model:
-		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED * movement_speed)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
 		face_point(pos)
 
 func go_to_slot(index: int, pos: Vector3) -> void:
@@ -152,10 +148,6 @@ func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false) ->
 
 ## Hold the pose at the counter before moving on to the next part of the visit.
 func perform(clip: String, fallback: String, seconds: float, then: Callable = Callable()) -> void:
-	if simulation_speed > 1.0:
-		if then.is_valid():
-			then.call()
-		return
 	if model:
 		var player := ModelLib.animation_player(model)
 		var anim := clip if player and player.has_animation(clip) else fallback
@@ -176,7 +168,6 @@ func reject(point: Vector3, reason: String, text: String, color: Color) -> void:
 func take_bag(bag: Node3D) -> void:
 	_bag = bag
 	bag.reparent(self)
-	bag.global_position = ModelLib.hand_position(model) + Vector3.DOWN * 0.062
 
 func _start_leaving() -> void:
 	if state == State.DONE:
@@ -200,11 +191,11 @@ func _start_leaving() -> void:
 	state = State.LEAVE
 	target = Vector3(exit_x, 0, position.z)
 	if model:
-		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED * movement_speed)
+		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
 	_face_direction()
 
 func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.78) -> void:
-	if bubble == null or simulation_speed > 1.0:
+	if bubble == null:
 		return
 	bubble.text = text
 	bubble.position.y = height
@@ -219,26 +210,31 @@ func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height
 	_bubble_tween.tween_property(bubble, "modulate:a", 0.0, 0.4)
 	_bubble_tween.tween_callback(func(): bubble.visible = false)
 
-func react(anim: String) -> void:
-	if model and simulation_speed == 1.0 and state != State.SEATED:
-		ModelLib.play_once(model, anim, "idle")
-
 func _process(delta: float) -> void:
-	delta *= simulation_speed
+	step(delta)
+	render_service()
+
+func set_day_managed(managed: bool) -> void:
+	set_process(not managed)
+	ModelLib.set_manual_pose(model, managed)
+
+func render_service() -> void:
+	ModelLib.render_pose(model)
+	if is_instance_valid(_bag):
+		_bag.global_position = ModelLib.hand_position(model) + Vector3.DOWN * 0.062
+
+func step(delta: float) -> void:
 	eating_left = move_toward(eating_left, 0.0, delta)
 	if model:
+		ModelLib.step_pose(model, delta)
 		model.rotation.y = rotate_toward(model.rotation.y, _yaw, 10.0 * delta)
-		if is_instance_valid(_bag):
-			_bag.global_position = ModelLib.hand_position(model) + Vector3.DOWN * 0.062
 	if beat_left > 0.0:
-		beat_left = 0.0 if simulation_speed > 1.0 else move_toward(beat_left, 0.0, delta)
+		beat_left = move_toward(beat_left, 0.0, delta)
 		if beat_left == 0.0 and _after_beat.is_valid():
 			var next := _after_beat
 			_after_beat = Callable()
 			next.call()
 		return
-	# DaySim advances feet and service beats on the same fixed clock.
-	delta *= movement_speed
 	match state:
 		State.WALK:
 			position.x += dir * speed * delta

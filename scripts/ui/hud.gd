@@ -18,6 +18,7 @@ var weather_icon: TextureRect
 var weather_label: Label
 var star_box: HBoxContainer
 var clock_label: Label
+var _clock_minute := -1
 var clock_chip: PanelContainer
 var costs_chip: PanelContainer
 var costs_label: Label
@@ -421,6 +422,7 @@ func _build_top_bar() -> void:
 	h.add_child(star_box)
 	clock_chip = _chip("10:00")
 	clock_label = clock_chip.get_child(0).get_child(0)
+	_clock_minute = -1
 	clock_label.add_theme_font_size_override("font_size", 24)
 	clock_chip.visible = false
 	h.add_child(clock_chip)
@@ -893,9 +895,10 @@ func _refresh() -> void:
 	_refreshing = false
 
 func _on_clock(hour: float) -> void:
-	var h := int(hour)
-	var m := int((hour - h) * 60.0)
-	clock_label.text = "%02d:%02d" % [h % 24, m]
+	var minute := floori(hour * 60.0)
+	if minute != _clock_minute:
+		_clock_minute = minute
+		clock_label.text = "%02d:%02d" % [floori(hour) % 24, minute % 60]
 	if closing_progress.visible:
 		closing_progress.value = clampf(inverse_lerp(_closing_from, maxf(_closing_until, _closing_from + 0.01), hour), 0.0, 1.0)
 

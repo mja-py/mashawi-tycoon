@@ -4,6 +4,8 @@ extends RefCounted
 
 static var _cache := {}
 static var _appearance_materials := {}
+static var _crew_libraries := {}
+static var _playback_clips := {}
 const GUEST_HEIGHTS := {
 	"souq-man": 1.75,
 	"souq-abaya": 1.63,
@@ -56,13 +58,16 @@ static func spawn_crew(female: bool, parent: Node, pos: Vector3, rot_y_deg: floa
 	var base := "creek-abaya" if female else "creek-kandura"
 	var appearance := "vendor-abaya" if female else "vendor-kandura"
 	var actor := _spawn_appearance(base, appearance, parent, pos, rot_y_deg, height)
-	# Crew and customers share the approved adult sculpt and rig. The serving clip
-	# gets its own resource because crew loop it while customers collect only once.
+	# The approved guest rig supplies the vendor's interaction pose.
 	var ap := animation_player(actor)
-	var library := ap.get_animation_library("").duplicate() as AnimationLibrary
-	library.add_animation("interact-right", ap.get_animation("collect").duplicate(true))
+	if ap == null:
+		return actor
+	if not _crew_libraries.has(base):
+		var library := ap.get_animation_library("").duplicate() as AnimationLibrary
+		library.add_animation("interact-right", ap.get_animation("collect"))
+		_crew_libraries[base] = library
 	ap.remove_animation_library("")
-	ap.add_animation_library("", library)
+	ap.add_animation_library("", _crew_libraries[base])
 	return actor
 
 static func _spawn_appearance(base: String, appearance: String, parent: Node, pos: Vector3, angle: float, height: float) -> Node3D:
@@ -89,27 +94,76 @@ static func _spawn_appearance(base: String, appearance: String, parent: Node, po
 
 static func play_loop(root: Node, anim: String, speed: float = 1.0) -> void:
 	var ap := animation_player(root)
-	if ap == null:
+	if ap == null or not ap.has_animation(anim):
 		return
-	if not ap.has_animation(anim):
-		return
-	ap.get_animation(anim).loop_mode = Animation.LOOP_LINEAR
+	var key := _playback_key(ap, anim, Animation.LOOP_LINEAR)
 	ap.speed_scale = speed
-	if ap.current_animation != anim:
-		ap.play(anim, 0.15)
+	if ap.current_animation != key:
+		ap.clear_queue()
+		ap.set_meta("_pose_delta", 0.0)
+		ap.play(key, 0.15)
 
 static func play_once(root: Node, anim: String, then: String = "idle") -> void:
 	var ap := animation_player(root)
 	if ap == null or not ap.has_animation(anim):
 		return
+	var key := _playback_key(ap, anim, Animation.LOOP_NONE)
 	ap.clear_queue()
 	ap.speed_scale = 1.0
-	ap.get_animation(anim).loop_mode = Animation.LOOP_NONE
-	ap.play(anim, 0.1)
+	ap.set_meta("_pose_delta", 0.0)
+	if ap.current_animation == key:
+		ap.seek(0.0)
+	ap.play(key, 0.1)
 	if then != "" and ap.has_animation(then):
-		ap.set_blend_time(anim, then, 0.18)
-		ap.queue(then)
-		ap.get_animation(then).loop_mode = Animation.LOOP_LINEAR
+		var next := _playback_key(ap, then, Animation.LOOP_LINEAR)
+		ap.set_blend_time(key, next, 0.18)
+		ap.queue(next)
+
+## Imported animation resources are shared by every instance of the rig.
+static func _playback_key(ap: AnimationPlayer, clip: String, mode: Animation.LoopMode) -> String:
+	var source := ap.get_animation(clip)
+	if source.loop_mode == mode:
+		return clip
+	var alias := "%s_%d" % [clip, mode]
+	var library: AnimationLibrary
+	if ap.has_animation_library("playback"):
+		library = ap.get_animation_library("playback")
+	else:
+		library = AnimationLibrary.new()
+		ap.add_animation_library("playback", library)
+	if not library.has_animation(alias):
+		var key := "%d:%d" % [source.get_instance_id(), mode]
+		if not _playback_clips.has(key):
+			var copy := source.duplicate() as Animation
+			copy.loop_mode = mode
+			_playback_clips[key] = copy
+		library.add_animation(alias, _playback_clips[key])
+	return "playback/" + alias
+
+static func is_playing_loop(ap: AnimationPlayer, clip: String) -> bool:
+	return ap.has_animation(clip) and ap.current_animation == _playback_key(ap, clip, Animation.LOOP_LINEAR)
+
+## Business actors accumulate only ticks spent in their current pose. Sampling once
+## per rendered frame keeps skeleton work bounded at Skip speed.
+static func set_manual_pose(actor: Node3D, manual: bool) -> void:
+	if is_instance_valid(actor):
+		var ap := animation_player(actor)
+		if ap:
+			ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL if manual else AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
+			ap.set_meta("_pose_delta", 0.0)
+
+static func step_pose(actor: Node3D, delta: float) -> void:
+	if is_instance_valid(actor):
+		var ap := animation_player(actor)
+		if ap and ap.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL:
+			ap.set_meta("_pose_delta", float(ap.get_meta("_pose_delta", 0.0)) + delta)
+
+static func render_pose(actor: Node3D) -> void:
+	if is_instance_valid(actor):
+		var ap := animation_player(actor)
+		if ap and ap.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL:
+			ap.advance(float(ap.get_meta("_pose_delta", 0.0)))
+			ap.set_meta("_pose_delta", 0.0)
 
 static func hand_position(actor: Node3D, bone_name: String = "RightHand") -> Vector3:
 	var skeleton: Skeleton3D

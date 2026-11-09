@@ -114,9 +114,8 @@ func _process(delta: float) -> void:
 	if not card.visible:
 		_outline.hide()
 		return
-	var real_delta := delta / maxf(Engine.time_scale, 0.01)
-	_pulse += real_delta
-	_poll += real_delta
+	_pulse += delta
+	_poll += delta
 	if _poll >= 0.2:
 		_poll = 0.0
 		# Settling is an automatic transition; keep the report and its real Next day button.

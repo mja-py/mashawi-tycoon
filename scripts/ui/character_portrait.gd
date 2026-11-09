@@ -72,10 +72,13 @@ func gesture() -> void:
 
 func _process(delta: float) -> void:
 	# Fast-forward applies to the street, while our host speaks at a natural pace.
-	_elapsed += delta / maxf(Engine.time_scale, 0.01)
+	_elapsed += delta
 	if _elapsed + 0.0001 < FRAME_SECONDS:
 		return
-	var advance := minf(_elapsed, 0.1)
+	var elapsed_frames := floori((_elapsed + 0.0001) / FRAME_SECONDS)
+	var elapsed_time := elapsed_frames * FRAME_SECONDS
+	_elapsed = maxf(0.0, _elapsed - elapsed_time)
+	var advance := minf(elapsed_time, 0.1)
 	_animation.advance(advance)
 	if mentor_mode:
 		_breath += advance
@@ -84,11 +87,10 @@ func _process(delta: float) -> void:
 			_gesture_left = maxf(0.0, _gesture_left - advance)
 			if _gesture_left == 0.0:
 				ModelLib.play_loop(actor, "idle")
-		if _gesture_left == 0.0 and _animation.current_animation == "idle" and _animation.current_animation_position >= 0.3:
+		if _gesture_left == 0.0 and ModelLib.is_playing_loop(_animation, "idle") and _animation.current_animation_position >= 0.3:
 			# Keep the mentor facing the player instead of scanning the promenade.
 			_animation.seek(0.3, true)
 			_animation.pause()
-	_elapsed = fmod(_elapsed, FRAME_SECONDS)
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_frames += 1
 

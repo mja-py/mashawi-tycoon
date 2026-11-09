@@ -12,7 +12,6 @@ var world: World
 var sim: DaySim
 var hud: Node
 var phase: Phase = Phase.TITLE
-var speed := 1.0
 var frame_cap := 60
 var render_scale := 0
 var _graphics_open := false
@@ -56,10 +55,9 @@ func _on_web_visibility(args: Array) -> void:
 
 ## Sustained slow frames lower only the 3D resolution; menus/text stay crisp.
 ## Use real frame time: the player's simulation speed must not change this decision.
-func _process(_delta: float) -> void:
+func _process(dt: float) -> void:
 	if not OS.has_feature("web") or render_scale != 0 or _graphics_open or DevTools.has("scale3d"):
 		return
-	var dt := get_process_delta_time() / maxf(Engine.time_scale, 0.01)
 	if _quality_warmup > 0.0:
 		_quality_warmup -= dt
 		return
@@ -348,7 +346,6 @@ func start_day(skip_weather_roll: bool = false) -> void:
 	_publish_state()
 
 func set_speed(s: float) -> void:
-	speed = s
 	sim.set_playback_speed(s)
 
 func skip_day() -> void:
@@ -363,7 +360,6 @@ func _on_day_finished(stats: Dictionary) -> void:
 	if phase != Phase.DAY or int(stats.get("_day", Game.day)) != Game.day:
 		return
 	sim.finishing = false
-	world.set_customer_speed(1.0)
 	set_speed(1.0)
 	phase = Phase.REPORT
 	var report := Game.end_day(stats)

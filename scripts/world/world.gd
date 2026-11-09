@@ -22,6 +22,7 @@ const CART_POS := Vector3(0.0, 0.0, -1.42)
 const WALK_EDGE := 5.6
 const MAX_WALKERS := 16
 const MAX_RIGGED_GUESTS := 6
+const HANDOFF_TRANSFER_SECONDS := 0.58
 ## The first few faces establish each district. The same compact set is reused
 ## in different combinations for service customers and background walkers.
 const DISTRICT_CAST := {
@@ -63,6 +64,11 @@ var _lamps: Array[OmniLight3D] = []
 var _rng := RandomNumberGenerator.new()
 var guest_rng := RandomNumberGenerator.new()
 var managed_customers := false
+var active_guests: Array[Customer] = []
+var _handoff_prop: Node3D
+var _handoff_guest: Customer
+var _handoff_elapsed := 0.0
+var _counter_gesture_left := 0.0
 ## static small parts of the level, flushed into _level as MultiMeshes
 var _batch := MeshBatch.new()
 var _sky_day := Color(0.55, 0.78, 0.98)
@@ -71,7 +77,6 @@ var walkers := 0
 var _rigged_guests := 0
 var _next_guest := 0
 var _next_passer := 2
-var customer_speed := 1.0
 var warmed_cast := {}
 
 func _ready() -> void:
@@ -226,15 +231,12 @@ func reload() -> void:
 func set_location(id: String) -> void:
 	if id == location_id:
 		return
+	reset_day_guests()
 	location_id = id
 	if _level:
 		_level.queue_free()
 	_lamps.clear()
 	_beach_crowns.clear()
-	walkers = 0
-	_rigged_guests = 0
-	_next_guest = 0
-	_next_passer = 2
 	_level = Node3D.new()
 	add_child(_level)
 	_batch = MeshBatch.new()
@@ -273,6 +275,7 @@ func set_location(id: String) -> void:
 		"mall": _build_mall()
 		"gv": _build_gv()
 	plot = Plot.new()
+	plot.staff_collect = play_staff_collection
 	plot.position = Plot.PLOT_POS
 	cart = plot.cart
 	_level.add_child(plot)
@@ -719,15 +722,57 @@ func set_time(hour: float, weather_id: String) -> void:
 
 # ---------------------------------------------------------------- spawning
 
-func set_customer_speed(value: float) -> void:
-	customer_speed = value
-	if _level:
-		for node in _level.get_children():
-			if node is Customer:
-				node.simulation_speed = value if node.model == null else 1.0
-				node.movement_speed = minf(value, 2.0) if node.model else 1.0
-				if node.model and node.state in [Customer.State.WALK, Customer.State.TO_SLOT, Customer.State.TO_SEAT, Customer.State.LEAVE]:
-					ModelLib.play_loop(node.model, "walk", node.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED * node.movement_speed)
+func reset_day_guests() -> void:
+	_clear_handoff()
+	_counter_gesture_left = 0.0
+	for guest in active_guests:
+		if is_instance_valid(guest):
+			guest.hide()
+			guest.set_process(false)
+			guest.queue_free()
+	active_guests.clear()
+	walkers = 0
+	_rigged_guests = 0
+	_next_guest = 0
+	_next_passer = 2
+
+func set_day_managed(managed: bool) -> void:
+	managed_customers = managed
+	for guest in active_guests:
+		if is_instance_valid(guest) and guest.state != Customer.State.DONE:
+			guest.set_day_managed(managed)
+	if plot:
+		ModelLib.set_manual_pose(plot.server(), managed)
+		for worker in plot.dining_staff:
+			worker.set_day_managed(managed)
+
+func step_service(delta: float) -> void:
+	_counter_gesture_left = move_toward(_counter_gesture_left, 0.0, delta)
+	if plot:
+		ModelLib.step_pose(plot.server(), delta)
+	if not is_instance_valid(_handoff_prop):
+		return
+	if not is_instance_valid(_handoff_guest) or _handoff_guest.state == Customer.State.DONE:
+		_clear_handoff()
+		return
+	_handoff_elapsed += delta
+	if _handoff_elapsed >= HANDOFF_TRANSFER_SECONDS:
+		_handoff_guest.take_bag(_handoff_prop)
+		_handoff_prop = null
+		_handoff_guest = null
+
+func render_service() -> void:
+	if plot:
+		ModelLib.render_pose(plot.server())
+		for worker in plot.dining_staff:
+			worker.render_service()
+	for i in range(active_guests.size() - 1, -1, -1):
+		var guest := active_guests[i]
+		if is_instance_valid(guest) and guest.state != Customer.State.DONE:
+			guest.render_service()
+		else:
+			active_guests.remove_at(i)
+	_render_handoff()
 
 func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z
@@ -744,8 +789,6 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 	if not rigged and not potential_customer:
 		return null
 	var c := Customer.new()
-	c.simulation_speed = 1.0 if rigged else customer_speed
-	c.movement_speed = minf(customer_speed, 2.0) if rigged else 1.0
 	c.on_promenade = Paving.DESIGNS.has(location_id)
 	if plot:
 		c.order_facing = plot.service_front(false)
@@ -761,26 +804,25 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 			model_id = cast[_next_passer % cast.size()]
 			_next_passer += 1
 		_rigged_guests += 1
-	c.setup(model_id, direction, start, WALK_EDGE * direction, -1.25 * direction)
+	var walk_speed := Customer.WALK_SPEED
 	if potential_customer:
-		c.speed = Customer.WALK_SPEED * guest_rng.randf_range(0.85, 1.2)
-	else:
-		c.speed = Customer.WALK_SPEED
-	if c.model:
-		ModelLib.play_loop(c.model, "walk", c.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED)
-	c.set_process(not managed_customers)
+		walk_speed *= guest_rng.randf_range(0.85, 1.2)
+	c.setup(model_id, direction, start, WALK_EDGE * direction, -1.25 * direction, walk_speed)
+	c.set_day_managed(managed_customers)
 	c.decided = not potential_customer
+	active_guests.append(c)
 	walkers += 1
-	c.gone.connect(func(_c):
-		walkers -= 1
-		if rigged:
-			_rigged_guests -= 1)
+	c.gone.connect(func(guest):
+		if guest in active_guests:
+			walkers -= 1
+			if rigged:
+				_rigged_guests -= 1)
 	return c
 
 func clear_virtual_walkers() -> void:
-	for node in _level.get_children():
-		if node is Customer and node.bubble == null:
-			node._finish()
+	for guest in active_guests:
+		if is_instance_valid(guest) and guest.model == null:
+			guest._finish()
 
 func queue_slot(index: int) -> Vector3:
 	if plot != null and plot.has_method("queue_slot"):
@@ -794,10 +836,12 @@ func pickup_slot(index: int) -> Vector3:
 	return CART_POS + Vector3(-0.55 - 0.42 * (index % 4), 0, 0.5 + 0.3 * int(index / 4))
 
 ## Follow the staff hand during the offer, then carry the bag with the guest.
-func handoff(customer: Customer, sold_items: Array[String]) -> void:
+func handoff(customer: Customer, sold_items: Array[String], seconds: float) -> void:
 	var actor := plot.server() if plot else null
 	if actor == null or customer.model == null:
 		return
+	_clear_handoff()
+	_counter_gesture_left = seconds
 	customer.face_point(actor.global_position)
 	ModelLib.play_once(actor, "interact-right")
 	var animation := ModelLib.animation_player(actor)
@@ -807,32 +851,45 @@ func handoff(customer: Customer, sold_items: Array[String]) -> void:
 		animation.speed_scale = 1.6
 	var bag := Node3D.new()
 	_level.add_child(bag)
+	_handoff_prop = bag
+	_handoff_guest = customer
+	_handoff_elapsed = 0.0
 	if not _show_handoff_food(bag, sold_items):
 		var paper := Color("e6b574")
 		ModelLib.box(bag, Vector3(0.126, 0.148, 0.078), Vector3.ZERO, paper)
 		ModelLib.box(bag, Vector3(0.13, 0.023, 0.082), Vector3(0.0, 0.07, 0.0), paper.darkened(0.12))
 		for z in [-0.04, 0.04]:
 			ModelLib.box(bag, Vector3(0.065, 0.049, 0.003), Vector3(0.0, 0.0, z), Color("286458"))
-	var offset := Vector3.DOWN * 0.062
-	bag.global_position = ModelLib.hand_position(actor) + offset
-	var truck := plot.stage == 2
-	var motion := bag.create_tween()
-	motion.tween_method(func(progress: float):
-		if is_instance_valid(customer) and is_instance_valid(actor):
-			var from := ModelLib.hand_position(actor)
-			var to := ModelLib.hand_position(customer.model)
-			var point := from.lerp(to, smoothstep(0.25, 0.8, progress)) + offset
-			if truck:
-				var z := (point.z - CART_POS.z) / FoodTruck.SCALE
-				var lift := smoothstep(0.10, 0.23, z) * (1.0 - smoothstep(0.46, 0.58, z))
-				point.y = lerpf(point.y, maxf(point.y, FoodTruck.SILL_Y * FoodTruck.SCALE + 0.08), lift)
-			bag.global_position = point
-		, 0.0, 1.0, 0.58)
-	motion.tween_callback(func():
-		if is_instance_valid(customer):
-			customer.take_bag(bag)
-		else:
-			bag.queue_free())
+	_render_handoff()
+
+func play_staff_collection(seconds: float) -> void:
+	if _counter_gesture_left == 0.0 and plot and plot.server():
+		_counter_gesture_left = seconds
+		ModelLib.play_once(plot.server(), "interact-right")
+
+func _render_handoff() -> void:
+	if not is_instance_valid(_handoff_prop) or not is_instance_valid(_handoff_guest):
+		return
+	var actor := plot.server() if plot else null
+	if not is_instance_valid(actor) or not is_instance_valid(_handoff_guest.model):
+		_clear_handoff()
+		return
+	var from := ModelLib.hand_position(actor)
+	var to := ModelLib.hand_position(_handoff_guest.model)
+	var progress := _handoff_elapsed / HANDOFF_TRANSFER_SECONDS
+	var point := from.lerp(to, smoothstep(0.25, 0.8, progress)) + Vector3.DOWN * 0.062
+	if plot.stage == 2:
+		var z := (point.z - CART_POS.z) / FoodTruck.SCALE
+		var lift := smoothstep(0.10, 0.23, z) * (1.0 - smoothstep(0.46, 0.58, z))
+		point.y = lerpf(point.y, maxf(point.y, FoodTruck.SILL_Y * FoodTruck.SCALE + 0.08), lift)
+	_handoff_prop.global_position = point
+
+func _clear_handoff() -> void:
+	if is_instance_valid(_handoff_prop):
+		_handoff_prop.hide()
+		_handoff_prop.queue_free()
+	_handoff_prop = null
+	_handoff_guest = null
 
 ## A later dish gets its own prop on the takeaway tray, including successful
 ## add-ons. Only one item travels with each order to keep the pickup lightweight.
@@ -877,6 +934,12 @@ func _plot_state_for(id: String) -> Dictionary:
 
 func spawn_car() -> void:
 	if Paving.DESIGNS.has(location_id):
+		return
+	var cars := 0
+	for child in _level.get_children():
+		if child is Car:
+			cars += 1
+	if cars >= 4:
 		return
 	var dir := 1 if randf() < 0.5 else -1
 	var car := Car.new()

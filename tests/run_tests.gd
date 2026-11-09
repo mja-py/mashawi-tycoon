@@ -28,6 +28,7 @@ func _ready() -> void:
 	_test_later_item_handoff(game)
 	_test_skip_pickup(game)
 	_test_restaurant_service(game)
+	_test_reopen_same_district(game)
 	_test_terrace_clearance(game)
 	_test_cast_appearances()
 	_test_guide_journey()
@@ -209,6 +210,14 @@ func _test_cast_appearances() -> void:
 	var loop_mode := collect.loop_mode
 	ModelLib.play_loop(woman, "interact-right")
 	check(collect.loop_mode == loop_mode, "looping crew service cannot change customer collection")
+	var original_player := ModelLib.animation_player(original)
+	var guest_player := ModelLib.animation_player(guest)
+	ModelLib.play_loop(original, "idle")
+	ModelLib.play_once(guest, "idle", "")
+	var loop_clip := original_player.get_animation(original_player.current_animation)
+	var once_clip := guest_player.get_animation(guest_player.current_animation)
+	check(loop_clip.loop_mode == Animation.LOOP_LINEAR and once_clip.loop_mode == Animation.LOOP_NONE,
+		"a one-shot idle does not change another actor's idle loop")
 	var base_mesh: MeshInstance3D = original.find_children("*", "MeshInstance3D", true, false)[0]
 	var crew_mesh: MeshInstance3D = woman.find_children("*", "MeshInstance3D", true, false)[0]
 	check(base_mesh.mesh == crew_mesh.mesh, "female appearances share the approved geometry")
@@ -338,7 +347,7 @@ func _test_later_item_handoff(game) -> void:
 		guest._finish()
 	var rendered_guest := world.spawn_guest(-1, world.pickup_slot(0))
 	sim.finish_quickly()
-	check(rendered_guest.simulation_speed == 1.0, "Skip keeps the visible cast moving at its normal pace")
+	check(Engine.time_scale == 1.0, "Skip leaves the engine and UI clock at normal speed")
 	var player := ModelLib.animation_player(rendered_guest.model)
 	var walk_rate := rendered_guest.speed / Customer.WALK_SPEED * Customer.WALK_ANIMATION_SPEED
 	check(is_equal_approx(player.speed_scale, walk_rate), "Skip keeps existing footsteps in sync with movement")
@@ -387,14 +396,40 @@ func _test_skip_pickup(game) -> void:
 	sim._on_served(buyer, "fries", 0.0, false)
 	check(receipts.size() == 1 and game.inventory["fries"] == 29, "a repeated service callback cannot charge the buyer twice")
 	check(not sim._pickup_ready(buyer), "an active handoff holds the pickup counter")
+	sim._process(0.05)
+	check(is_equal_approx(world._handoff_elapsed, 0.10) and buyer._bag == null,
+		"Skip advances the pose and prop transfer at the readable service speed")
 	sim._close()
 	check(reports.is_empty(), "the closing curtain waits for the active handoff")
 	for tick in range(45):
 		sim._process(DaySim.STEP)
+	check(is_instance_valid(buyer._bag) and buyer._bag.get_parent() == buyer,
+		"the prop reaches the buyer before the report")
 	check(reports.size() == 1 and sim.stats["served"] == 1, "Skip settles the actual purchase exactly once")
 	sim.queue_free()
 	world.queue_free()
 	game.new_game()
+
+func _test_reopen_same_district(game) -> void:
+	game.new_game()
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	var sim := DaySim.new()
+	add_child(sim)
+	sim.start(game.sim_context(), world)
+	var old_guest := world.spawn_walker(1)
+	sim._publish_close()
+	check(old_guest.is_processing(), "departing guests can finish walking after the report")
+	world.set_location(game.location)
+	sim.start(game.sim_context(), world)
+	check(world.active_guests.is_empty() and world.walkers == 0 and old_guest.is_queued_for_deletion()
+		and not old_guest.is_processing() and not old_guest.visible, "reopening retires guests from the prior day")
+	var new_guest := world.spawn_walker(1)
+	check(world.active_guests == [new_guest] and world.walkers == 1 and not new_guest.is_processing()
+		and new_guest.model.scene_file_path == old_guest.model.scene_file_path, "reopening resets the cast and keeps the day as the sole guest driver")
+	sim.free()
+	world.free()
 
 func _test_restaurant_service(game) -> void:
 	game.new_game()

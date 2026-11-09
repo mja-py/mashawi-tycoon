@@ -4,6 +4,9 @@ extends Node3D
 
 enum State { IDLE, WALK, COLLECT, DELIVER, CLEAN }
 
+const DISH_TRANSFER_SECONDS := 0.28
+const TRAY_TRANSFER_SECONDS := 0.35
+
 var site: Plot
 var index := 0
 var state: State = State.IDLE
@@ -21,6 +24,10 @@ var _table := -1
 var _on_delivery: Callable
 var _tray_from := Vector3.ZERO
 var _tray_transfer := 1.0
+var _meal: Node3D
+var _meal_from := Vector3.ZERO
+var _meal_target := Vector3.ZERO
+var _meal_elapsed := 0.0
 
 func setup(plot: Plot, worker_index: int) -> void:
 	site = plot
@@ -47,7 +54,8 @@ func deliver(customer: Customer, item: String, done: Callable) -> void:
 	_walk([site.staff_pickup()], _collect)
 
 func _collect() -> void:
-	ModelLib.play_once(site.server(), "interact-right")
+	if site.staff_collect.is_valid():
+		site.staff_collect.call(0.5)
 	_work(State.COLLECT, "interact-right", 0.5, _carry_meal)
 
 func _carry_meal() -> void:
@@ -68,9 +76,11 @@ func _place_meal() -> void:
 		if _on_delivery.call():
 			var food := site.show_meal(_table, _item, int(_customer.seat["idx"]))
 			if food:
-				var target := food.position
-				food.global_position = tray.global_position + Vector3.UP * 0.025
-				food.create_tween().tween_property(food, "position", target, 0.28).set_trans(Tween.TRANS_SINE)
+					_meal = food
+					_meal_target = food.global_position
+					_meal_from = tray.global_position + Vector3.UP * 0.025
+					_meal_elapsed = 0.0
+					food.global_position = _meal_from
 			site.service_stats["deliveries"] += 1
 	tray.hide()
 	_return_home()
@@ -93,8 +103,7 @@ func _clear_table() -> void:
 	tray.show()
 	_tray_from = site.tables[_table]["node"].global_position
 	_tray_transfer = 0.0
-	create_tween().tween_property(self, "_tray_transfer", 1.0, 0.35)
-	_work(State.COLLECT, "interact-right", 0.35, _return_home)
+	_work(State.COLLECT, "interact-right", TRAY_TRANSFER_SECONDS, _return_home)
 
 func _return_home() -> void:
 	_customer = null
@@ -140,9 +149,17 @@ func _face(point: Vector3) -> void:
 		_yaw = atan2(direction.x, direction.z)
 
 func _process(delta: float) -> void:
+	step(delta)
+	render_service()
+
+func set_day_managed(managed: bool) -> void:
+	set_process(not managed)
+	ModelLib.set_manual_pose(model, managed)
+
+func render_service() -> void:
 	if model == null:
 		return
-	model.rotation.y = rotate_toward(model.rotation.y, _yaw, delta * 8.0)
+	ModelLib.render_pose(model)
 	if _cloth.visible:
 		_cloth.global_position = ModelLib.hand_position(model) + Vector3.DOWN * 0.015
 		_cloth.global_rotation = Vector3(0.0, model.global_rotation.y, 0.0)
@@ -150,6 +167,20 @@ func _process(delta: float) -> void:
 		var hands := ModelLib.hand_position(model).lerp(ModelLib.hand_position(model, "LeftHand"), 0.5) + Vector3.DOWN * 0.015
 		tray.global_position = _tray_from.lerp(hands, smoothstep(0.0, 1.0, _tray_transfer))
 		tray.global_rotation = Vector3(0.0, model.global_rotation.y, 0.0)
+	if is_instance_valid(_meal):
+		var progress := clampf(_meal_elapsed / DISH_TRANSFER_SECONDS, 0.0, 1.0)
+		_meal.global_position = _meal_from.lerp(_meal_target, 0.5 - 0.5 * cos(PI * progress))
+		if progress == 1.0:
+			_meal = null
+
+func step(delta: float) -> void:
+	if model == null:
+		return
+	ModelLib.step_pose(model, delta)
+	model.rotation.y = rotate_toward(model.rotation.y, _yaw, delta * 8.0)
+	_tray_transfer = move_toward(_tray_transfer, 1.0, delta / TRAY_TRANSFER_SECONDS)
+	if is_instance_valid(_meal):
+		_meal_elapsed += delta
 	if state == State.WALK:
 		var target := _route[0]
 		position = position.move_toward(target, delta * 0.88)

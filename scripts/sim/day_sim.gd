@@ -24,6 +24,8 @@ var stats: Dictionary = {}
 var tp: Throughput
 var _rng := RandomNumberGenerator.new()
 const STEP := 1.0 / 60.0
+const MAX_FRAME_TIME := 0.1
+const MAX_TICKS_PER_FRAME := 32
 var _accumulator := 0.0
 var playback_speed := 1.0
 var _life_rng := RandomNumberGenerator.new()
@@ -49,8 +51,8 @@ func start(context: Dictionary, w: World) -> void:
 	_pending_deliveries.clear()
 	_reserved_ingredients.clear()
 	purchase_log.clear()
-	world.set_customer_speed(1.0)
-	world.managed_customers = true
+	world.reset_day_guests()
+	world.set_day_managed(true)
 	_accumulator = 0.0
 	_seeded_movement = false
 	playback_speed = 1.0
@@ -90,8 +92,6 @@ func start(context: Dictionary, w: World) -> void:
 	tp.table_clean = _table_clean
 	tp.meal_finished = _meal_finished
 	if world.plot:
-		for worker in world.plot.dining_staff:
-			worker.set_process(false)
 		world.plot.service_open = true
 		world.plot.service_stats = {"deliveries": 0, "cleaned": 0}
 	running = true
@@ -103,20 +103,21 @@ func start(context: Dictionary, w: World) -> void:
 
 ## All business actors consume identical fixed simulation ticks at every speed.
 func set_playback_speed(value: float) -> void:
-	playback_speed = value
-	Engine.time_scale = effective_speed()
+	playback_speed = maxf(value, 0.01)
 
 func effective_speed() -> float:
+	if playback_speed <= 2.0:
+		return playback_speed
 	if _handoff_left > 0.0:
-		return minf(playback_speed, 2.0)
-	if is_instance_valid(world) and world._level:
-		for guest in world._level.get_children():
-			if guest is Customer and guest.beat_left > 0.0:
-				return minf(playback_speed, 2.0)
+		return 2.0
+	if is_instance_valid(world):
+		for guest in world.active_guests:
+			if is_instance_valid(guest) and guest.state != Customer.State.DONE and guest.beat_left > 0.0:
+				return 2.0
 		if world.plot:
 			for worker in world.plot.dining_staff:
-				if worker.state in [DiningStaff.State.COLLECT, DiningStaff.State.DELIVER, DiningStaff.State.CLEAN]:
-					return minf(playback_speed, 2.0)
+				if worker.state == DiningStaff.State.COLLECT or worker.state == DiningStaff.State.DELIVER or worker.state == DiningStaff.State.CLEAN:
+					return 2.0
 	return playback_speed
 
 func _process(delta: float) -> void:
@@ -126,29 +127,35 @@ func _process(delta: float) -> void:
 		world.guest_rng.seed = _rng.seed ^ 73691
 		_life_rng.seed = _rng.seed ^ 97231
 		_seeded_movement = true
-	_accumulator += delta
+	_accumulator += minf(delta, MAX_FRAME_TIME)
 	var ticks := 0
-	var budget_speed := maxf(Engine.time_scale, 0.01)
-	while running and _accumulator + 0.0000001 >= STEP and ticks < 64:
-		_accumulator -= STEP
-		for worker in world.plot.dining_staff:
-			worker._process(STEP)
-		for guest in world._level.get_children():
-			if guest is Customer and guest.state != Customer.State.DONE:
-				guest._process(STEP)
+	var tick_time := STEP / effective_speed()
+	while running and _accumulator + 0.0000001 >= tick_time and ticks < MAX_TICKS_PER_FRAME:
+		_accumulator = maxf(0.0, _accumulator - tick_time)
+		world.step_service(STEP)
+		if world.plot:
+			for worker in world.plot.dining_staff:
+				worker.step(STEP)
+		for guest in world.active_guests:
+			if is_instance_valid(guest) and guest.state != Customer.State.DONE:
+				guest.step(STEP)
 		_tick(STEP)
 		ticks += 1
 		if running:
-			var next_speed := effective_speed()
-			if next_speed < budget_speed:
-				# A newly started gesture gets its readable pace immediately, even
-				# when this frame arrived with a large Skip time budget.
-				_accumulator *= next_speed / budget_speed
-				budget_speed = next_speed
+			tick_time = STEP / effective_speed()
+	if ticks == MAX_TICKS_PER_FRAME:
+		# Keep a partial tick. A hitch must not leave a backlog of full ticks.
+		_accumulator = fmod(_accumulator, tick_time)
 	if running:
-		world.set_time(hour, ctx["weather"])
-		clock_changed.emit(hour)
-		Engine.time_scale = effective_speed()
+		if ticks > 0:
+			world.render_service()
+			if not _closing:
+				world.set_time(hour, ctx["weather"])
+				clock_changed.emit(hour)
+		_stats_tick += delta
+		if _stats_tick >= 0.25:
+			_stats_tick = fmod(_stats_tick, 0.25)
+			_emit_stats()
 
 func _tick(delta: float) -> void:
 	_handoff_left = move_toward(_handoff_left, 0.0, delta)
@@ -194,25 +201,21 @@ func _tick(delta: float) -> void:
 			if is_instance_valid(customer) and not _seat_of.has(customer) and customer.slot != 100 + i:
 				customer.go_to_slot(100 + i, world.pickup_slot(i))
 	_bottleneck_watch(pipeline_min)
-	_stats_tick += delta / maxf(Engine.time_scale, 1.0)
-	if _stats_tick > 0.25:
-		_stats_tick = 0.0
-		if finishing:
-			world.set_time(minf(hour, end_hour), ctx["weather"])
-			clock_changed.emit(hour)
-		stats["queue"] = tp.queue_len()
-		stats["kitchen"] = pickup.size()
-		var seated := 0
-		for diner in tp.seated:
-			if diner.get("active", true):
-				seated += 1
-		stats["seated"] = seated
-		stats_changed.emit(stats)
 	if hour >= end_hour and not _closing:
 		_close()
 	if _closing and not tp.has_orders() and tp.seated.is_empty() and _pending_deliveries.is_empty() and _handoff_left == 0.0:
 		if world.plot == null or (not world.plot.staff_busy() and world.plot.dirty_tables().is_empty()):
 			_publish_close()
+
+func _emit_stats() -> void:
+	stats["queue"] = tp.queue_len()
+	stats["kitchen"] = tp.waiting_payloads().size()
+	var seated := 0
+	for diner in tp.seated:
+		if diner.get("active", true):
+			seated += 1
+	stats["seated"] = seated
+	stats_changed.emit(stats)
 
 ## Advance the clock while every buyer still reaches the counter or their table.
 func finish_quickly() -> bool:
@@ -220,8 +223,6 @@ func finish_quickly() -> bool:
 		return false
 	finishing = true
 	set_playback_speed(FINISH_SPEED)
-	if world.cart:
-		world.cart.set_serving(false)
 	return true
 
 func _stop_chance(best: float, queue_len: int) -> float:
@@ -533,7 +534,7 @@ func _show_receipt(items: Array[String], total: float) -> void:
 
 func _play_pickup(guest: Customer, items: Array[String], text: String, color: Color, done: Callable) -> void:
 	_handoff_left = HANDOFF_SECONDS
-	world.handoff(guest, items)
+	world.handoff(guest, items, HANDOFF_SECONDS)
 	guest.say(text, color, 0.46)
 	guest.perform("collect", "pick-up", HANDOFF_SECONDS, done)
 
@@ -563,7 +564,6 @@ func _on_left_seat(payload) -> int:
 		return -1
 	var table := int(_seat_of.get(c, {}).get("table", -1))
 	_release_seat(c)
-	c.react("emote-yes")
 	c.leave_from_seat(Data.pick_bubble("dine_in", _rng), Color(0.6, 0.9, 0.6))
 	return table
 
@@ -650,18 +650,12 @@ func _publish_close() -> void:
 	if not running:
 		return
 	running = false
-	Engine.time_scale = 1.0
-	world.managed_customers = false
-	for guest in world._level.get_children():
-		if guest is Customer:
-			guest.set_process(true)
+	world.render_service()
+	world.set_day_managed(false)
 	if world.plot:
-		for worker in world.plot.dining_staff:
-			worker.set_process(true)
 		world.plot.service_open = false
 		world.plot.set_serving(false)
-	stats["left_wait"] = int(stats["left_wait"]) # already counted as they gave up
 	stats["util"] = tp.utilisation()
 	stats["max_queue"] = int(tp.stats["max_queue"])
-	stats_changed.emit(stats)
+	_emit_stats()
 	finished.emit(stats)

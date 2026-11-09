@@ -47,14 +47,16 @@ func _run() -> void:
 				var frame := 0
 				sim.set_playback_speed(float(speed))
 				while sim.running and frame < 36000:
-					sim._process(sim.effective_speed() / float(fps))
+					sim._process(1.0 / float(fps))
 					for child in world._level.get_children():
 						if child.has_method("go_to_slot") and child.state == 7:
 							child.free()
 					frame += 1
 				var report: Dictionary = game.end_day(sim.stats)
 				var row := {"stage":tier,"fps":fps,"seed":sample,"speed":"skip" if speed == 12 else str(speed),"seconds":snappedf(frame / float(fps),0.01),"served":sim.stats["served"],"passers":sim.stats["passers"],"profit":report["profit"],"dineIn":sim.stats["dine_in"]}
-				var signature := {"served": sim.stats["served"], "passers": sim.stats["passers"], "profit": report["profit"], "dineIn": sim.stats["dine_in"], "inventory": game.inventory.duplicate()}
+				var signature := {"served": sim.stats["served"], "passers": sim.stats["passers"], "profit": report["profit"],
+					"dineIn": sim.stats["dine_in"], "revenue": sim.stats["revenue"], "sold": sim.stats["sold"],
+					"inventory": game.inventory.duplicate()}
 				var key := str(tier) + ":" + str(sample)
 				if not references.has(key):
 					references[key] = signature

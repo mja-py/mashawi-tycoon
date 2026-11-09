@@ -76,6 +76,7 @@ var _stall_board: Label3D
 var _truck_board: Label3D
 var _extractor: Node3D
 var dining_staff: Array[DiningStaff] = []
+var staff_collect: Callable
 var service_open := false
 var clean_seconds := 1.4
 var service_stats := {"deliveries": 0, "cleaned": 0}
