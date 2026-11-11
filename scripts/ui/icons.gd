@@ -6,10 +6,13 @@ var _cache := {}
 var _weather := {}
 
 func dish_icon(id: String) -> Texture2D:
-	return model_icon(Data.MENU_ITEMS[id]["model"], 192, 1.18, true)
+	var locked := not bool(Game.menu.get(id, {}).get("unlocked", true))
+	return model_icon(Data.MENU_ITEMS[id]["model"], 192, 1.0, true, locked)
 
-func model_icon(model: String, size: int = 128, zoom: float = 1.0, plated: bool = false) -> Texture2D:
+func model_icon(model: String, size: int = 128, zoom: float = 1.0, plated: bool = false, locked: bool = false) -> Texture2D:
 	var key := ("dish:" if plated else "model:") + model
+	if plated and locked:
+		key += ":locked"
 	if _cache.has(key):
 		return _cache[key]
 	var vp := SubViewport.new()
@@ -24,55 +27,110 @@ func model_icon(model: String, size: int = 128, zoom: float = 1.0, plated: bool 
 	var n := ModelLib.spawn(model, root)
 	var tex: Texture2D
 	if n:
+		var cam := Camera3D.new()
+		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		cam.rotation_degrees = Vector3(-32 if plated else -28, 35, 0)
+		root.add_child(cam)
+		if plated and model.ends_with("-skewer"):
+			# Show both the grilled faces and the stick on a readable diagonal.
+			n.rotation_degrees.y = -15
 		var aabb := _scene_aabb(n)
 		var center := aabb.get_center()
 		var extent := maxf(aabb.size.x, maxf(aabb.size.y, aabb.size.z))
 		if plated:
-			# Present the existing food on a cafeteria plate. No extra downloaded art.
-			var scale_factor := 0.66 / maxf(extent, 0.01)
+			# Fit in camera space: long skewers must not shrink with foreshortening,
+			# while upright cups/fries need headroom rather than an oversized plate.
+			var projected := _projected_scene_bounds(n, cam.basis)
+			var scale_factor := 0.78 / maxf(maxf(projected.size.x, projected.size.y), 0.01)
 			n.scale = Vector3.ONE * scale_factor
 			n.position = Vector3(-center.x, -aabb.position.y, -center.z) * scale_factor + Vector3(0, 0.035, 0)
-			ModelLib.cylinder(root, 0.47, 0.025, Vector3.ZERO, Color("bc9c72"))
-			ModelLib.cylinder(root, 0.44, 0.026, Vector3(0, 0.013, 0), Color("f2e3c3"))
-			center = Vector3(0, aabb.size.y * scale_factor * 0.35, 0)
-			extent = 1.0
-		var cam := Camera3D.new()
-		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-		cam.size = extent * 1.25 / zoom
-		cam.rotation_degrees = Vector3(-43 if plated else -28, 35, 0)
-		root.add_child(cam)
+			var vessel := model in ["food/cup", "food/soda-can", "food/karak-cup", "food/fries", "food/salad-bowl", "food/mashawi-platter", "food/sago-halwa", "food/omani-halwa"]
+			var radius := 0.25 if vessel else 0.36
+			# Layered translucent discs give a soft baked contact shadow.
+			for i in range(5):
+				var shadow := ModelLib.cylinder(root, radius + 0.032 - i * 0.018, 0.001, Vector3(0.008, -0.015 + i * 0.002, 0.012), Color("443526"))
+				var mat := ModelLib.flat_material_unique(Color(0.18, 0.12, 0.08, 0.055))
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				shadow.material_override = mat
+			if not vessel:
+				ModelLib.cylinder(root, radius, 0.015, Vector3.ZERO, Color("b69970"))
+				ModelLib.cylinder(root, radius - 0.014, 0.016, Vector3(0, 0.012, 0), Color("eedbb3"))
+				ModelLib.cylinder(root, radius - 0.038, 0.003, Vector3(0, 0.022, 0), Color("e3cba0"))
+				# Food rests directly above its shadow, not floating above the rim.
+				var contact := ModelLib.cylinder(root, 0.23, 0.001, Vector3(0, 0.025, 0), Color("b89d74"))
+				contact.scale.z = 0.55 if model.ends_with("-skewer") else 0.85
+				contact.rotation.y = n.rotation.y
+			var composition := _projected_scene_bounds(root, cam.basis)
+			center = cam.basis.x * composition.get_center().x + cam.basis.y * composition.get_center().y
+			# A tall wrap plus its plate can exceed the food silhouette alone.
+			extent = maxf(1.0, maxf(composition.size.x, composition.size.y) / 0.94)
+		cam.size = extent * (1.0 if plated else 1.25) / zoom
 		cam.position = center + cam.transform.basis.z * (extent * 4.0)
 		cam.current = true
 		var light := DirectionalLight3D.new()
-		light.rotation_degrees = Vector3(-45, -30, 0)
-		light.light_energy = 0.85 if plated else 1.2
+		light.rotation_degrees = Vector3(-48, -25, 0) if plated else Vector3(-45, -30, 0)
+		light.light_color = Color("ffead1") if plated else Color.WHITE
+		light.light_energy = 0.9 if plated else 1.2
 		root.add_child(light)
 		var env := WorldEnvironment.new()
 		var e := Environment.new()
 		e.background_mode = Environment.BG_CLEAR_COLOR
 		e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-		e.ambient_light_color = Color(0.9, 0.9, 0.95)
-		e.ambient_light_energy = 0.55 if plated else 0.9
+		e.ambient_light_color = Color("f4eee0") if plated else Color(0.9, 0.9, 0.95)
+		e.ambient_light_energy = 0.7 if plated else 0.9
 		env.environment = e
 		root.add_child(env)
 		# Keep a tiny bitmap, not a viewport + model + camera for every menu icon.
 		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 		img.fill(Color.TRANSPARENT)
 		tex = ImageTexture.create_from_image(img)
-		_finish_icon.call_deferred(vp, tex)
+		_finish_icon.call_deferred(vp, tex, plated and locked)
 	else:
 		tex = PlaceholderTexture2D.new()
 		vp.queue_free()
 	_cache[key] = tex
 	return tex
 
-func _finish_icon(vp: SubViewport, tex: ImageTexture) -> void:
+func _finish_icon(vp: SubViewport, tex: ImageTexture, locked: bool = false) -> void:
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	var img := vp.get_texture().get_image()
 	if img and not img.is_empty():
+		if locked:
+			# Bake the availability treatment too; no live shader or font glyphs.
+			# One pass over 192x192 per locked dish, once per session.
+			for y in range(img.get_height()):
+				for x in range(img.get_width()):
+					var c := img.get_pixel(x, y)
+					var grey := c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+					var muted := c.lerp(Color(grey, grey, grey, c.a), 0.72)
+					img.set_pixel(x, y, Color(muted.r * 0.78, muted.g * 0.78, muted.b * 0.78, c.a))
+			var u := img.get_width() / 192.0
+			_disc(img, 157 * u, 38 * u, 21 * u, Color("403e35"))
+			_disc(img, 157 * u, 33 * u, 9 * u, Color("eddbb8"))
+			_disc(img, 157 * u, 33 * u, 5 * u, Color("403e35"))
+			_rect(img, 145 * u, 34 * u, 24 * u, 17 * u, Color("eddbb8"))
+			_rect(img, 155 * u, 40 * u, 4 * u, 6 * u, Color("403e35"))
 		tex.set_image(img)
 	vp.queue_free()
+
+func _projected_scene_bounds(n: Node3D, camera_basis: Basis) -> Rect2:
+	# Fit the actual silhouette, not empty AABB corners around thin skewers.
+	# These small food meshes are inspected only while baking the bitmap.
+	var bounds := Rect2()
+	var meshes := n.find_children("*", "MeshInstance3D", true, false)
+	if n is MeshInstance3D:
+		meshes.append(n)
+	var first := true
+	for mi: MeshInstance3D in meshes:
+		var xf := Transform3D(camera_basis.inverse(), Vector3.ZERO) * mi.global_transform
+		for vertex in mi.mesh.get_faces():
+			var p := xf * vertex
+			var point := Vector2(p.x, p.y)
+			bounds = Rect2(point, Vector2.ZERO) if first else bounds.expand(point)
+			first = false
+	return bounds
 
 func _scene_aabb(n: Node) -> AABB:
 	var result := AABB()

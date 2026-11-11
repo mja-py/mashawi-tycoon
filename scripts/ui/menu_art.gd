@@ -21,21 +21,36 @@ func _draw() -> void:
 		_draw_badge(subject.trim_prefix("tab:"))
 		return
 	if subject.begins_with("dish:"):
-		var accent: Color = {"food": CLAY, "side": Color("986241"), "drink": Color("397d77"), "sweet": Color("855e74")}.get(subject.trim_prefix("dish:"), CLAY)
-		draw_rect(Rect2(Vector2.ZERO, size), accent.darkened(0.17))
-		var ring := minf(size.x, size.y) * 0.62
-		draw_circle(size * Vector2(0.50, 0.55), ring, accent, true, -1.0, true)
-		draw_arc(size * Vector2(0.50, 0.55), ring * 0.87, 0, TAU, 48, Color(PALE, 0.46), 1.4, true)
-		for side in [-1.0, 1.0]:
-			for i in range(4):
-				var x: float = size.x * 0.5 + side * (ring + i * 10)
-				var center := Vector2(x, size.y * 0.52 + (i % 2) * 17 - 9)
-				draw_colored_polygon(PackedVector2Array([center + Vector2(0, -6), center + Vector2(5, 0), center + Vector2(0, 6), center + Vector2(-5, 0)]), Color(PALE, 0.42))
+		_draw_dish()
 		return
 	if subject == "ingredient" or subject == "equipment" or subject.begins_with("campaign:"):
 		_draw_shop_card()
 		return
 	_draw_place()
+
+func _draw_dish() -> void:
+	# The suffix is optional for callers that also want a muted paper backdrop.
+	var parts := subject.split(":")
+	var locked := parts.size() > 2 and parts[2] == "locked"
+	var accent: Color = {"food": CLAY, "side": Color("986241"), "drink": Color("397d77"), "sweet": Color("855e74")}.get(parts[1], CLAY)
+	if locked:
+		accent = accent.lerp(Color("777269"), 0.7)
+	var base := accent.darkened(0.23)
+	draw_rect(Rect2(Vector2.ZERO, size), base)
+	# Low contrast vignette, contained behind the plate instead of a giant halo.
+	var center := size * Vector2(0.5, 0.53)
+	var radius := minf(size.x, size.y) * 0.41
+	for i in range(8):
+		var t := float(i) / 7.0
+		draw_circle(center, radius * (1.15 - t * 0.35), Color(accent.lightened(0.06), 0.07), true, -1.0, true)
+	# Printed paper fibres: a few quiet strokes, redrawn only on resize.
+	for y in range(3, int(size.y), 7):
+		draw_line(Vector2(0, y), Vector2(size.x, y), Color(PALE, 0.035), 1.0)
+	for x in range(4, int(size.x), 11):
+		draw_line(Vector2(x, 0), Vector2(x + size.y * 0.12, size.y), Color(PALE, 0.025), 1.0)
+	if locked:
+		var mark := Vector2(size.x - 14, 14)
+		_poly([mark + Vector2(0, -4), mark + Vector2(4, 0), mark + Vector2(0, 4), mark + Vector2(-4, 0)], Color(PALE, 0.7))
 
 func _draw_shop_card() -> void:
 	var base := Color("335e59")

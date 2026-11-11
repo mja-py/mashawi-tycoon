@@ -1409,10 +1409,24 @@ func _dish_roll_card(index: int) -> PanelContainer:
 	var id := _roll_ids[index]
 	var def: Dictionary = Data.MENU_ITEMS[id]
 	var m: Dictionary = Game.menu[id]
-	var value := Loc.money(float(m["price"])) if m["unlocked"] else Loc.money(float(def["unlock_cost"]))
-	var card := _roll_card("dish:" + String(def["kind"]), tr(def["name"]), value)
+	var unlocked: bool = m["unlocked"]
+	# Price is green only when the dish is sold; a locked dish shows its unlock cost quietly.
+	var value := Loc.money(float(m["price"])) if unlocked else ""
+	var card := _roll_card("dish:" + String(def["kind"]) + ("" if unlocked else ":locked"), tr(def["name"]), value)
 	_roll_art_icon(card, Icons.dish_icon(id))
-	var caption := tr("ui.m_edit_dish") if m["unlocked"] else tr("ui.m_view_dish")
+	var body: VBoxContainer = card.get_child(0)
+	var status: Label
+	if not unlocked:
+		status = _label("\u25c6  " + tr("ui.m_add") % Loc.money(float(def["unlock_cost"])), "Muted")
+	elif m["enabled"]:
+		status = _label("\u221a  " + tr("ui.m_serving"), "Small")
+		status.add_theme_color_override("font_color", UiTheme.GOOD)
+	else:
+		status = _label("\u00d7  " + tr("ui.m_resting"), "Muted")
+	status.autowrap_mode = TextServer.AUTOWRAP_OFF
+	status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	body.add_child(status)
+	var caption := tr("ui.m_edit_dish") if unlocked else tr("ui.m_view_dish")
 	_roll_open(card, index, "select_" + id, caption, _select_dish.bind(id))
 	return card
 

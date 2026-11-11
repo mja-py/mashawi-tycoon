@@ -114,7 +114,12 @@ func _set_cursor(value: float) -> void:
 	_layout_cards()
 
 func _card_width() -> float:
-	return clampf(surface.size.x * 0.46, 280.0, 490.0)
+	return clampf(surface.size.x * 0.42, 280.0, 440.0)
+
+## Distance between neighbouring card centres: the next card stays readable beside
+## the focused one instead of peeking in from the edge.
+func _step() -> float:
+	return _card_width() * 0.92
 
 func _layout_cards() -> void:
 	if _count == 0 or not _factory.is_valid() or surface.size.x < 1:
@@ -141,10 +146,10 @@ func _layout_cards() -> void:
 		card.size = Vector2(_card_width(), room)
 		card.pivot_offset = card.size * 0.5
 		var fit := minf(1.0, room / card.size.y)
-		card.scale = Vector2.ONE * fit * lerpf(1.0, 0.79, minf(distance, 1.0))
-		card.rotation = clampf(offset, -1.0, 1.0) * 0.055
-		card.position = (surface.size - card.size) * 0.5 + Vector2(offset * (_card_width() * 0.83), distance * 7.0)
-		card.modulate.a = lerpf(1.0, 0.64, minf(distance, 1.0))
+		card.scale = Vector2.ONE * fit * lerpf(1.0, 0.86, minf(distance, 1.0))
+		card.rotation = clampf(offset, -1.0, 1.0) * 0.03
+		card.position = (surface.size - card.size) * 0.5 + Vector2(offset * _step(), distance * 6.0)
+		card.modulate.a = lerpf(1.0, 0.8, minf(distance, 1.0))
 		card.z_index = 3 - mini(roundi(distance * 2.0), 3)
 
 func _input(event: InputEvent) -> void:
@@ -186,7 +191,7 @@ func _drag(pos: Vector2) -> void:
 		if _snap:
 			_snap.kill()
 		propagate_notification(NOTIFICATION_SCROLL_BEGIN)
-	_set_cursor(clampf(_origin_cursor - delta.x * _rtl / (_card_width() * 0.83), -0.16, float(_count - 1) + 0.16))
+	_set_cursor(clampf(_origin_cursor - delta.x * _rtl / _step(), -0.16, float(_count - 1) + 0.16))
 	get_viewport().set_input_as_handled()
 
 func _notification(what: int) -> void:
