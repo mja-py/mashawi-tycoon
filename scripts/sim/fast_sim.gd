@@ -18,11 +18,16 @@ static func run(ctx: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var patience := float(ctx["patience_min"])
 	var tp := Throughput.new()
 	tp.setup(ctx, rng)
-	tp.on_served = func(_payload, id: String, wait: float, dine: bool) -> void:
+	# Only a meal is eaten at a table, as in DaySim._choose_dining.
+	tp.dining_choice = func(_payload, id: String) -> bool:
+		return String(Data.MENU_ITEMS[id]["kind"]) == "food"
+	tp.on_served = func(payload, id: String, wait: float, dine: bool) -> void:
 		var price := float(Game.menu[id]["price"])
 		var spend := float(ctx.get("spend_mult", 1.0)) if dine else 1.0
 		if not Game.sell(id, price * spend):
 			stats["sold_out"] += 1
+			if dine:
+				tp.remove(payload) # nothing to eat: the chair is free again
 			return
 		Game.total_served += 1
 		stats["served"] += 1

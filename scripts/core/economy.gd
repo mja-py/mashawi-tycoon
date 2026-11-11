@@ -306,6 +306,7 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 	var hours: Array = ctx["hours"]
 	var want_total := 0.0
 	var served_total := 0.0
+	var food_total := 0.0
 	var util := {"counter": 0.0}
 	for s in kitchen:
 		util[s] = 0.0
@@ -316,12 +317,16 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 		var arrivals := arrival_rate(loc, weather, h + 0.5, ctx)
 		var p_food := stop_probability(pop, best_food * appeal, boost, 0, qcap, comp, promo)
 		var p_drink := stop_probability(pop, best_drink * appeal, boost, 0, qcap, comp, promo)
-		var want := arrivals * ((1.0 - ds) * p_food + ds * p_drink) / 60.0 + float(ctx.get("cars_per_hour", 0.0)) / 60.0
+		var food_want := arrivals * (1.0 - ds) * p_food / 60.0 + float(ctx.get("cars_per_hour", 0.0)) / 60.0
+		var want := food_want + arrivals * ds * p_drink / 60.0
 		var served := 0.0
 		if cap > 0.0 and want > 0.0:
 			served = cap * (1.0 - exp(-want / cap)) if cap != INF else want
 		want_total += want * 60.0
 		served_total += served * 60.0
+		# Only meals are eaten at a table; drinks are always taken away.
+		var food_served := served * food_want / want if want > 0.0 else 0.0
+		food_total += food_served * 60.0
 		if counter_cap > 0.0:
 			util["counter"] = maxf(util["counter"], want / counter_cap)
 		for s in kitchen:
@@ -329,11 +334,12 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 			if c > 0.0:
 				util[s] = maxf(util[s], want * float(shares.get(s, 0.0)) / c)
 		if seat_cap > 0.0:
-			util["seating"] = maxf(util["seating"], served * dine_share / seat_cap)
+			util["seating"] = maxf(util["seating"], food_served * dine_share / seat_cap)
 		h += 1.0
-	var dine_in := served_total * dine_share
+	var dine_in := food_total * dine_share
 	var spend := float(ctx.get("spend_mult", DINE_IN_SPEND))
-	var revenue := served_total * avg_price * (1.0 + ADDON_REVENUE_FACTOR) * (1.0 + dine_share * (spend - 1.0))
+	var dine_frac := dine_in / served_total if served_total > 0.0 else 0.0
+	var revenue := served_total * avg_price * (1.0 + ADDON_REVENUE_FACTOR) * (1.0 + dine_frac * (spend - 1.0))
 	var cogs := served_total * avg_cost * (1.0 + ADDON_REVENUE_FACTOR * 0.6)
 	var fixed := float(loc.get("rent", 0.0)) + float(ctx.get("wages", 0.0))
 	return {

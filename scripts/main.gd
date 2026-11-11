@@ -308,7 +308,10 @@ func continue_game() -> void:
 ## Title -> prep behind a short curtain (the street is rebuilt for the saved place).
 func _enter_prep(load_state: Callable, then: Callable = Callable()) -> void:
 	var go := func():
-		load_state.call()
+		if load_state.call() == false:
+			# The save could not be read: do not write a fresh game over it.
+			show_title()
+			return
 		show_prep()
 		if then.is_valid():
 			then.call()

@@ -240,7 +240,9 @@ func _spawn_passer() -> void:
 	for candidate in Game.candidates(wants):
 		best = maxf(best, float(candidate["value"]))
 	var decision := _rng.randf()
-	if decision >= _stop_chance(best, 0) * 1.5:
+	# Keep everyone who could stop, including those a rival will win over (counted below).
+	var p_any := Economy.stop_probability(float(ctx["popularity"]), best * float(ctx["appeal"]), float(ctx["boost"]), 0, int(ctx["queue_cap"]))
+	if decision >= maxf(p_any, _stop_chance(best, 0) * 1.5):
 		return
 	var c := world.spawn_walker(1 if _rng.randf() < 0.5 else -1)
 	if c.model == null:

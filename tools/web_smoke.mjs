@@ -9,7 +9,7 @@ const page = await ctx.newPage();
 const con = watchConsole(page);
 await armReady(page);
 const t0 = Date.now();
-await page.goto(url, { waitUntil: 'load' });
+await page.goto(url + '?dev=' + encodeURIComponent('--uitest'), { waitUntil: 'load' });
 await page.waitForSelector('#play', { state: 'visible', timeout: 120000 });
 console.log('download+init ready in', ((Date.now() - t0) / 1000).toFixed(1), 's');
 check(await page.evaluate(() => window.godotInstallGuide === false), 'no install guide on desktop Chrome');
@@ -22,8 +22,11 @@ const title = await waitPhase(page, 'title');
 check(title && title.hasSave === false, 'fresh profile has no save');
 await page.waitForTimeout(2500);
 await page.screenshot({ path: `${out}/2_title.png` });
-// New Game button sits mid-screen; click by canvas coordinates (title layout centred)
-await tap(page, 640, 390, false);
+// The title layout moves between versions: tap the real New Game button via --uitest geometry.
+await page.waitForFunction(() => window.godotMenuTargets?.new_game);
+const newGame = await page.evaluate(() => window.godotMenuTargets.new_game);
+const size = page.viewportSize();
+await tap(page, newGame.x * size.width, newGame.y * size.height, false);
 const prep = await waitPhase(page, 'prep');
 check(prep && prep.day === 1 && prep.money === 1500, `new game starts day 1 with AED 1500 (${JSON.stringify(prep)})`);
 check(prep && prep.hasSave === true, 'new game is saved straight away');

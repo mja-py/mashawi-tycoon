@@ -34,6 +34,7 @@ func _ready() -> void:
 	_test_guide_journey()
 	_test_logic_audit(game)
 	_test_reload_audit(game)
+	_test_economy_audit(game)
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
 
@@ -666,6 +667,7 @@ func _test_stages(game) -> void:
 	check(float(est["served"]) > 0.0 and est["util"].has("seating"), "estimate covers seating at the kiosk")
 	# capacity saturates: a maxed kiosk serves a lot, and an empty one much less
 	game.weather = "sunny"
+	game.weather_day = game.day # the day has opened on this weather
 	game.popularity = 0.9
 	var big := Economy.throughput_estimate(_ctx_for(game, {"counter": 15, "grill": 15, "karak": 10, "seating": 10}, 3, "downtown"))
 	var small := Economy.throughput_estimate(_ctx_for(game, {"counter": 0, "grill": 0}, 3, "downtown"))
@@ -732,6 +734,12 @@ func _test_save_load(game) -> void:
 	check(game.money == 5.0 + Data.BAILOUT_AMOUNT and game.bailouts == 1, "bailout when broke")
 	game.prepare_day()
 	check(game.bailouts == 1, "no bailout when solvent")
+	game.money = 5.0
+	game.prepare_day()
+	check(game.bailouts == 1 and game.money == 5.0, "reopening prep on the same day lends nothing more")
+	game.day += 1
+	game.prepare_day()
+	check(game.bailouts == 2, "the next day's prep can lend again")
 	check(game.expected_customers() > 5, "expected customers estimate (%d)" % game.expected_customers())
 
 func _test_pricing(game) -> void:
@@ -840,3 +848,77 @@ func _test_migration(game) -> void:
 	check(game.load_game() and game.station_level("signage") == 2 and game.station_level("lights") == 0, "neon on a cart becomes signage")
 	check(game.money == 100.0 + 2500.0, "sweets counter without a truck is refunded")
 	game.delete_save()
+
+func _test_economy_audit(game) -> void:
+	# prep plans on the forecast; the opened day runs on its committed weather
+	game.new_game()
+	game.weather = "sandstorm"
+	game.forecast = "sunny"
+	game.weather_day = 0
+	check(game.sim_context()["weather"] == "sunny", "prep estimates use the forecast, not yesterday's weather")
+	game.rng.seed = 5
+	game.begin_day()
+	check(game.sim_context()["weather"] == game.weather and game.weather_day == game.day, "an opened day estimates on its real weather")
+	# goals count what is owned anywhere
+	game.new_game()
+	game.money = 200000.0
+	game.set_location("creek")
+	game.buy_stage()
+	game.buy_stage()
+	game.plot()["reputation"] = 0.6
+	game.buy_stage()
+	for i in range(3):
+		game.buy_station_level("grill")
+	game.goal_index = Data.GOALS.size() - 1
+	for i in range(Data.GOALS.size()):
+		if Data.GOALS[i]["id"] == "kiosk":
+			game.goal_index = i
+	check(game.goal_ready(), "kiosk goal is ready where the kiosk stands")
+	game.set_location("fahidi")
+	check(game.goal_ready(), "kiosk goal stays ready after moving the rig elsewhere")
+	for i in range(Data.GOALS.size()):
+		if Data.GOALS[i]["id"] == "grill3":
+			game.goal_index = i
+	check(game.goal_ready(), "station goals count levels left in a plot")
+	# a save with malformed menu flags still loads everything else
+	game.new_game()
+	game.money = 200000.0
+	game.buy_stage()
+	game.buy_stage()
+	for i in range(5):
+		game.buy_station_level("counter")
+	game.money = 4321.0
+	game.marketing["fliers"] = 999
+	game.save()
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(game.save_path))
+	raw["menu"]["chicken_tikka"]["unlocked"] = null
+	raw["menu"]["soda"]["enabled"] = "yes"
+	_write_save(game, raw)
+	game.new_game()
+	check(game.load_game() and game.rig["stage"] == "truck" and game.station_level("counter") == 5 and game.money == 4321.0,
+		"malformed menu flags do not wipe rig and stations on load")
+	check(game.menu["chicken_tikka"]["unlocked"] and not game.menu["soda"]["enabled"], "menu flags recover to safe values")
+	check(int(game.marketing.get("fliers", 0)) == int(Data.MARKETING["fliers"]["days"]), "loaded promotions cannot outlast their campaign")
+	game.delete_save()
+	# the headless day seats only meals, as the visible day does
+	game.new_game()
+	game.money = 300000.0
+	game.set_location("creek")
+	for i in range(4):
+		game.buy_stage()
+	game.plot()["reputation"] = 0.9
+	game.buy_stage()
+	for i in range(6):
+		game.buy_station_level("seating")
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["kind"] == "food":
+			game.menu[id]["enabled"] = false
+	game.inventory["drink"] = 2000
+	game.inventory["yogurt"] = 2000
+	game.begin_day()
+	var ctx: Dictionary = game.sim_context()
+	check(float(ctx.get("dine_in_share", 0.0)) > 0.0 and int(ctx.get("seats", 0)) > 0, "drinks-only restaurant day has seats to offer")
+	var est: Dictionary = Economy.throughput_estimate(ctx)
+	check(float(est["dine_in"]) == 0.0 and float(est["served"]) > 0.0, "the estimate seats no drink orders")
+	var stats: Dictionary = FastSim.run(ctx, game.rng)
+	check(int(stats["served"]) > 0 and int(stats["dine_in"]) == 0, "FastSim seats no drink orders (%d served)" % int(stats["served"]))

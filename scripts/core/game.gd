@@ -96,11 +96,12 @@ func _new_stats() -> Dictionary:
 ## so a bad streak never ends the game outright. Plots you are away from slowly lose
 ## their local reputation.
 func prepare_day() -> void:
-	if money < Data.BAILOUT_BELOW and bailouts < Data.BAILOUT_MAX:
-		bailouts += 1
-		money += Data.BAILOUT_AMOUNT
-		notify.emit(tr("ui.loan") % Loc.money(Data.BAILOUT_AMOUNT), "warn")
 	if prepared_day != day:
+		# Once per day: reopening the prep screen (title, reload) is not a new loan.
+		if money < Data.BAILOUT_BELOW and bailouts < Data.BAILOUT_MAX:
+			bailouts += 1
+			money += Data.BAILOUT_AMOUNT
+			notify.emit(tr("ui.loan") % Loc.money(Data.BAILOUT_AMOUNT), "warn")
 		for id in plots:
 			if id == location:
 				continue
@@ -410,11 +411,16 @@ func goal_snapshot() -> Dictionary:
 		if menu[id]["unlocked"]:
 			unlocked.append(id)
 	var st := {}
+	var best_stage := rig_tier()
 	for id in Data.STATIONS:
-		st[id] = maxi(int(rig["stations"].get(id, 0)), station_level(id))
+		st[id] = int(rig["stations"].get(id, 0))
+	for loc_id in plots:
+		best_stage = maxi(best_stage, plot_stage_tier(loc_id))
+		for id in plots[loc_id]["stations"]:
+			st[id] = maxi(int(st.get(id, 0)), int(plots[loc_id]["stations"][id]))
 	return {
 		"day_served": int(last.get("served", 0)), "day_profit": float(last.get("profit", 0.0)), "day_dine_in": int(last.get("dine_in", 0)),
-		"total_served": total_served, "stars": stars(), "levels_owned": levels_owned(), "stage": stage_tier(),
+		"total_served": total_served, "stars": stars(), "levels_owned": levels_owned(), "stage": best_stage,
 		"stations": st, "visited": stats["locations_visited"], "unlocked": unlocked,
 	}
 
@@ -706,7 +712,8 @@ func sim_context() -> Dictionary:
 	return {
 		"day": day,
 		"location": location,
-		"weather": weather,
+		# Today's weather exists only once the day has opened; prep plans on the forecast.
+		"weather": weather if weather_day == day else forecast,
 		"hours": Data.location_hours(location),
 		"stage": stage_tier(),
 		"stations": active_stations(),
@@ -987,8 +994,8 @@ func load_game() -> bool:
 	for id in _dictionary(parsed.get("menu", {})):
 		if menu.has(id) and parsed["menu"][id] is Dictionary:
 			var m: Dictionary = parsed["menu"][id]
-			menu[id]["unlocked"] = bool(m.get("unlocked", false)) or bool(Data.MENU_ITEMS[id]["start"])
-			menu[id]["enabled"] = bool(m.get("enabled", false))
+			menu[id]["unlocked"] = _flag(m.get("unlocked")) or bool(Data.MENU_ITEMS[id]["start"])
+			menu[id]["enabled"] = _flag(m.get("enabled"))
 			menu[id]["price"] = _number(m.get("price", menu[id]["price"]), menu[id]["price"])
 			menu[id]["level"] = int(_number(m.get("level", 0)))
 			for k in Data.RECIPE_SLIDERS:
@@ -1018,6 +1025,10 @@ func load_game() -> bool:
 	_validate()
 	changed.emit()
 	return true
+
+## A saved flag counts only when it is literally true (strings and null are not).
+func _flag(v) -> bool:
+	return v is bool and v
 
 func _int_dict(d) -> Dictionary:
 	var out := {}
@@ -1056,7 +1067,7 @@ func _migrate_legacy(parsed: Dictionary) -> void:
 			"sweets": add.call("sweets", 1, 2500.0)
 			"helper": acc["refund"] += 300.0
 			"seating": acc["refund"] += 800.0
-	if bool(parsed.get("menu", {}).get("fries", {}).get("unlocked", false)):
+	if _flag(_dictionary(_dictionary(parsed.get("menu", {})).get("fries", {})).get("unlocked")):
 		if "fryer" in stage_stations:
 			st["fryer"] = maxi(int(st.get("fryer", 0)), 1)
 		else:
@@ -1128,6 +1139,8 @@ func _validate() -> void:
 	for id in marketing.keys():
 		if int(marketing[id]) < 1:
 			marketing.erase(id)
+		else:
+			marketing[id] = mini(int(marketing[id]), int(Data.MARKETING[id]["days"]))
 	goal_index = clampi(goal_index, 0, Data.GOALS.size())
 	var known_goals := []
 	for g in goals_claimed:

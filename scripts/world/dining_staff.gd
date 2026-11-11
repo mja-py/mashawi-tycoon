@@ -76,11 +76,11 @@ func _place_meal() -> void:
 		if _on_delivery.call():
 			var food := site.show_meal(_table, _item, int(_customer.seat["idx"]))
 			if food:
-					_meal = food
-					_meal_target = food.global_position
-					_meal_from = tray.global_position + Vector3.UP * 0.025
-					_meal_elapsed = 0.0
-					food.global_position = _meal_from
+				_meal = food
+				_meal_target = food.global_position
+				_meal_from = tray.global_position + Vector3.UP * 0.025
+				_meal_elapsed = 0.0
+				food.global_position = _meal_from
 			site.service_stats["deliveries"] += 1
 	tray.hide()
 	_return_home()
