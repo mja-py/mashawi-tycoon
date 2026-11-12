@@ -112,12 +112,14 @@ func prepare_day() -> void:
 		prepared_day = day
 	var here := plot()
 	here["last_visit"] = day
-	if not stats["locations_visited"].has(location):
-		stats["locations_visited"].append(location)
 	changed.emit()
 
 func expected_customers() -> int:
 	return Economy.expected_customers(sim_context())
+
+## Portions today's parties should buy (what the stock has to cover).
+func expected_portions() -> int:
+	return int(round(float(Economy.throughput_estimate(sim_context())["portions"])))
 
 func food_on_sale() -> bool:
 	for id in Data.MENU_ITEMS:
@@ -125,9 +127,13 @@ func food_on_sale() -> bool:
 			return true
 	return false
 
+## True once today's weather and customers are fixed, i.e. the shop has opened.
+func day_committed() -> bool:
+	return weather_day == day
+
 ## Decide the real weather for the day that is about to start.
 func begin_day() -> void:
-	if weather_day == day:
+	if day_committed():
 		return
 	if rng.randf() < Data.FORECAST_ACCURACY:
 		weather = forecast
@@ -135,6 +141,10 @@ func begin_day() -> void:
 		weather = _roll_weather()
 	weather_day = day
 	day_seed = rng.randi_range(1, 2147483647)
+	# A place counts as visited (places goals, the stats screen) once a day opens there,
+	# not when the prep screen merely passes through it.
+	if not stats["locations_visited"].has(location):
+		stats["locations_visited"].append(location)
 	# Commit the opening checkpoint before any live sale. Reloads replay this day.
 	save()
 	changed.emit()
@@ -214,13 +224,13 @@ func counter_capacity() -> float:
 func queue_capacity() -> int:
 	return Economy.queue_cap(station_level("counter"), stage_def())
 
-## Kitchen station -> portions per minute, for the stations present at this stage.
+## Kitchen station -> portions per sim-second, for the stations present at this stage.
 func kitchen_caps() -> Dictionary:
 	var out := {}
 	for id in stage_def()["stations"]:
 		var def: Dictionary = Data.STATIONS[id]
 		if def.has("kinds"):
-			out[id] = Economy.kitchen_capacity(def, station_level(id))
+			out[id] = Economy.kitchen_capacity(id, station_level(id), stage_tier())
 	return out
 
 ## Item station kind ("grill", "drink", ...) -> station id that cooks it here.
@@ -237,6 +247,10 @@ func seats() -> int:
 		if station_available(id):
 			n += station_level(id) * int(Data.STATIONS[id].get("seats_per_level", 0))
 	return n
+
+## Chairs actually set out on today's terrace (the plot builds tables of two up to its cap).
+func terrace_seats() -> int:
+	return Economy.terrace_seats(stage_tier(), seats())
 
 ## Overnight loss rate for an ingredient given the cold storage level.
 func spoil_rate(ing: String) -> float:
@@ -420,6 +434,7 @@ func goal_snapshot() -> Dictionary:
 			st[id] = maxi(int(st.get(id, 0)), int(plots[loc_id]["stations"][id]))
 	return {
 		"day_served": int(last.get("served", 0)), "day_profit": float(last.get("profit", 0.0)), "day_dine_in": int(last.get("dine_in", 0)),
+		"day_portions": int(last.get("portions", last.get("served", 0))),
 		"total_served": total_served, "stars": stars(), "levels_owned": levels_owned(), "stage": best_stage,
 		"stations": st, "visited": stats["locations_visited"], "unlocked": unlocked,
 	}
@@ -476,7 +491,10 @@ func buy_pack(ingredient: String, pack_index: int) -> bool:
 func daily_stock_plan() -> Dictionary:
 	var ctx := sim_context()
 	ctx["weather"] = forecast
-	var customers := Economy.expected_customers(ctx)
+	var est := Economy.throughput_estimate(ctx)
+	var customers := int(round(float(est["served"])))
+	# Parties order several portions each: stock follows portions, not buyers.
+	var portions_due := float(est["portions"])
 	var items: Array = ctx["offer"]
 	var sums := {"food": 0.0, "drink": 0.0, "side": 0.0, "sweet": 0.0}
 	var counts := {"food": 0, "drink": 0, "side": 0, "sweet": 0}
@@ -485,8 +503,8 @@ func daily_stock_plan() -> Dictionary:
 			sums[item["kind"]] += float(item["value"])
 			counts[item["kind"]] += 1
 	var ds := Economy.drink_share(forecast)
-	var bonus := 0.25 * float(ctx["dine_in_share"])
-	var drink_p := 0.65 if forecast == "hot" else (0.2 if forecast == "breeze" else 0.3)
+	var bonus := Economy.ADDON_DINE_BONUS * float(ctx["dine_in_share"])
+	var drink_p := Economy.addon_drink_chance(forecast)
 	var needs := {}
 	for item in items:
 		if not item_available(item["id"]):
@@ -501,10 +519,10 @@ func daily_stock_plan() -> Dictionary:
 		if kind != "food":
 			var base_price := float(Data.MENU_ITEMS[item["id"]]["base_price"])
 			var appeal := clampf(1.6 - float(item["price"]) / base_price * 0.9, 0.0, 1.0)
-			var chance := drink_p if kind == "drink" else (0.4 if kind == "side" else 0.35)
+			var chance := drink_p if kind == "drink" else (Economy.ADDON_SIDE if kind == "side" else Economy.ADDON_SWEET)
 			if counts["food"] > 0:
 				share += (1.0 - ds) * (chance + bonus) * appeal / int(counts[kind])
-		var portions := ceili(customers * share * 1.1)
+		var portions := ceili(portions_due * share * 1.1)
 		var recipe := Economy.portion_ingredients(item["id"], menu[item["id"]])
 		for ing in recipe:
 			needs[ing] = int(needs.get(ing, 0)) + portions * int(recipe[ing])
@@ -519,7 +537,7 @@ func daily_stock_plan() -> Dictionary:
 		for i in range(quote["counts"].size()):
 			if int(quote["counts"][i]) > 0:
 				orders.append([ing, i, int(quote["counts"][i])])
-	return {"cost": cost, "orders": orders, "customers": customers}
+	return {"cost": cost, "orders": orders, "customers": customers, "portions": int(round(portions_due))}
 
 func stock_for_today() -> bool:
 	var plan := daily_stock_plan()
@@ -697,8 +715,6 @@ func set_location(id: String) -> bool:
 	location = id
 	var p := plot()
 	p["last_visit"] = day
-	if not stats["locations_visited"].has(id):
-		stats["locations_visited"].append(id)
 	if not clamp_prices().is_empty():
 		notify.emit(tr("ui.m_price_clamped") % tr(loc()["name"]), "warn")
 	changed.emit()
@@ -708,26 +724,32 @@ func set_location(id: String) -> bool:
 
 func sim_context() -> Dictionary:
 	var sd := stage_def()
-	var n_seats := seats()
+	var tier := stage_tier()
+	var n_seats := terrace_seats()
+	var counter_level := station_level("counter")
 	return {
 		"day": day,
 		"location": location,
 		# Today's weather exists only once the day has opened; prep plans on the forecast.
 		"weather": weather if weather_day == day else forecast,
 		"hours": Data.location_hours(location),
-		"stage": stage_tier(),
+		"stage": tier,
 		"stations": active_stations(),
+		"counter_level": counter_level,
 		"counter_cap": counter_capacity(),
 		"queue_cap": queue_capacity(),
+		"buyers": Economy.buyer_budget(tier, counter_level),
+		"party": Economy.party_weights(tier, location),
+		"walk": Economy.walk_times(tier, location),
 		"kitchen": kitchen_caps(),
 		"station_of_kind": station_of_kind(),
 		"seats": n_seats,
+		"workers": Economy.dining_workers(tier, n_seats, station_level("staffroom") if station_available("staffroom") else 0),
 		"dine_in_share": Economy.dine_in_share(sd, n_seats),
-		"dwell_min": float(Data.STATIONS["seating"]["dwell_min"]),
-		"clean_min": float(Data.STATIONS["seating"]["clean_min"]),
+		"dine_s": float(Data.SERVICE["dine_s"]),
 		"spend_mult": Economy.spend_multiplier(station_level("majlis") if station_available("majlis") else 0),
 		"appeal": float(sd["appeal"]),
-		"patience_min": Economy.BASE_PATIENCE_MIN * float(loc().get("patience", 1.0)),
+		"patience_s": float(Data.SERVICE["patience_s"]) * float(loc().get("patience", 1.0)),
 		"boost": marketing_boost() + attract_bonus(),
 		"competition": competition(),
 		"promo_power": promo_power(),
@@ -742,7 +764,9 @@ func sim_context() -> Dictionary:
 	}
 
 ## The context a different setup would produce, without changing anything:
-## overrides = {"stations": {id: level}, "stage": tier, "location": id, "unlock": item_id}.
+## overrides = {"stations": {id: level}, "stage": tier, "location": id, "unlock": item_id,
+## "enhance": item_id (one more dish upgrade), "price_mult": m (every price at m x base,
+## clamped to what that place allows)}.
 func what_if(overrides: Dictionary) -> Dictionary:
 	var saved_rig: Dictionary = rig.duplicate(true)
 	var saved_plots: Dictionary = plots.duplicate(true)
@@ -771,6 +795,11 @@ func what_if(overrides: Dictionary) -> Dictionary:
 	if overrides.has("unlock"):
 		menu[String(overrides["unlock"])]["unlocked"] = true
 		menu[String(overrides["unlock"])]["enabled"] = true
+	if overrides.has("enhance"):
+		menu[String(overrides["enhance"])]["level"] = int(menu[String(overrides["enhance"])]["level"]) + 1
+	if overrides.has("price_mult"):
+		for id in menu:
+			menu[id]["price"] = float(Data.MENU_ITEMS[id]["base_price"]) * float(overrides["price_mult"])
 	clamp_prices()
 	var ctx := sim_context()
 	rig = saved_rig
@@ -835,6 +864,7 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 		"weather": weather,
 		"stage": stage_tier(),
 		"served": int(day_stats.get("served", 0)),
+		"portions": int(day_stats.get("portions", day_stats.get("served", 0))),
 		"passers": int(day_stats.get("passers", 0)),
 		"dine_in": int(day_stats.get("dine_in", 0)),
 		"revenue": revenue,
@@ -849,6 +879,7 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 		"too_pricey": int(day_stats.get("too_pricey", 0)),
 		"sold_out": int(day_stats.get("sold_out", 0)),
 		"queue_full": int(day_stats.get("queue_full", 0)),
+		"crowd": int(day_stats.get("crowd", 0)),
 		"satisfaction": (float(day_stats.get("satisfaction_sum", 0.0)) / maxi(1, int(day_stats.get("served", 0)))),
 		"pop_delta": pop_delta,
 		"popularity": popularity,
@@ -1163,7 +1194,7 @@ func _validate() -> void:
 	for r in history:
 		if r is Dictionary and Data.LOCATIONS.has(_identifier(r.get("location"))) and Data.WEATHER.has(_identifier(r.get("weather"))):
 			var row: Dictionary = r.duplicate(true)
-			for k in ["day", "stage", "served", "passers", "dine_in", "left_wait", "lost_rival", "too_pricey", "sold_out", "queue_full"]:
+			for k in ["day", "stage", "served", "portions", "passers", "dine_in", "left_wait", "lost_rival", "too_pricey", "sold_out", "queue_full", "crowd"]:
 				row[k] = maxi(0, int(_number(row.get(k, 0))))
 			for k in ["profit", "money", "revenue", "cogs", "rent", "wages", "spoil_cost", "satisfaction", "pop_delta", "popularity", "local_rep", "local_delta"]:
 				row[k] = _number(row.get(k, 0.0))

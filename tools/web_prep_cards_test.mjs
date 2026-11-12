@@ -35,6 +35,8 @@ try {
         }
         throw Error('could not reach ' + id);
       }
+      // The reveal is over when the way back to Build is on screen and no curtain covers it.
+      const revealed = () => page.waitForFunction(() => window.godotPresentation?.buildReturn && window.godotPresentation?.curtain === 0);
       const snapshot = name => page.screenshot({ path: out + '/' + lang + '-' + name + '.png' });
 
       await hit('tab_supplies');
@@ -73,20 +75,25 @@ try {
       await hit('tab_build');
       await snapshot('build');
       await hit('inspect_stage');
+      // A new stage closes the panel to show the stand, then offers a way back to Build.
       await hit('buy_stage');
       assert.equal((await saved()).rig.stage, 'stall');
-      await page.waitForFunction(() => window.godotPresentation?.curtain === 0);
+      await revealed();
+      assert.equal(await page.evaluate(() => window.godotState.panel), '', 'the panel closes for the reveal');
+      await hit('reveal_build');
+      await hit('inspect_stage');
       await hit('buy_stage');
       assert.equal((await saved()).rig.stage, 'truck');
-      await page.waitForFunction(() => window.godotPresentation?.curtain === 0);
-      await hit('back_cards');
-      await hit('build_group_kitchen');
+      await revealed();
       for (const id of ['doner', 'fryer', 'sweets']) {
+        // A first level is a new visual tier, so each of these is revealed too.
+        await hit('reveal_build');
+        await hit('build_group_kitchen');
         await rollTo('inspect_' + id);
         await hit('inspect_' + id);
         await hit('buy_station');
         assert.equal((await saved()).rig.stations[id], 1);
-        await hit('back_cards');
+        await revealed();
       }
       await hit('tab_menu');
       await hit('category_side');

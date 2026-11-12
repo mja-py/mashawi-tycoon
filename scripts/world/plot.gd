@@ -598,10 +598,125 @@ func _build_mobile_equipment(n: Node3D, station: String, t: int) -> void:
 				arm.basis = Basis.looking_at(to - from, Vector3.UP)
 		"music":
 			var b := MeshBatch.new()
-			for x in ([1.215] if t == 1 else [-0.765, 1.215]):
-				var p := Vector3(x, 0.953, 0.226)
-				b.add_box(Vector3(0.074, 0.089, 0.061), PlotBuilders.DARK, _at(p))
-				b.add_cyl(0.022, 0.008, FoodTruck.STEEL, Transform3D(Basis(Vector3.RIGHT, PI / 2.0), p + Vector3.BACK * 0.034), 0.0, 12)
+			var brass := Color("c79a43")
+			var timber := Color("503520")
+			var date_brown := Color("442719")
+			var cream := Color("efe0bb")
+			# Counter-height hospitality ledge on the customer-right exterior, outside the food line.
+			var shelf_x := 1.280 if stage == 2 else 0.840
+			var shelf_y := FoodTruck.SILL_Y if stage == 2 else 0.425
+			var shelf_z := 0.540 if stage == 2 else 0.430
+			var shelf_center := Vector3(shelf_x, shelf_y, shelf_z)
+			var shelf_size := Vector3(0.352, 0.018, 0.208)
+			var shelf_top := shelf_y + shelf_size.y * 0.5
+			var bracket_size := Vector3(0.024 if stage == 2 else 0.256, 0.060, 0.220)
+			var bracket_offset := Vector3(0 if stage == 2 else -0.116, -0.030, -0.070)
+			b.add_box(shelf_size, timber, _at(shelf_center))
+			b.add_box(bracket_size, timber, _at(shelf_center + bracket_offset))
+			if stage == 1:
+				# A plain backing separates the brass silhouette from the prep-table food.
+				b.add_box(Vector3(0.352, 0.230, 0.014), cream, _at(Vector3(shelf_x, shelf_top + 0.115, shelf_z - 0.116)))
+			var tray_center := Vector3(shelf_x - 0.088, shelf_top + 0.0064, shelf_z + 0.0192)
+			var tray_radius := 0.0592
+			var tray_height := 0.0128
+			var date_radius := 0.016
+			var date_height := 0.0176
+			var date_offsets := [Vector3(-0.014, 0.009, 0), Vector3(0.010, 0.009, -0.010), Vector3(0.006, 0.015, 0.010)]
+			b.add_cyl(tray_radius, tray_height, brass, _at(tray_center), 0.0, 12)
+			for offset: Vector3 in date_offsets:
+				b.add_cyl(date_radius, date_height, date_brown, _at(tray_center + offset * 1.6), 0.0, 8)
+			# Fresh tapered meshes give the belly/lid real slopes; cached resources stay untouched.
+			var taper := func(center: Vector3, lower_radius: float, upper_radius: float, height: float, color: Color, sides: int = 10) -> void:
+				var shape := CylinderMesh.new()
+				shape.bottom_radius = lower_radius
+				shape.top_radius = upper_radius
+				shape.height = height
+				shape.radial_segments = sides
+				shape.rings = 1
+				shape.material = ModelLib.flat_material(color)
+				b.add_mesh("hospitality_%d" % shape.get_instance_id(), shape, Transform3D(Basis.IDENTITY, center))
+			var dallah := func(origin: Vector3, size: float) -> void:
+				# Radius/height profile: foot, rounded belly, narrow waist, flared neck, pointed lid.
+				var body_profile := [Vector2(0.031, 0.000), Vector2(0.043, 0.014),
+					Vector2(0.052, 0.042), Vector2(0.047, 0.070), Vector2(0.025, 0.105),
+					Vector2(0.023, 0.132), Vector2(0.037, 0.149), Vector2(0.039, 0.155),
+					Vector2(0.008, 0.179), Vector2(0.0, 0.192)]
+				for i in range(body_profile.size() - 1):
+					var lower: Vector2 = body_profile[i]
+					var upper: Vector2 = body_profile[i + 1]
+					var center := origin + Vector3.UP * (lower.y + upper.y) * 0.5 * size
+					taper.call(center, lower.x * size, upper.x * size, (upper.y - lower.y) * size, brass)
+				# Broad crescent spout and an open curved handle lie in X/Y, facing the camera.
+				var spout_points := [Vector3(0.037, 0.052, 0), Vector3(0.067, 0.073, 0),
+					Vector3(0.081, 0.104, 0), Vector3(0.091, 0.135, 0), Vector3(0.109, 0.154, 0)]
+				var spout_radii := [0.016, 0.013, 0.010, 0.006]
+				var handle_points := [Vector3(-0.027, 0.135, 0), Vector3(-0.064, 0.144, 0),
+					Vector3(-0.084, 0.122, 0), Vector3(-0.086, 0.087, 0),
+					Vector3(-0.064, 0.058, 0), Vector3(-0.045, 0.058, 0)]
+				var handle_radius := 0.007
+				var stroke_sides := 8
+				for stroke in [spout_points, handle_points]:
+					for i in range(stroke.size() - 1):
+						var start: Vector3 = origin + stroke[i] * size
+						var end: Vector3 = origin + stroke[i + 1] * size
+						var direction := end - start
+						var radius: float = (spout_radii[i] if stroke == spout_points else handle_radius) * size
+						var axis := Basis(Quaternion(Vector3.UP, direction.normalized()))
+						b.add_cyl(radius, direction.length() + radius * 0.4, brass,
+							Transform3D(axis, (start + end) * 0.5), 0.0, stroke_sides)
+			var pot_origin := Vector3(shelf_x + 0.0512, shelf_top, shelf_z - 0.016)
+			var pot_scale := 0.96
+			dallah.call(pot_origin, pot_scale)
+			if t >= 2:
+				var cups_origin := Vector3(shelf_x + 0.0832, shelf_top, shelf_z + 0.0656)
+				var cup_pitch := 0.0144
+				var cup_height := 0.0256
+				var cup_lower_radius := 0.0144
+				var cup_upper_radius := 0.0224
+				for i in range(2):
+					var cup_center := cups_origin + Vector3.UP * (cup_height * 0.5 + i * cup_pitch)
+					taper.call(cup_center, cup_lower_radius, cup_upper_radius, cup_height, cream)
+			# Bake this local batch's palette into vertex colours: one surface / one draw call.
+			# Read primitive arrays only; never alter ModelLib's cached meshes or materials.
+			var vertices := PackedVector3Array()
+			var normals := PackedVector3Array()
+			var colors := PackedColorArray()
+			var indices := PackedInt32Array()
+			for key in b._order:
+				var group: Dictionary = b._groups[key]
+				var source: Mesh = group["mesh"]
+				for surface in range(source.get_surface_count()):
+					var arrays := source.surface_get_arrays(surface)
+					var source_vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+					var source_normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+					var source_indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+					var material := group["mat"] as StandardMaterial3D
+					if material == null:
+						material = source.surface_get_material(surface) as StandardMaterial3D
+					var color := material.albedo_color
+					for transform: Transform3D in group["xforms"]:
+						var offset := vertices.size()
+						var normal_basis := transform.basis.inverse().transposed()
+						for i in range(source_vertices.size()):
+							vertices.append(transform * source_vertices[i])
+							normals.append((normal_basis * source_normals[i]).normalized())
+							colors.append(color)
+						for index in source_indices:
+							indices.append(offset + index)
+			var arrays := []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = vertices
+			arrays[Mesh.ARRAY_NORMAL] = normals
+			arrays[Mesh.ARRAY_COLOR] = colors
+			arrays[Mesh.ARRAY_INDEX] = indices
+			var corner := ArrayMesh.new()
+			corner.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			var palette := ModelLib.flat_material_unique(Color.WHITE)
+			palette.vertex_color_use_as_albedo = true
+			palette.vertex_color_is_srgb = true
+			corner.surface_set_material(0, palette)
+			b = MeshBatch.new()
+			b.add_mesh("hospitality", corner, Transform3D.IDENTITY)
 			b.flush(n)
 
 func _service_markers(n: Node3D, pickup_x: float, order_x: float, z: float, y: float) -> void:
@@ -616,89 +731,341 @@ func _build_kiosk(n: Node3D) -> void:
 	var d := K_FRONT - K_BACK
 	var zc := (K_FRONT + K_BACK) / 2.0
 	var th := 0.06
-	# walls
-	b.add_box(Vector3(K_W, K_H, th), CREAM, _at(Vector3(K_X, K_H / 2.0, K_BACK + th / 2.0)))
+	var house := stage >= 4
+	var wall_col := Color("e1c7a2") if house else CREAM
+	var roof_y := (1.48 if stage >= 5 else 1.28) if house else K_H
+	# Keep the kitchen shell's inner faces, sill and rectangular opening unchanged.
+	b.add_box(Vector3(K_W, roof_y, th), wall_col, _at(Vector3(K_X, roof_y / 2.0, K_BACK + th / 2.0)))
 	for sx in [x0 + th / 2.0, x1 - th / 2.0]:
-		b.add_box(Vector3(th, K_H, d), CREAM, _at(Vector3(sx, K_H / 2.0, zc)))
+		b.add_box(Vector3(th, roof_y, d), wall_col, _at(Vector3(sx, roof_y / 2.0, zc)))
 	var fz := K_FRONT - th / 2.0
-	b.add_box(Vector3(K_W, COUNTER_Y, th), CREAM, _at(Vector3(K_X, COUNTER_Y / 2.0, fz)))
-	b.add_box(Vector3(K_W, K_H - WIN_TOP, th), CREAM, _at(Vector3(K_X, (WIN_TOP + K_H) / 2.0, fz)))
+	b.add_box(Vector3(K_W, COUNTER_Y, th), wall_col, _at(Vector3(K_X, COUNTER_Y / 2.0, fz)))
+	b.add_box(Vector3(K_W, roof_y - WIN_TOP, th), wall_col, _at(Vector3(K_X, (WIN_TOP + roof_y) / 2.0, fz)))
 	var side_w := (K_W - WIN_W) / 2.0
 	for sx in [x0 + side_w / 2.0, x1 - side_w / 2.0]:
-		b.add_box(Vector3(side_w, WIN_TOP - COUNTER_Y, th), CREAM, _at(Vector3(sx, (WIN_TOP + COUNTER_Y) / 2.0, fz)))
-	# red base band and gold window frame
-	b.add_box(Vector3(K_W + 0.01, 0.1, d + 0.01), TRIM, _at(Vector3(K_X, 0.05, zc)))
-	b.add_box(Vector3(WIN_W + 0.04, 0.025, 0.02), PlotBuilders.GOLD, _at(Vector3(K_X, WIN_TOP, K_FRONT + 0.005)))
-	for sx in [K_X - WIN_W / 2.0, K_X + WIN_W / 2.0]:
-		b.add_box(Vector3(0.025, WIN_TOP - COUNTER_Y, 0.02), PlotBuilders.GOLD, _at(Vector3(sx, (WIN_TOP + COUNTER_Y) / 2.0, K_FRONT + 0.005)))
-	# inside: dark floor, tiled back wall and the steel kitchen line behind the sill
-	# raised floor so the crew shows above the kitchen line
+		b.add_box(Vector3(side_w, WIN_TOP - COUNTER_Y, th), wall_col, _at(Vector3(sx, (WIN_TOP + COUNTER_Y) / 2.0, fz)))
+	var base_h := 0.1
+	var base_lip := 0.01
+	b.add_box(Vector3(K_W + base_lip, base_h, d + base_lip), TRIM, _at(Vector3(K_X, base_h / 2.0, zc)))
+	if not house:
+		var frame_w := 0.025
+		var frame_d := 0.02
+		var frame_z := K_FRONT + 0.005
+		b.add_box(Vector3(WIN_W + 0.04, frame_w, frame_d), PlotBuilders.GOLD, _at(Vector3(K_X, WIN_TOP, frame_z)))
+		for sx in [K_X - WIN_W / 2.0, K_X + WIN_W / 2.0]:
+			b.add_box(Vector3(frame_w, WIN_TOP - COUNTER_Y, frame_d), PlotBuilders.GOLD, _at(Vector3(sx, (WIN_TOP + COUNTER_Y) / 2.0, frame_z)))
+	# Inside: original raised floor, tiled back wall and kitchen line.
 	b.add_box(Vector3(K_W - 0.12, CREW_Y, d - 0.12), FLOOR, _at(Vector3(K_X, CREW_Y / 2.0, zc)))
 	b.add_box(Vector3(K_W - 0.14, 0.7, 0.01), TILE, _at(Vector3(K_X, 0.35, K_BACK + th + 0.006)))
 	b.add_box(Vector3(K_W - 0.14, COUNTER_Y - 0.02, 0.2), Color(0.5, 0.4, 0.32), _at(Vector3(K_X, (COUNTER_Y - 0.02) / 2.0, LINE_Z)))
 	b.add_box(Vector3(K_W - 0.14, 0.02, 0.21), STEEL, _at(Vector3(K_X, COUNTER_Y - 0.01, LINE_Z)))
-	# wood counter slab protruding through the window
 	b.add_box(Vector3(WIN_W + 0.1, 0.04, 0.17), PlotBuilders.WOOD, _at(Vector3(K_X, COUNTER_Y + 0.02, K_FRONT + 0.03)))
-	# roof slab, parapet and a hood + chimney over the grill
-	b.add_box(Vector3(K_W + 0.12, 0.06, d + 0.12), CREAM.darkened(0.08), _at(Vector3(K_X, K_H + 0.03, zc + 0.03)))
-	for sz in [K_BACK - 0.02, K_FRONT + 0.08]:
-		b.add_box(Vector3(K_W + 0.12, 0.08, 0.04), TRIM, _at(Vector3(K_X, K_H + 0.1, sz)))
-	for sx in [x0 - 0.04, x1 + 0.04]:
-		b.add_box(Vector3(0.04, 0.08, d + 0.12), TRIM, _at(Vector3(sx, K_H + 0.1, zc + 0.03)))
-	b.add_cyl(0.05, 0.4, STEEL.darkened(0.3), _at(Vector3(x0 + 0.3, K_H + 0.15, CHIMNEY_Z)))
-	b.add_cyl(0.07, 0.03, STEEL.darkened(0.4), _at(Vector3(x0 + 0.3, K_H + 0.36, CHIMNEY_Z)))
-	# signboard on the roof front with the stand name
-	b.add_box(Vector3(1.5, 0.28, 0.05), CREAM, _at(Vector3(K_X, K_H + 0.2, K_FRONT + 0.06)))
-	b.add_box(Vector3(1.54, 0.03, 0.06), TRIM, _at(Vector3(K_X, K_H + 0.355, K_FRONT + 0.06)))
-	_board = _label(n, Vector3(K_X, K_H + 0.2, K_FRONT + 0.09), "ui.sign", 96, 0.0032, Color(0.45, 0.1, 0.1))
-	var aw := PlotBuilders.spawn("awning", n, Vector3(K_X, WIN_TOP + 0.02, K_FRONT - 0.13), 0, 1.0)
-	if aw:
-		aw.scale = Vector3(1.95, 0.8, 1.4)
-	# crew behind the counter
-	# crew stand at the window ends so the stations behind them stay visible
+	if house:
+		_heritage_roof(b, roof_y, wall_col)
+	else:
+		var roof_h := 0.06
+		var roof_lip := 0.12
+		var parapet_h := 0.08
+		var parapet_w := 0.04
+		var parapet_y := K_H + 0.1
+		b.add_box(Vector3(K_W + roof_lip, roof_h, d + roof_lip), CREAM.darkened(0.08), _at(Vector3(K_X, K_H + roof_h / 2.0, zc + 0.03)))
+		for sz in [K_BACK - 0.02, K_FRONT + 0.08]:
+			b.add_box(Vector3(K_W + roof_lip, parapet_h, parapet_w), TRIM, _at(Vector3(K_X, parapet_y, sz)))
+		for sx in [x0 - 0.04, x1 + 0.04]:
+			b.add_box(Vector3(parapet_w, parapet_h, d + roof_lip), TRIM, _at(Vector3(sx, parapet_y, zc + 0.03)))
+		_arish_shade(b)
+	# Original extractor position stays aligned with the grill and its smoke.
+	var chimney_r := 0.05
+	var chimney_h := 0.4
+	var chimney_y := K_H + 0.15
+	var chimney_x := x0 + 0.3
+	var cap_r := 0.07
+	var cap_h := 0.03
+	var cap_y := K_H + 0.36
+	b.add_cyl(chimney_r, chimney_h, STEEL.darkened(0.3), _at(Vector3(chimney_x, chimney_y, CHIMNEY_Z)))
+	b.add_cyl(cap_r, cap_h, STEEL.darkened(0.4), _at(Vector3(chimney_x, cap_y, CHIMNEY_Z)))
+	# Sign backing and text retain the exact coordinates used by _st_signage.
+	var board_size := Vector3(1.5, 0.28, 0.05)
+	var board_y := K_H + 0.2
+	var board_z := K_FRONT + 0.06
+	var board_cap := Vector3(1.54, 0.03, 0.06)
+	var board_cap_y := K_H + 0.355
+	b.add_box(board_size, CREAM, _at(Vector3(K_X, board_y, board_z)))
+	b.add_box(board_cap, PlotBuilders.WOOD if house else TRIM, _at(Vector3(K_X, board_cap_y, board_z)))
+	_board = _label(n, Vector3(K_X, board_y, K_FRONT + 0.09), "ui.sign", 96, 0.0032, Color(0.45, 0.1, 0.1))
 	_crew_member(n, true, Vector3(K_X - 0.36, CREW_Y, -0.22), 15)
 	_helper = _crew_member(n, false, Vector3(K_X + 0.36, CREW_Y, -0.24), -15)
-	if stage >= 4:
+	if house:
 		_dress_restaurant(n, b)
 	_build_terrace(n, b)
 	b.flush(n)
 
+## A shallow arish shade; no supports or valance in the serving opening.
+func _arish_shade(b: MeshBatch) -> void:
+	var width := WIN_W + 0.20
+	var depth := 0.22
+	var center_z := K_FRONT + 0.065
+	var shade_y := WIN_TOP + 0.10
+	var rib_size := Vector3(0.035, 0.025, depth + 0.04)
+	var rib_spacing := width / 4.0
+	var frond_count := 19
+	var frond_w := width / frond_count * 0.82
+	var frond_h := 0.018
+	for i in range(5):
+		var x := K_X - width / 2.0 + i * rib_spacing
+		b.add_box(rib_size, PlotBuilders.WOOD, _at(Vector3(x, shade_y, center_z)))
+	for i in range(frond_count):
+		var x := K_X - width / 2.0 + (i + 0.5) * width / frond_count
+		b.add_box(Vector3(frond_w, frond_h, depth), DECK, _at(Vector3(x, shade_y + rib_size.y / 2.0 + frond_h / 2.0, center_z)))
+	var edge_size := Vector3(width + 0.04, 0.035, 0.025)
+	b.add_box(edge_size, PlotBuilders.WOOD, _at(Vector3(K_X, shade_y, center_z + depth / 2.0)))
+
 func _dress_restaurant(n: Node3D, b: MeshBatch) -> void:
+	var sand := Color("e1c7a2")
 	var green := Color("205c50")
 	var bronze := Color("ab8253")
-	var ivory := Color("e1c7a2")
 	var front := K_FRONT + 0.018
-	# A tiled plinth, a timber service bar, and a fascia continuous with the roof.
-	b.add_box(Vector3(K_W, 0.25, 0.025), green, _at(Vector3(K_X, 0.227, front)))
-	for i in range(17):
-		var x := K_X + (i - 8) * 0.103
-		b.add_box(Vector3(0.036, 0.036, 0.009), bronze,
-			Transform3D(Basis(Vector3.BACK, PI / 4.0), Vector3(x, 0.201, front + 0.017)))
-	b.add_box(Vector3(K_W + 0.04, 0.038, 0.044), bronze, _at(Vector3(K_X, 0.366, front)))
-	b.add_box(Vector3(K_W + 0.14, 0.106, 0.13), green, _at(Vector3(K_X, 1.041, front + 0.018)))
-	b.add_box(Vector3(K_W + 0.19, 0.028, 0.18), bronze, _at(Vector3(K_X, 1.107, front + 0.01)))
+	var roof_y := 1.48 if stage >= 5 else 1.28
+	var depth := K_FRONT - K_BACK
+	var center_z := (K_FRONT + K_BACK) / 2.0
+	var outer_x := K_X + K_W / 2.0
+	# Thicken outwards only: original inner wall faces and kitchen remain intact.
+	var cheek_w := 0.04
+	var cheek_x := K_W / 2.0 + cheek_w / 2.0
+	for side in [-1.0, 1.0]:
+		b.add_box(Vector3(cheek_w, roof_y, depth), sand, _at(Vector3(K_X + side * cheek_x, roof_y / 2.0, center_z)))
+	var back_depth := 0.05
+	b.add_box(Vector3(K_W + cheek_w * 2.0, roof_y, back_depth), sand, _at(Vector3(K_X, roof_y / 2.0, K_BACK - back_depth / 2.0)))
+	var pier_w := 0.10
+	var pier_depth := 0.11
+	var pier_offset := K_W / 2.0 - pier_w / 2.0
+	for side in [-1.0, 1.0]:
+		b.add_box(Vector3(pier_w, roof_y, pier_depth), CREAM, _at(Vector3(K_X + side * pier_offset, roof_y / 2.0, K_FRONT)))
+	_arch_frame(b)
+	# Original plinth and service labels: same positions and clear approach.
+	var plinth_size := Vector3(K_W, 0.25, 0.025)
+	var plinth_y := 0.227
+	var rail_size := Vector3(K_W + 0.04, 0.038, 0.044)
+	var rail_y := 0.366
+	b.add_box(plinth_size, green, _at(Vector3(K_X, plinth_y, front)))
+	b.add_box(rail_size, bronze, _at(Vector3(K_X, rail_y, front)))
+	var marker_size := Vector3(0.30, 0.075, 0.015)
+	var marker_y := 0.301
+	var marker_z := front + 0.026
+	var inlay_size := Vector3(0.22, 0.009, 0.036)
+	var inlay_y := 0.022
+	var inlay_z := 0.57
 	for x in [K_X - 0.40, K_X + 0.41]:
-		b.add_box(Vector3(0.30, 0.075, 0.015), green, _at(Vector3(x, 0.301, front + 0.026)))
-		b.add_box(Vector3(0.22, 0.009, 0.036), bronze, _at(Vector3(x, 0.022, 0.57)))
+		b.add_box(marker_size, green, _at(Vector3(x, marker_y, marker_z)))
+		b.add_box(inlay_size, bronze, _at(Vector3(x, inlay_y, inlay_z)))
 	_service_markers(n, K_X - 0.40, K_X + 0.41, front + 0.035, 0.301)
-	# The screened back wall keeps the terrace open to the street and camera.
+	# Fitted timber panels on the visible +X wall, clear of the external stations.
+	var panel_w := 0.30
+	var panel_h := 0.35
+	var panel_y := 0.89
+	var panel_x := outer_x + cheek_w + 0.016
+	var panel_zs := [K_BACK + 0.25, K_BACK + 0.73]
+	for z in panel_zs:
+		_heritage_lattice(b, Vector3(panel_x, panel_y, z), panel_w, panel_h, PI / 2.0)
+	# Only the existing BACK edge of the terrace has a screen: never a front arcade.
 	var left := -_gap + 0.14
 	var right := -0.33
 	var back := -1.04
+	var screen_top := 0.87
+	var screen_bottom := 0.31
+	var screen_h := screen_top - screen_bottom
+	var bay_count := ceili((right - left) / 0.52)
+	var bay_w := (right - left) / bay_count
+	var screen_cap := Vector3(right - left, 0.07, 0.16)
+	var screen_post_w := 0.07
 	for x in [left, right]:
-		b.add_box(Vector3(0.07, 0.87, 0.07), PlotBuilders.WOOD, _at(Vector3(x, 0.435, back)))
-	b.add_box(Vector3(right - left, 0.062, 0.08), PlotBuilders.WOOD, _at(Vector3((left + right) * 0.5, 0.85, back)))
-	b.add_box(Vector3(right - left, 0.047, 0.047), PlotBuilders.WOOD, _at(Vector3((left + right) * 0.5, 0.307, back)))
-	for i in range(floori((right - left) / 0.13)):
-		var x := left + 0.11 + i * 0.13
-		b.add_box(Vector3(0.035, 0.52, 0.026), PlotBuilders.WOOD, _at(Vector3(x, 0.57, back)))
-	b.add_box(Vector3(right - left, 0.07, 0.20), ivory, _at(Vector3((left + right) * 0.5, 0.87, back + 0.038)))
+		PlotBuilders.post(b, Vector3(x, 0, back), screen_top, PlotBuilders.WOOD, screen_post_w)
+	for i in range(bay_count):
+		var x := left + (i + 0.5) * bay_w
+		_heritage_lattice(b, Vector3(x, (screen_top + screen_bottom) / 2.0, back), bay_w, screen_h)
+	b.add_box(screen_cap, CREAM, _at(Vector3((left + right) / 2.0, screen_top, back)))
+	# Hanging lanterns share one mesh batch and the existing day/night glass swap.
+	var lanterns: Array = []
+	var bracket_size := Vector3(0.035, 0.035, 0.17)
+	var bracket_y := 1.17
+	var bracket_z := K_FRONT + 0.07
+	var chain_size := Vector3(0.014, 0.055, 0.014)
+	var chain_y := bracket_y - chain_size.y / 2.0
+	var lantern_y := bracket_y - 0.24
+	var lantern_z := K_FRONT + 0.145
+	var lantern_scale := 0.80
+	for side in [-1.0, 1.0]:
+		var x: float = K_X + side * pier_offset
+		b.add_box(bracket_size, PlotBuilders.WOOD, _at(Vector3(x, bracket_y, bracket_z)))
+		b.add_box(chain_size, PlotBuilders.WOOD, _at(Vector3(x, chain_y, lantern_z)))
+		lanterns.append(PlotBuilders.lantern_at(Vector3(x, lantern_y, lantern_z), lantern_scale))
 	if stage >= 5:
-		# Flagship: a second roofline and repeating bronze fins over the lounge.
-		b.add_box(Vector3(right - left + 0.16, 0.09, 0.51), green, _at(Vector3((left + right) * 0.5, 1.06, back + 0.16)))
-		for i in range(11):
-			var x := lerpf(left, right, float(i) / 10.0)
-			b.add_box(Vector3(0.037, 0.038, 0.60), bronze, _at(Vector3(x, 1.122, back + 0.17)))
+		# A raised rooftop terrace band, with timber balustrade in its side recesses.
+		var band_bottom := 1.27
+		var band_top := 1.43
+		var band_h := band_top - band_bottom
+		var band_w := 0.72
+		var band_center_z := center_z - 0.02
+		for side in [-1.0, 1.0]:
+			var band_x: float = K_X + side * (K_W / 2.0 + cheek_w + 0.018)
+			_heritage_lattice(b, Vector3(band_x, (band_bottom + band_top) / 2.0, band_center_z), band_w, band_h, PI / 2.0)
+		var upper_bracket_y := roof_y + 0.10
+		var upper_lantern_y := upper_bracket_y - 0.24
+		var side_bracket_size := Vector3(bracket_size.z, bracket_size.y, bracket_size.x)
+		var side_bracket_x := outer_x + cheek_w + 0.07
+		var side_lantern_x := outer_x + cheek_w + 0.145
+		for z in panel_zs:
+			b.add_box(side_bracket_size, PlotBuilders.WOOD, _at(Vector3(side_bracket_x, upper_bracket_y, z)))
+			b.add_box(chain_size, PlotBuilders.WOOD, _at(Vector3(side_lantern_x, upper_bracket_y - chain_size.y / 2.0, z)))
+			lanterns.append(PlotBuilders.lantern_at(Vector3(side_lantern_x, upper_lantern_y, z), lantern_scale))
+		_wind_tower(b, roof_y, sand)
+	var mmi := PlotBuilders.lantern_batch(n, lanterns)
+	if mmi:
+		_lanterns.append(mmi)
+
+## Thick pale coping with broad crenels, plus exposed chandal beam ends.
+func _heritage_roof(b: MeshBatch, roof_y: float, sand: Color) -> void:
+	var depth := K_FRONT - K_BACK
+	var center_z := (K_FRONT + K_BACK) / 2.0
+	var roof_lip := 0.10
+	var slab_h := 0.05
+	var parapet_h := 0.08 if stage >= 5 else 0.10
+	var parapet_w := 0.09
+	var parapet_y := roof_y + slab_h + parapet_h / 2.0
+	var front_z := K_FRONT - 0.025
+	var back_z := K_BACK - 0.005
+	var side_offset := K_W / 2.0
+	var crenel_h := 0.065
+	var crenel_w := 0.16
+	var crenel_y := roof_y + slab_h + parapet_h + crenel_h / 2.0
+	var front_count := 7
+	var side_count := 4
+	b.add_box(Vector3(K_W + roof_lip, slab_h, depth + roof_lip), CREAM, _at(Vector3(K_X, roof_y + slab_h / 2.0, center_z)))
+	for z in [front_z, back_z]:
+		b.add_box(Vector3(K_W + roof_lip, parapet_h, parapet_w), sand, _at(Vector3(K_X, parapet_y, z)))
+		for i in range(front_count):
+			var x := K_X - side_offset + i * K_W / (front_count - 1)
+			b.add_box(Vector3(crenel_w, crenel_h, parapet_w), CREAM, _at(Vector3(x, crenel_y, z)))
+	for side in [-1.0, 1.0]:
+		var x: float = K_X + side * side_offset
+		b.add_box(Vector3(parapet_w, parapet_h, depth), sand, _at(Vector3(x, parapet_y, center_z)))
+		for i in range(1, side_count - 1):
+			var z := lerpf(back_z, front_z, float(i) / (side_count - 1))
+			b.add_box(Vector3(parapet_w, crenel_h, crenel_w), CREAM, _at(Vector3(x, crenel_y, z)))
+	var beam_r := 0.018
+	var beam_length := 0.16
+	var beam_y := roof_y - 0.09
+	var beam_count := 9
+	var beam_span := K_W - 0.18
+	var beam_front_z := K_FRONT + 0.045
+	for i in range(beam_count):
+		var x := K_X - beam_span / 2.0 + i * beam_span / (beam_count - 1)
+		b.add_cyl(beam_r, beam_length, PlotBuilders.WOOD, _rx(Vector3(x, beam_y, beam_front_z), PI / 2.0))
+	var side_beam_count := 4
+	var side_beam_x := K_X + K_W / 2.0 + 0.04
+	var side_beam_span := depth - 0.24
+	for i in range(side_beam_count):
+		var z := center_z - side_beam_span / 2.0 + i * side_beam_span / (side_beam_count - 1)
+		b.add_cyl(beam_r, beam_length, PlotBuilders.WOOD, Transform3D(Basis(Vector3.FORWARD, PI / 2.0), Vector3(side_beam_x, beam_y, z)))
+
+## A pointed surround outside the full rectangular aperture, including its top corners.
+func _arch_frame(b: MeshBatch) -> void:
+	var trim_w := 0.045
+	var trim_d := 0.035
+	var jamb_offset := WIN_W / 2.0 + trim_w / 2.0 + 0.008
+	var spring_y := WIN_TOP + 0.055
+	var shoulder_y := WIN_TOP + 0.20
+	var apex_y := WIN_TOP + 0.32
+	var shoulder_offset := WIN_W * 0.29
+	var face_z := K_FRONT + 0.038
+	var jamb_h := spring_y - COUNTER_Y
+	for side in [-1.0, 1.0]:
+		var foot := Vector3(K_X + side * jamb_offset, spring_y, face_z)
+		var shoulder := Vector3(K_X + side * shoulder_offset, shoulder_y, face_z)
+		var apex := Vector3(K_X, apex_y, face_z)
+		b.add_box(Vector3(trim_w, jamb_h, trim_d), DECK, _at(Vector3(foot.x, (spring_y + COUNTER_Y) / 2.0, face_z)))
+		_heritage_bar(b, foot, shoulder, trim_w, trim_d, DECK)
+		_heritage_bar(b, shoulder, apex, trim_w, trim_d, DECK)
+
+## Box segments use the same cached unit mesh as all other building details.
+func _heritage_bar(b: MeshBatch, a: Vector3, end: Vector3, width: float, depth: float, col: Color, frame: Transform3D = Transform3D.IDENTITY) -> void:
+	var delta := end - a
+	var basis := Basis(Vector3.BACK, -atan2(delta.x, delta.y))
+	var size := Vector3(width, delta.length(), depth)
+	b.add_box(size, col, frame * Transform3D(basis, (a + end) / 2.0))
+
+## Clipped diagonal laths form real open diamonds, rather than a solid panel texture.
+func _heritage_lattice(b: MeshBatch, center: Vector3, width: float, height: float, yaw: float = 0.0) -> void:
+	var frame := Transform3D(Basis(Vector3.UP, yaw), center)
+	var rail_w := 0.026
+	var rail_d := 0.025
+	var lath_w := 0.012
+	var lath_d := 0.014
+	var pitch := 0.12
+	var half_w := (width - rail_w) / 2.0
+	var half_h := (height - rail_w) / 2.0
+	var line_count := ceili((half_w + half_h) / pitch)
+	for side in [-1.0, 1.0]:
+		b.add_box(Vector3(rail_w, height, rail_d), PlotBuilders.WOOD, frame * _at(Vector3(side * half_w, 0, 0)))
+		b.add_box(Vector3(width, rail_w, rail_d), PlotBuilders.WOOD, frame * _at(Vector3(0, side * half_h, 0)))
+	for direction in [-1.0, 1.0]:
+		for i in range(-line_count, line_count + 1):
+			var offset := i * pitch
+			var low := maxf(-half_h, -half_w - offset)
+			var high := minf(half_h, half_w - offset)
+			if high - low < lath_w:
+				continue
+			var a := Vector3(direction * (low + offset), low, 0)
+			var end := Vector3(direction * (high + offset), high, 0)
+			_heritage_bar(b, a, end, lath_w, lath_d, PlotBuilders.WOOD, frame)
+
+## Square, genuinely open barjeel at the rear +X corner, away from the -X terrace.
+func _wind_tower(b: MeshBatch, roof_y: float, sand: Color) -> void:
+	var tower_w := 0.46
+	var corner_inset := 0.29
+	var center := Vector3(K_X + K_W / 2.0 - corner_inset, 0, K_BACK + corner_inset)
+	var neck_h := 0.22
+	var sill_h := 0.05
+	var sill_w := 0.52
+	var vent_h := 0.38
+	var vent_bottom := roof_y + neck_h + sill_h
+	var vent_top := vent_bottom + vent_h
+	var vent_y := (vent_bottom + vent_top) / 2.0
+	var post_w := 0.06
+	var post_offset := (tower_w - post_w) / 2.0
+	var cap_h := 0.07
+	var cap_w := 0.57
+	var cap_y := vent_top + cap_h / 2.0
+	var crown_h := 0.03
+	var crown_w := 0.49
+	var crown_y := vent_top + cap_h + crown_h / 2.0
+	# At stage 5: top = 1.48 + .22 + .05 + .38 + .07 + .03 = 2.23.
+	b.add_box(Vector3(tower_w, neck_h, tower_w), sand, _at(center + Vector3.UP * (roof_y + neck_h / 2.0)))
+	b.add_box(Vector3(sill_w, sill_h, sill_w), CREAM, _at(center + Vector3.UP * (roof_y + neck_h + sill_h / 2.0)))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			b.add_box(Vector3(post_w, vent_h, post_w), sand, _at(center + Vector3(sx * post_offset, vent_y, sz * post_offset)))
+	var brace_half := tower_w / 2.0 - post_w
+	var brace_w := 0.018
+	var brace_d := 0.018
+	var vent_face := tower_w / 2.0 - brace_d / 2.0
+	var brace_half_h := vent_h / 2.0 - 0.025
+	for face in range(4):
+		var yaw := face * PI / 2.0
+		var frame := Transform3D(Basis(Vector3.UP, yaw), center + Vector3.UP * vent_y)
+		for direction in [-1.0, 1.0]:
+			var a := Vector3(-brace_half, -direction * brace_half_h, vent_face)
+			var end := Vector3(brace_half, direction * brace_half_h, vent_face)
+			_heritage_bar(b, a, end, brace_w, brace_d, PlotBuilders.WOOD, frame)
+	b.add_box(Vector3(cap_w, cap_h, cap_w), CREAM, _at(center + Vector3.UP * cap_y))
+	b.add_box(Vector3(crown_w, crown_h, crown_w), sand, _at(center + Vector3.UP * crown_y))
+	var pole_r := 0.018
+	var pole_length := tower_w + 0.18
+	var pole_y := vent_bottom + 0.035
+	var pole_offset := 0.14
+	for side in [-1.0, 1.0]:
+		b.add_cyl(pole_r, pole_length, PlotBuilders.WOOD, _rx(center + Vector3(side * pole_offset, pole_y, 0), PI / 2.0))
+		b.add_cyl(pole_r, pole_length, PlotBuilders.WOOD, Transform3D(Basis(Vector3.FORWARD, PI / 2.0), center + Vector3(0, pole_y, side * pole_offset)))
 
 # ---------------------------------------------------------------- terrace + seating
 
@@ -706,7 +1073,7 @@ func _layout_terrace() -> void:
 	_slots.clear()
 	if stage < FIXED:
 		return
-	_music_spot = Vector3(-_gap + 0.24, 0, -0.99)
+	_music_spot = Vector3(3.36, 0, -0.04) # Side-wall pocket: tier-4 bounds x 3.15..3.57, z -0.36..0.28.
 	for r in range(ROWS.size()):
 		var x := FIRST_TABLE_X
 		while x - 0.34 >= -_gap + 0.03:
@@ -974,26 +1341,225 @@ func _st_lights(n: Node3D, t: int) -> void:
 
 func _st_music(n: Node3D, t: int) -> void:
 	var b := MeshBatch.new()
-	var p := _music_spot
-	var base := 0.0
+	# Face the +X/+Z camera; keep the full carpet outside the desk/oven and walking strip.
+	n.position = _music_spot
+	n.rotation.y = PI / 2.0
+	var p := Vector3.ZERO
+	var timber := Color("503520")
+	var brass := Color("c79a43")
+	var date_brown := Color("442719")
+	var cream := Color("efe0bb")
+	var clay := Color("984636")
+	var palm_green := Color("456943")
+	var platform_size := Vector3(0.64, 0.032, 0.42)
+	var carpet_size := Vector3(0.62, 0.008, 0.40)
+	var carpet_center := Vector3(0, 0.036, 0)
+	var border_y := 0.041
+	var border_inset := Vector2(0.288, 0.178)
+	var border_thickness := 0.002
+	var border_width := 0.008
+	var base := 0.040 if t >= 4 else 0.0
 	if t >= 4:
-		base = 0.06
-		b.add_box(Vector3(0.62, 0.06, 0.4), PlotBuilders.WOOD.darkened(0.1), _at(p + Vector3(0, 0.03, 0)))
-		b.add_box(Vector3(0.64, 0.015, 0.42), TRIM, _at(p + Vector3(0, 0.0675, 0)))
-	var spk := [p + Vector3(0.22, base, -0.06)] if t < 2 else [p + Vector3(-0.24, base, -0.08), p + Vector3(0.24, base, -0.08)]
-	for s in spk:
-		var h := 0.0 if t < 2 else 0.32
-		if h > 0.0:
-			PlotBuilders.post(b, s, h, PlotBuilders.DARK, 0.025)
-		b.add_box(Vector3(0.12, 0.18, 0.11), PlotBuilders.DARK, _at(s + Vector3(0, h + 0.09, 0)))
-		b.add_cyl(0.035, 0.012, Color(0.4, 0.4, 0.42), _rx(s + Vector3(0, h + 0.1, 0.06), PI / 2))
+		b.add_box(platform_size, timber, _at(p + Vector3.UP * platform_size.y * 0.5))
+		b.add_box(carpet_size, clay, _at(p + carpet_center))
+		for side in [-1.0, 1.0]:
+			var long_border := Vector3(carpet_size.x - border_width * 4, border_thickness, border_width)
+			var short_border := Vector3(border_width, border_thickness, carpet_size.z - border_width * 4)
+			b.add_box(long_border, brass, _at(p + Vector3(0, border_y, side * border_inset.y)))
+			b.add_box(short_border, brass, _at(p + Vector3(side * border_inset.x, border_y, 0)))
+	# Low side table: four dark wooden legs, with dates kept forward of the coffee pot.
+	var table_center := p + Vector3(-0.080, base, 0.025)
+	var table_size := Vector3(0.38, 0.020, 0.27)
+	var table_top := 0.235
+	var leg_height := table_top - table_size.y
+	var leg_size := Vector3(0.023, leg_height, 0.023)
+	var leg_spacing := Vector2(0.160, 0.105)
+	b.add_box(table_size, timber, _at(table_center + Vector3.UP * (table_top - table_size.y * 0.5)))
+	for side_x in [-1.0, 1.0]:
+		for side_z in [-1.0, 1.0]:
+			var leg_center := Vector3(side_x * leg_spacing.x, leg_height * 0.5, side_z * leg_spacing.y)
+			b.add_box(leg_size, timber, _at(table_center + leg_center))
+	var tray_center := p + Vector3(-0.170, base + table_top + 0.006, 0.070)
+	var tray_radius := 0.075
+	var tray_height := 0.012
+	var tray_sides := 12
+	var date_radius := 0.018
+	var date_height := 0.020
+	var date_stretch := Vector3(1.0, 1.0, 0.65)
+	var date_offsets := [Vector3(-0.030, 0.015, -0.015), Vector3(0.008, 0.015, -0.025),
+		Vector3(0.033, 0.015, 0.006), Vector3(-0.017, 0.015, 0.022),
+		Vector3(0.012, 0.030, 0.004)]
+	b.add_cyl(tray_radius, tray_height, brass, _at(tray_center), 0.0, tray_sides)
+	for offset: Vector3 in date_offsets:
+		b.add_cyl(date_radius, date_height, date_brown,
+			Transform3D(Basis.from_scale(date_stretch), tray_center + offset), 0.0, 8)
+	# Fresh tapered meshes give the belly/lid real slopes; cached resources stay untouched.
+	var taper := func(center: Vector3, lower_radius: float, upper_radius: float, height: float, color: Color, sides: int = 10) -> void:
+		var shape := CylinderMesh.new()
+		shape.bottom_radius = lower_radius
+		shape.top_radius = upper_radius
+		shape.height = height
+		shape.radial_segments = sides
+		shape.rings = 1
+		shape.material = ModelLib.flat_material(color)
+		b.add_mesh("hospitality_%d" % shape.get_instance_id(), shape, Transform3D(Basis.IDENTITY, center))
+	var dallah := func(origin: Vector3, size: float) -> void:
+		# Radius/height profile: foot, rounded belly, narrow waist, flared neck, pointed lid.
+		var body_profile := [Vector2(0.031, 0.000), Vector2(0.043, 0.014),
+			Vector2(0.052, 0.042), Vector2(0.047, 0.070), Vector2(0.025, 0.105),
+			Vector2(0.023, 0.132), Vector2(0.037, 0.149), Vector2(0.039, 0.155),
+			Vector2(0.008, 0.179), Vector2(0.0, 0.192)]
+		for i in range(body_profile.size() - 1):
+			var lower: Vector2 = body_profile[i]
+			var upper: Vector2 = body_profile[i + 1]
+			var center := origin + Vector3.UP * (lower.y + upper.y) * 0.5 * size
+			taper.call(center, lower.x * size, upper.x * size, (upper.y - lower.y) * size, brass)
+		# Face the spout/handle toward the camera independently of the quarter-turned table.
+		var spout_points := [Vector3(0.037, 0.052, 0), Vector3(0.067, 0.073, 0),
+			Vector3(0.081, 0.104, 0), Vector3(0.091, 0.135, 0), Vector3(0.109, 0.154, 0)]
+		var spout_radii := [0.016, 0.013, 0.010, 0.006]
+		var handle_points := [Vector3(-0.027, 0.135, 0), Vector3(-0.064, 0.144, 0),
+			Vector3(-0.084, 0.122, 0), Vector3(-0.086, 0.087, 0),
+			Vector3(-0.064, 0.058, 0), Vector3(-0.045, 0.058, 0)]
+		var handle_radius := 0.007
+		var stroke_sides := 8
+		var coffee_facing := Basis(Vector3.UP, deg_to_rad(-76))
+		for stroke in [spout_points, handle_points]:
+			for i in range(stroke.size() - 1):
+				var start: Vector3 = origin + coffee_facing * stroke[i] * size
+				var end: Vector3 = origin + coffee_facing * stroke[i + 1] * size
+				var direction := end - start
+				var radius: float = (spout_radii[i] if stroke == spout_points else handle_radius) * size
+				var axis := Basis(Quaternion(Vector3.UP, direction.normalized()))
+				b.add_cyl(radius, direction.length() + radius * 0.4, brass,
+					Transform3D(axis, (start + end) * 0.5), 0.0, stroke_sides)
+	if t >= 2:
+		var pot_origin := p + Vector3(-0.015, base + table_top, -0.025)
+		var pot_scale := 1.0
+		dallah.call(pot_origin, pot_scale)
+		# Three nested, handleless finjan; brass rims separate the cream cup silhouettes.
+		var cups_origin := p + Vector3(0.060, base + table_top, 0.100)
+		var cup_count := 3
+		var cup_pitch := 0.014
+		var cup_height := 0.025
+		var cup_lower_radius := 0.014
+		var cup_upper_radius := 0.021
+		var cup_rim_height := 0.003
+		for i in range(cup_count):
+			var cup_center := cups_origin + Vector3.UP * (cup_height * 0.5 + i * cup_pitch)
+			taper.call(cup_center, cup_lower_radius, cup_upper_radius, cup_height, cream)
+			var rim_center := cups_origin + Vector3.UP * (cup_height + i * cup_pitch)
+			b.add_cyl(cup_upper_radius, cup_rim_height, brass, _at(rim_center), 0.0, 10)
 	if t >= 3:
-		# an oud player on a stool
-		b.add_cyl(0.06, 0.13, PlotBuilders.WOOD, _at(p + Vector3(0, base + 0.065, 0.02)))
-		var player := ModelLib.spawn_guest("souq-man", n, p + Vector3(0, base + 0.08, 0.02), 0.54)
-		if player:
-			ModelLib.play_loop(player, "sit", 0.6)
-			b.add_box(Vector3(0.08, 0.12, 0.03), Color(0.55, 0.32, 0.15), _at(p + Vector3(0.0, base + 0.25, 0.14)))
+		# Mabkhara on its own small stand, clear of the side table and palm pot.
+		var burner_origin := p + Vector3(0.225, base, 0.095)
+		var stand_top := 0.160
+		var stand_size := Vector3(0.115, 0.018, 0.115)
+		var stand_leg_height := stand_top - stand_size.y
+		var stand_leg_size := Vector3(0.018, stand_leg_height, 0.018)
+		var stand_leg_spacing := 0.043
+		b.add_box(stand_size, timber, _at(burner_origin + Vector3.UP * (stand_top - stand_size.y * 0.5)))
+		for side_x in [-1.0, 1.0]:
+			for side_z in [-1.0, 1.0]:
+				var leg_center := Vector3(side_x * stand_leg_spacing, stand_leg_height * 0.5, side_z * stand_leg_spacing)
+				b.add_box(stand_leg_size, timber, _at(burner_origin + leg_center))
+		# Four-sided tapered pedestal / bowl. Rotate diagonal cylinder corners to X/Z.
+		var burner_profile := [Vector2(0.052, 0.000), Vector2(0.052, 0.014),
+			Vector2(0.027, 0.057), Vector2(0.057, 0.102)]
+		var square_turn := Basis(Vector3.UP, PI / 4.0)
+		for i in range(burner_profile.size() - 1):
+			var lower: Vector2 = burner_profile[i]
+			var upper: Vector2 = burner_profile[i + 1]
+			var shape := CylinderMesh.new()
+			shape.bottom_radius = lower.x
+			shape.top_radius = upper.x
+			shape.height = upper.y - lower.y
+			shape.radial_segments = 4
+			shape.rings = 1
+			shape.material = ModelLib.flat_material(brass)
+			var center := burner_origin + Vector3.UP * (stand_top + (lower.y + upper.y) * 0.5)
+			b.add_mesh("mabkhara_%d" % i, shape, Transform3D(square_turn, center))
+		var coal_size := Vector3(0.064, 0.003, 0.064)
+		var coal_height := stand_top + 0.103
+		var horn_size := Vector3(0.014, 0.032, 0.014)
+		var horn_spacing := 0.033
+		var horn_center_y := stand_top + 0.114
+		b.add_box(coal_size, date_brown, _at(burner_origin + Vector3.UP * coal_height))
+		for side_x in [-1.0, 1.0]:
+			for side_z in [-1.0, 1.0]:
+				var horn_center := Vector3(side_x * horn_spacing, horn_center_y, side_z * horn_spacing)
+				b.add_box(horn_size, brass, _at(burner_origin + horn_center))
+	if t >= 4:
+		var palm_origin := p + Vector3(0.225, base, -0.125)
+		var pot_height := 0.070
+		var pot_lower_radius := 0.032
+		var pot_upper_radius := 0.045
+		var trunk_height := 0.245
+		var trunk_radius := 0.011
+		var leaf_reach := 0.078
+		var leaf_peak_radius := 0.034
+		var leaf_peak_height := 0.365
+		var leaf_tip_height := 0.305
+		var leaf_width := 0.023
+		var leaf_depth := 0.007
+		var leaf_count := 6
+		taper.call(palm_origin + Vector3.UP * pot_height * 0.5, pot_lower_radius, pot_upper_radius, pot_height, clay)
+		b.add_cyl(trunk_radius, trunk_height, timber, _at(palm_origin + Vector3.UP * (pot_height + trunk_height * 0.5)), 0.0, 8)
+		var crown := palm_origin + Vector3.UP * (pot_height + trunk_height)
+		for i in range(leaf_count):
+			var angle := TAU * i / leaf_count
+			var radial := Vector3(cos(angle), 0, sin(angle))
+			var leaf_start := crown
+			var leaf_peak := palm_origin + radial * leaf_peak_radius + Vector3.UP * leaf_peak_height
+			var leaf_tip := palm_origin + radial * leaf_reach + Vector3.UP * leaf_tip_height
+			for segment in [[leaf_start, leaf_peak], [leaf_peak, leaf_tip]]:
+				var start: Vector3 = segment[0]
+				var end: Vector3 = segment[1]
+				var direction := end - start
+				var leaf_size := Vector3(leaf_width, leaf_depth, direction.length())
+				var leaf_axis := Basis.looking_at(direction, Vector3.UP)
+				b.add_box(leaf_size, palm_green, Transform3D(leaf_axis, (start + end) * 0.5))
+	# Bake this local batch's palette into vertex colours: one surface / one draw call.
+	# Read primitive arrays only; never alter ModelLib's cached meshes or materials.
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	for key in b._order:
+		var group: Dictionary = b._groups[key]
+		var source: Mesh = group["mesh"]
+		for surface in range(source.get_surface_count()):
+			var arrays := source.surface_get_arrays(surface)
+			var source_vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var source_normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			var source_indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			var material := group["mat"] as StandardMaterial3D
+			if material == null:
+				material = source.surface_get_material(surface) as StandardMaterial3D
+			var color := material.albedo_color
+			for transform: Transform3D in group["xforms"]:
+				var offset := vertices.size()
+				var normal_basis := transform.basis.inverse().transposed()
+				for i in range(source_vertices.size()):
+					vertices.append(transform * source_vertices[i])
+					normals.append((normal_basis * source_normals[i]).normalized())
+					colors.append(color)
+				for index in source_indices:
+					indices.append(offset + index)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var corner := ArrayMesh.new()
+	corner.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var palette := ModelLib.flat_material_unique(Color.WHITE)
+	palette.vertex_color_use_as_albedo = true
+	palette.vertex_color_is_srgb = true
+	corner.surface_set_material(0, palette)
+	b = MeshBatch.new()
+	b.add_mesh("hospitality", corner, Transform3D.IDENTITY)
 	b.flush(n)
 
 func _st_shade(n: Node3D, t: int) -> void:

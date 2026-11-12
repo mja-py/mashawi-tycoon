@@ -22,6 +22,9 @@ const MUTED := Color("75604b")
 const GOOD := Color("2d6246")
 const BAD := Color("a13e2b")
 const SKY := Color("bfe3ff")
+## Readable on the charcoal bars: the money figure flashes these for a gain / a real loss.
+const GAIN_LIGHT := Color("9ad7a5")
+const LOSS_LIGHT := Color("f39a7f")
 const INK := SAND
 const CREAM := IVORY
 
@@ -184,6 +187,13 @@ static func build() -> Theme:
 	bar.content_margin_right = 16
 	t.set_stylebox("panel", "Bar", bar)
 	t.set_stylebox("panel", "Toast", flat(NIGHT_DARK, 6, GOLD_LIGHT, 1))
+	# Toast kinds also differ by glyph (hud._toast), never by colour alone.
+	for v in ["ToastGood", "ToastWarn", "ToastError"]:
+		t.add_type(v)
+		t.set_type_variation(v, "PanelContainer")
+	t.set_stylebox("panel", "ToastGood", flat(PALM_DARK, 6, GAIN_LIGHT, 1))
+	t.set_stylebox("panel", "ToastWarn", flat(NIGHT_DARK, 6, Color("e8b25a"), 2))
+	t.set_stylebox("panel", "ToastError", flat(GOLD_DARK, 6, LOSS_LIGHT, 1))
 	t.set_stylebox("panel", "Dim", flat(Color(0.02, 0.09, 0.12, 0.6), 0))
 	var chip := flat(Color(1, 1, 1, 0.12), 10)
 	chip.set_content_margin_all(6)
@@ -211,7 +221,36 @@ static func build() -> Theme:
 	var track := flat(Color(0, 0, 0, 0.2), 6)
 	track.set_content_margin_all(0)
 	t.set_stylebox("scroll", "VScrollBar", track)
+
+	# Volume sliders: a thick paper track filled in palm green, with a round knob.
+	var groove := flat(Color("cfbea0"), 5, Color("b79d77"), 1)
+	groove.set_content_margin_all(0)
+	groove.content_margin_top = 5
+	groove.content_margin_bottom = 5
+	t.set_stylebox("slider", "HSlider", groove)
+	var filled := flat(PALM, 5)
+	filled.set_content_margin_all(0)
+	filled.content_margin_top = 5
+	filled.content_margin_bottom = 5
+	t.set_stylebox("grabber_area", "HSlider", filled)
+	t.set_stylebox("grabber_area_highlight", "HSlider", filled)
+	t.set_icon("grabber", "HSlider", knob(PALM_DARK))
+	t.set_icon("grabber_highlight", "HSlider", knob(PALM))
 	return t
+
+## Round slider knob from a radial gradient (no per-pixel loop in script).
+static func knob(fill: Color) -> Texture2D:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.62, 0.7, 0.86, 0.94])
+	g.colors = PackedColorArray([fill, fill, IVORY, IVORY, Color(IVORY, 0.0)])
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 34
+	tex.height = 34
+	return tex
 
 static func _button_styles(t: Theme, type: String, base: Color, fg: Color, kind: String = "solid") -> void:
 	t.set_stylebox("normal", type, skin(base, "normal", kind))

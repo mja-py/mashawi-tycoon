@@ -30,7 +30,11 @@ var on_promenade := false
 var order_facing := World.CART_POS
 var pickup_facing := World.CART_POS
 var item: String = ""
-var wait_min: float = 0.0
+## Portions this buyer orders for their party (a family, an office): one entry in line.
+var portions := 1
+## Why DaySim gave this walker a body: "buyer" may stop and buy; "rival" and "pricey" only
+## show their refusal at the stand.
+var visit := "buyer"
 var slot: int = -1
 var seat: Dictionary = {}
 var _path: Array[Vector3] = []
@@ -43,6 +47,7 @@ var beat_left := 0.0
 var _yaw := 0.0
 var _after_beat: Callable
 var _bag: Node3D
+var _glance_left := 0.0
 
 func setup(model_id: String, direction: int, start: Vector3, end_x: float, decide_x: float, walk_speed: float) -> void:
 	dir = direction
@@ -59,16 +64,21 @@ func setup(model_id: String, direction: int, start: Vector3, end_x: float, decid
 	_face_direction()
 	if model:
 		model.rotation.y = _yaw
-	bubble = Label3D.new()
-	bubble.font = UiTheme.font()
-	bubble.font_size = 44
-	bubble.pixel_size = 0.0028
-	bubble.outline_size = 12
-	bubble.outline_modulate = Color(0.22, 0.1, 0.04, 0.95)
-	bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	bubble.no_depth_test = true
-	bubble.visible = false
-	add_child(bubble)
+
+## Fallback speech bubble (no HUD float layer, e.g. tools that build a street on its own).
+func _ensure_bubble() -> Label3D:
+	if bubble == null:
+		bubble = Label3D.new()
+		bubble.font = UiTheme.font()
+		bubble.font_size = 44
+		bubble.pixel_size = 0.0028
+		bubble.outline_size = 12
+		bubble.outline_modulate = Color(0.22, 0.1, 0.04, 0.95)
+		bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		bubble.no_depth_test = true
+		bubble.visible = false
+		add_child(bubble)
+	return bubble
 
 func _face_direction() -> void:
 	_yaw = deg_to_rad(90 if dir > 0 else -90)
@@ -194,9 +204,15 @@ func _start_leaving() -> void:
 		ModelLib.play_loop(model, "walk", speed / WALK_SPEED * WALK_ANIMATION_SPEED)
 	_face_direction()
 
+## The HUD's float layer draws the line as a backed chip that never overlaps another one.
 func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.78) -> void:
-	if bubble == null:
+	if model == null or not is_inside_tree():
 		return
+	var layer := get_tree().get_first_node_in_group(FloatLayer.GROUP) as FloatLayer
+	if layer:
+		layer.say(self, text, color, duration, height)
+		return
+	_ensure_bubble()
 	bubble.text = text
 	bubble.position.y = height
 	bubble.modulate = Color(color.r, color.g, color.b, 1.0)
@@ -254,6 +270,7 @@ func step(delta: float) -> void:
 					return
 				state = State.QUEUED
 				face_point(pickup_facing if slot >= 100 else order_facing)
+				_glance_left = ModelLib.ambient_wait(4.0, 12.0)
 				if model:
 					ModelLib.play_loop(model, "idle")
 				arrived.emit(self)
@@ -280,6 +297,14 @@ func step(delta: float) -> void:
 			position.x += dir * speed * delta
 			if (position.x - exit_x) * dir >= 0.0:
 				_finish()
+		State.QUEUED:
+			# Now and then someone further back looks around. Never the person being
+			# served or the next one due at the pickup spot.
+			if model and slot > 0 and slot != 100:
+				_glance_left -= delta / maxf(ModelLib.sim_speed, 0.01)
+				if _glance_left <= 0.0:
+					_glance_left = ModelLib.ambient_wait(7.0, 16.0)
+					ModelLib.play_once(model, "glance")
 		_:
 			pass
 

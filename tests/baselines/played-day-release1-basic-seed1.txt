@@ -1,0 +1,151 @@
+  1 | fahidi   |  0 | sunny     |   311    19     0 |     171      49 |     1338 0.24 0.25 |   0 |    0    0    0 | arrivals
+  2 | fahidi   |  0 | cloudy    |   275    20     0 |     183      91 |     1499 0.26 0.28 |   0 |    0    0    0 | arrivals
+  3 | fahidi   |  0 | sunny     |   309    19     0 |     205      96 |     1608 0.28 0.32 |   0 |    0    0    0 | arrivals
+  4 | fahidi   |  0 | sunny     |   309    18     0 |     184      83 |     1718 0.31 0.35 |   0 |    0    0    0 | arrivals
+  5 | creek    |  0 | sunny     |   506    24     0 |     261       9 |     1758 0.33 0.35 |   0 |    0    0    0 | arrivals
+  6 | creek    |  0 | hot       |   495    28     0 |     223     -54 |     1585 0.36 0.39 |   0 |    0    0    0 | arrivals
+  7 | creek    |  0 | cloudy    |   464    20     0 |     182     -46 |     1558 0.38 0.42 |   0 |    0    0    0 | arrivals
+  8 | creek    |  0 | hot       |   447    25     0 |     202     -33 |     1563 0.41 0.46 |   0 |    0    0    0 | arrivals
+  9 | creek    |  0 | sunny     |   535    21     0 |     215     -30 |     1545 0.43 0.50 |   0 |    0    0    0 | arrivals
+ 10 | creek    |  0 | sandstorm |    33     2     0 |      18    -157 |     1376 0.44 0.51 |   0 |    0    0    0 | arrivals
+ 11 | creek    |  0 | cloudy    |   474    22     0 |     212     -12 |     1463 0.47 0.54 |   0 |    0    0    0 | arrivals
+ 12 | creek    |  0 | sunny     |   493    26     0 |     265     -19 |     1327 0.49 0.58 |   0 |    0    0    0 | arrivals
+ 13 | creek    |  0 | breeze    |   650    26     0 |     259       5 |     1374 0.52 0.61 |   0 |    0    0    0 | arrivals
+ 14 | creek    |  0 | sunny     |   449    21     0 |     208     -61 |     1252 0.54 0.64 |   0 |    0    0    0 | arrivals
+ 15 | creek    |  0 | hot       |   467    26     0 |     205     -34 |     1280 0.56 0.68 |   0 |    0    0    0 | arrivals
+ 16 | creek    |  0 | hot       |   498    27     0 |     197     -41 |     1240 0.59 0.71 |   0 |    0    0    0 | arrivals
+ 17 | creek    |  0 | sunny     |   464    23     0 |     256      -2 |     1203 0.61 0.74 |   0 |    0    0    0 | arrivals
+ 18 | creek    |  0 | sunny     |   467    24     0 |     239      -8 |     1233 0.63 0.77 |   0 |    0    0    0 | arrivals
+ 19 | creek    |  0 | sunny     |   466    26     0 |     291      27 |     1276 0.66 0.80 |   0 |    0    0    0 | arrivals
+ 20 | creek    |  0 | sunny     |   456    27     0 |     303       3 |     1240 0.68 0.83 |   0 |    0    0    0 | arrivals
+ 21 | creek    |  0 | sunny     |   487    29     0 |     271      10 |     1244 0.70 0.85 |   0 |    0    0    0 | 
+ 22 | creek    |  0 | sunny     |   455    26     0 |     236     -43 |     1150 0.72 0.88 |   0 |    0    0    0 | arrivals
+ 23 | creek    |  0 | breeze    |   679    24     0 |     232     -12 |     1211 0.74 0.90 |   0 |    0    0    0 | arrivals
+ 24 | creek    |  0 | sandstorm |    23     6     0 |      67    -120 |     1063 0.75 0.91 |   0 |    0    0    0 | arrivals
+ 25 | creek    |  0 | sunny     |   492    19     0 |     232       9 |     1170 0.76 0.92 |   0 |    0    0    3 | arrivals
+ 26 | creek    |  0 | hot       |   493    25     0 |     213     -53 |     1032 0.78 0.95 |   0 |    0    0    1 | arrivals
+ 27 | creek    |  0 | sunny     |   521    25     0 |     258       9 |     1042 0.79 0.97 |   0 |    0    0    0 | arrivals
+ 28 | creek    |  0 | sunny     |   481    24     0 |     257     -27 |      952 0.81 0.99 |   0 |    0    0    0 | arrivals
+ 29 | creek    |  0 | cloudy    |   462    25     0 |     239      -6 |     1015 0.83 1.00 |   0 |    0    0    0 | arrivals
+ 30 | creek    |  0 | cloudy    |   424    24     0 |     265      14 |     1066 0.85 1.00 |   0 |    0    0    0 | arrivals
+ 31 | creek    |  0 | hot       |   478    26     0 |     165     -93 |      872 0.87 1.00 |   0 |    0    0    0 | arrivals
+ 32 | creek    |  0 | hot       |   467    23     0 |     216     -26 |      920 0.88 1.00 |   0 |    0    0    0 | arrivals
+ 33 | creek    |  0 | sandstorm |    24     3     0 |      42    -147 |      723 0.89 1.00 |   0 |    0    0    0 | arrivals
+ 34 | creek    |  0 | breeze    |   600    25     0 |     259      15 |      857 0.91 1.00 |   0 |    0    0    0 | arrivals
+ 35 | creek    |  0 | hot       |   478    27     0 |     253     -24 |      696 0.92 1.00 |   0 |    0    0    0 | arrivals
+ 36 | creek    |  0 | hot       |   521    28     0 |     227     -22 |      740 0.93 1.00 |   0 |    0    0    6 | arrivals
+ 37 | creek    |  0 | cloudy    |   446    29     0 |     292      -8 |      634 0.95 1.00 |   0 |    0    0    0 | 
+ 38 | creek    |  0 | sandstorm |    24     5     0 |      52    -142 |      499 0.95 1.00 |   0 |    0    0    0 | arrivals
+ 39 | creek    |  0 | sandstorm |    20     5     0 |      59    -117 |      433 0.96 1.00 |   0 |    0    0    0 | arrivals
+ 40 | creek    |  0 | breeze    |   642    24     0 |     253      18 |      543 0.97 1.00 |   0 |    0    0    5 | arrivals
+ 41 | creek    |  0 | cloudy    |   465    29     0 |     283       3 |      462 0.98 1.00 |   0 |    0    0    0 | 
+ 42 | creek    |  0 | hot       |   480    25     0 |     200     -46 |      387 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 43 | creek    |  0 | cloudy    |   432    26     0 |     231     -26 |      401 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 44 | creek    |  0 | sunny     |   459    26     0 |     277      11 |      457 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 45 | creek    |  0 | hot       |   524    26     0 |     200     -75 |      298 1.00 1.00 |   0 |    0    0    2 | 
+ 46 | creek    |  0 | sunny     |   487    25     0 |     251       4 |      335 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 47 | creek    |  0 | sunny     |   490    25     0 |     263       4 |      362 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 48 | creek    |  0 | sunny     |   500    21     0 |     204     -36 |      318 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 49 | creek    |  0 | sunny     |   515    26     0 |     260       6 |      364 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 50 | creek    |  0 | breeze    |   649    26     0 |     259     -28 |      266 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 51 | creek    |  0 | hot       |   478    25     0 |     193     -39 |      273 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 52 | creek    |  0 | sunny     |   528    26     0 |     272       9 |      269 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 53 | creek    |  0 | sunny     |   459    25     0 |     215     -57 |      133 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 54 | creek    |  0 | sunny     |   479    29     0 |     292      28 |      875 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 55 | creek    |  0 | hot       |   499    24     0 |     180     -82 |      659 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 56 | creek    |  0 | breeze    |   632    27     0 |     280      23 |      786 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 57 | creek    |  0 | cloudy    |   466    28     0 |     304       6 |      754 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 58 | creek    |  0 | hot       |   476    24     0 |     189     -52 |      726 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 59 | creek    |  0 | cloudy    |   483    30     0 |     342      55 |      846 1.00 1.00 |   0 |    0    0    0 | 
+ 60 | creek    |  0 | sunny     |   463    26     0 |     289      -5 |      871 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 61 | creek    |  0 | breeze    |   640    26     0 |     273      20 |      967 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 62 | creek    |  0 | sunny     |   488    25     0 |     283      -5 |      896 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 63 | creek    |  0 | sunny     |   530    26     0 |     273      18 |     1012 1.00 1.00 |   0 |    0    1    0 | arrivals
+ 64 | creek    |  0 | hot       |   498    24     0 |     240     -40 |      883 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 65 | creek    |  0 | hot       |   485    25     0 |     211     -27 |      926 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 66 | creek    |  0 | sandstorm |    21     0     0 |       0    -174 |      660 0.99 0.98 |   0 |    0    0    0 | arrivals
+ 67 | creek    |  0 | sunny     |   549    28     0 |     320      53 |      855 1.00 1.00 |   0 |    0    0    2 | arrivals
+ 68 | creek    |  0 | sunny     |   470    26     0 |     236     -33 |      722 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 69 | creek    |  0 | sandstorm |    32     3     0 |      37    -140 |      573 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 70 | creek    |  0 | breeze    |   632    22     0 |     234       7 |      682 1.00 1.00 |   0 |    0    0    7 | arrivals
+ 71 | creek    |  0 | breeze    |   631    23     0 |     215     -52 |      546 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 72 | creek    |  0 | sunny     |   490    29     0 |     290      29 |      632 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 73 | creek    |  0 | cloudy    |   427    26     0 |     251     -34 |      469 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 74 | creek    |  0 | sunny     |   466    27     0 |     265      12 |      591 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 75 | creek    |  0 | hot       |   453    17     0 |     122    -126 |      359 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 76 | creek    |  0 | sunny     |   468    21     0 |     256       3 |      490 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 77 | creek    |  0 | sunny     |   501    22     0 |     203     -35 |      432 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 78 | creek    |  0 | hot       |   434    26     0 |     188     -48 |      378 1.00 1.00 |   0 |    0    0    2 | arrivals
+ 79 | creek    |  0 | cloudy    |   449    22     0 |     251     -11 |      331 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 80 | creek    |  0 | sunny     |   494    22     0 |     204     -33 |      311 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 81 | creek    |  0 | cloudy    |   425    25     0 |     229     -20 |      304 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 82 | creek    |  0 | sunny     |   471    25     0 |     228     -50 |      205 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 83 | creek    |  0 | sunny     |   485    22     0 |     212     -28 |      231 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 84 | creek    |  0 | breeze    |   679    30     0 |     272      13 |      283 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 85 | creek    |  0 | hot       |   487    16     0 |      80    -151 |      -21 0.99 0.99 |   0 |    0    0    9 | arrivals
+ 86 | creek    |  0 | sunny     |   490    29     0 |     306      37 |      730 1.00 1.00 |   0 |    0    0    0 | 
+ 87 | creek    |  0 | hot       |   450    25     0 |     217     -29 |      668 1.00 1.00 |   0 |    0    0    2 | arrivals
+ 88 | creek    |  0 | sunny     |   469    18     0 |     185     -48 |      594 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 89 | creek    |  0 | sunny     |   493    24     0 |     218     -26 |      615 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 90 | creek    |  0 | cloudy    |   410    26     0 |     281      18 |      660 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 91 | creek    |  0 | sunny     |   471    31     0 |     347      35 |      668 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 92 | creek    |  0 | sandstorm |    37     7     0 |      64    -144 |      421 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 93 | creek    |  0 | sunny     |   534    26     0 |     282      34 |      578 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 94 | creek    |  0 | sunny     |   482    24     0 |     231     -42 |      473 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 95 | creek    |  0 | hot       |   468    24     0 |     214     -18 |      522 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 96 | creek    |  0 | hot       |   492    26     0 |     203     -35 |      476 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 97 | creek    |  0 | sunny     |   504    29     0 |     302      32 |      514 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 98 | creek    |  0 | cloudy    |   449    27     0 |     258     -26 |      389 1.00 1.00 |   0 |    0    0    0 | arrivals
+ 99 | creek    |  0 | hot       |   498    19     0 |     137     -83 |      332 1.00 1.00 |   0 |    0    0    0 | arrivals
+100 | creek    |  0 | sunny     |   487    28     0 |     335      68 |      524 1.00 1.00 |   0 |    0    0    0 | arrivals
+101 | creek    |  0 | cloudy    |   466    25     0 |     271      -8 |      423 1.00 1.00 |   0 |    0    0    0 | arrivals
+102 | creek    |  0 | sunny     |   476    23     0 |     228     -18 |      452 1.00 1.00 |   0 |    0    0    0 | arrivals
+103 | creek    |  0 | sunny     |   456    23     0 |     241      -4 |      466 1.00 1.00 |   0 |    0    0    0 | arrivals
+104 | creek    |  0 | hot       |   494    21     0 |     138     -76 |      373 1.00 1.00 |   0 |    0    0    0 | arrivals
+105 | creek    |  0 | breeze    |   650    27     0 |     282      20 |      423 1.00 1.00 |   0 |    0    0    5 | arrivals
+106 | creek    |  0 | cloudy    |   422    27     0 |     251     -33 |      273 1.00 1.00 |   0 |    0    0    0 | arrivals
+107 | creek    |  0 | sunny     |   478    24     0 |     257      -7 |      330 1.00 1.00 |   0 |    0    0    0 | arrivals
+108 | creek    |  0 | sunny     |   543    30     0 |     291      25 |      407 1.00 1.00 |   0 |    0    0    0 | arrivals
+109 | creek    |  0 | sunny     |   438    27     0 |     275     -14 |      300 1.00 1.00 |   0 |    0    0    0 | arrivals
+110 | creek    |  0 | sunny     |   484    28     0 |     316      38 |      399 1.00 1.00 |   0 |    0    1    0 | 
+111 | creek    |  0 | sunny     |   481    21     0 |     166     -93 |      201 1.00 1.00 |   0 |    0    0    0 | arrivals
+112 | creek    |  0 | sunny     |   523    27     0 |     268      12 |      334 1.00 1.00 |   0 |    0    0    0 | arrivals
+113 | creek    |  0 | sunny     |   509    30     0 |     278     -19 |      230 1.00 1.00 |   0 |    0    0    0 | arrivals
+114 | creek    |  0 | hot       |   457    23     0 |     186     -56 |      167 1.00 1.00 |   0 |    0    0    0 | arrivals
+115 | creek    |  0 | hot       |   459    27     0 |     226     -25 |      788 1.00 1.00 |   0 |    0    0    0 | arrivals
+116 | creek    |  0 | cloudy    |   428    24     0 |     251      -9 |      744 1.00 1.00 |   0 |    0    0    0 | arrivals
+117 | creek    |  0 | sunny     |   487    26     0 |     250      -7 |      797 1.00 1.00 |   0 |    0    1    0 | arrivals
+118 | creek    |  0 | sandstorm |    22     1     0 |       4    -201 |      437 1.00 1.00 |   0 |    0    0    0 | arrivals
+119 | creek    |  0 | sunny     |   476    21     0 |     229     -19 |      541 1.00 1.00 |   0 |    0    0    0 | arrivals
+120 | creek    |  0 | sunny     |   526    28     0 |     292      23 |      614 1.00 1.00 |   0 |    0    0    0 | arrivals
+121 | creek    |  0 | cloudy    |   414    26     0 |     273     -21 |      541 1.00 1.00 |   0 |    0    0    0 | arrivals
+122 | creek    |  0 | sunny     |   498    25     0 |     268      18 |      573 1.00 1.00 |   0 |    0    0    0 | arrivals
+123 | creek    |  0 | sunny     |   434    26     0 |     245     -36 |      489 1.00 1.00 |   0 |    0    0    0 | arrivals
+124 | creek    |  0 | hot       |   438    26     0 |     189     -40 |      508 1.00 1.00 |   0 |    0    0    0 | arrivals
+125 | creek    |  0 | sunny     |   480    27     0 |     262       4 |      555 1.00 1.00 |   0 |    0    0    0 | arrivals
+126 | creek    |  0 | hot       |   419    25     0 |     199     -71 |      372 1.00 1.00 |   0 |    0    0    0 | arrivals
+127 | creek    |  0 | sunny     |   497    22     0 |     203     -36 |      400 1.00 1.00 |   0 |    0    0    0 | arrivals
+128 | creek    |  0 | breeze    |   671    28     0 |     294      26 |      455 1.00 1.00 |   0 |    0    0    0 | arrivals
+129 | creek    |  0 | sunny     |   474    21     0 |     188     -79 |      265 1.00 1.00 |   0 |    0    0    0 | arrivals
+130 | creek    |  0 | hot       |   464    22     0 |     175     -53 |      303 1.00 1.00 |   0 |    0    0    6 | arrivals
+131 | creek    |  0 | cloudy    |   444    26     0 |     256      -4 |      271 1.00 1.00 |   0 |    0    0    0 | arrivals
+132 | creek    |  0 | hot       |   498    25     0 |     200     -31 |      257 1.00 1.00 |   0 |    0    0    0 | arrivals
+133 | creek    |  0 | cloudy    |   472    22     0 |     224     -25 |      245 1.00 1.00 |   0 |    0    0    0 | arrivals
+134 | creek    |  0 | hot       |   442    29     0 |     266       7 |      279 1.00 1.00 |   0 |    0    0    0 | arrivals
+135 | creek    |  0 | sunny     |   505    23     0 |     229     -52 |      157 1.00 1.00 |   0 |    0    0    1 | arrivals
+136 | creek    |  0 | hot       |   502    22     0 |     168     -56 |      713 1.00 1.00 |   0 |    0    0    0 | arrivals
+137 | creek    |  0 | sunny     |   482    27     0 |     261       0 |      753 1.00 1.00 |   0 |    0    0    0 | arrivals
+138 | creek    |  0 | sunny     |   495    25     0 |     257     -29 |      638 1.00 1.00 |   0 |    0    0    0 | arrivals
+139 | creek    |  0 | breeze    |   628    24     0 |     252      -1 |      701 1.00 1.00 |   0 |    0    0    0 | arrivals
+140 | creek    |  0 | sunny     |   504    28     0 |     263       9 |      755 1.00 1.00 |   0 |    0    0    0 | arrivals
+141 | creek    |  0 | sunny     |   510    27     0 |     275     -15 |      622 1.00 1.00 |   0 |    0    0    0 | arrivals
+142 | creek    |  0 | breeze    |   623    22     0 |     213     -32 |      630 1.00 1.00 |   0 |    0    0    0 | arrivals
+143 | creek    |  0 | breeze    |   668    25     0 |     289      30 |      710 1.00 1.00 |   0 |    0    0    0 | arrivals
+144 | creek    |  0 | breeze    |   655    23     0 |     266     -14 |      630 1.00 1.00 |   0 |    0    0    0 | arrivals
+145 | creek    |  0 | sunny     |   494    27     0 |     269      17 |      718 1.00 1.00 |   0 |    0    0    0 | arrivals
+146 | creek    |  0 | hot       |   476    23     0 |     188     -73 |      523 1.00 1.00 |   0 |    0    0    0 | arrivals
+147 | creek    |  0 | sunny     |   498    31     0 |     296      31 |      671 1.00 1.00 |   0 |    0    0    0 | 
+148 | creek    |  0 | sunny     |   454    25     0 |     259     -29 |      571 1.00 1.00 |   0 |    0    0    0 | arrivals
+149 | creek    |  0 | hot       |   443    24     0 |     227     -19 |      634 1.00 1.00 |   0 |    0    0    3 | arrivals
+150 | creek    |  0 | hot       |   461    23     0 |     188     -41 |      546 1.00 1.00 |   0 |    0    0    0 | arrivals
+autoplay: 150 days in 17.7 s, total profit -3361, 0 purchases, 1 goals, 4 loans

@@ -92,32 +92,72 @@ static func _spawn_appearance(base: String, appearance: String, parent: Node, po
 			mesh.set_surface_override_material(surface, _appearance_materials[key])
 	return actor
 
+## Standing and seated loops belong to the person, not to the business day: they keep
+## a natural pace at every playback speed and never start in step with their neighbours.
+const AMBIENT_CLIPS := ["idle", "sit"]
+## One-shots that are a person's own fidget rather than part of a sale.
+const AMBIENT_ONCE := ["glance"]
+static var sim_speed := 1.0
+static var ambient_variety := true
+static var _ambient_keys := {}
+static var _ambient_rng := RandomNumberGenerator.new()
+
+static func ambient_wait(shortest: float, longest: float) -> float:
+	return _ambient_rng.randf_range(shortest, longest)
+
+static func _ambient_rate(ap: AnimationPlayer) -> float:
+	if not ambient_variety:
+		return 1.0
+	if not ap.has_meta("_ambient_rate"):
+		ap.set_meta("_ambient_rate", _ambient_rng.randf_range(0.94, 1.06))
+	return float(ap.get_meta("_ambient_rate"))
+
+static func _reset_pose_clock(ap: AnimationPlayer) -> void:
+	ap.set_meta("_pose_delta", 0.0)
+	ap.set_meta("_pose_real", 0.0)
+
 static func play_loop(root: Node, anim: String, speed: float = 1.0) -> void:
 	var ap := animation_player(root)
 	if ap == null or not ap.has_animation(anim):
 		return
 	var key := _playback_key(ap, anim, Animation.LOOP_LINEAR)
+	var ambient := anim in AMBIENT_CLIPS
+	if ambient:
+		_ambient_keys[key] = true
+		speed *= _ambient_rate(ap)
 	ap.speed_scale = speed
 	if ap.current_animation != key:
 		ap.clear_queue()
-		ap.set_meta("_pose_delta", 0.0)
+		_reset_pose_clock(ap)
 		ap.play(key, 0.15)
+		if ambient and ambient_variety:
+			ap.seek(_ambient_rng.randf() * ap.current_animation_length, false)
 
-static func play_once(root: Node, anim: String, then: String = "idle") -> void:
+static func play_once(root: Node, anim: String, then: String = "idle", speed: float = 1.0) -> void:
 	var ap := animation_player(root)
 	if ap == null or not ap.has_animation(anim):
 		return
 	var key := _playback_key(ap, anim, Animation.LOOP_NONE)
+	if anim in AMBIENT_ONCE:
+		_ambient_keys[key] = true
 	ap.clear_queue()
-	ap.speed_scale = 1.0
-	ap.set_meta("_pose_delta", 0.0)
+	ap.speed_scale = speed
+	_reset_pose_clock(ap)
 	if ap.current_animation == key:
 		ap.seek(0.0)
 	ap.play(key, 0.1)
 	if then != "" and ap.has_animation(then):
 		var next := _playback_key(ap, then, Animation.LOOP_LINEAR)
+		if then in AMBIENT_CLIPS:
+			_ambient_keys[next] = true
 		ap.set_blend_time(key, next, 0.18)
 		ap.queue(next)
+		if not ap.has_meta("_queue_watch"):
+			ap.set_meta("_queue_watch", true)
+			# The loop that follows a one-shot starts at its own pace, whatever speed
+			# the gesture before it used.
+			ap.animation_changed.connect(func(_old: StringName, started: StringName) -> void:
+				ap.speed_scale = _ambient_rate(ap) if _ambient_keys.has(String(started)) else 1.0)
 
 ## Imported animation resources are shared by every instance of the rig.
 static func _playback_key(ap: AnimationPlayer, clip: String, mode: Animation.LoopMode) -> String:
@@ -144,26 +184,29 @@ static func is_playing_loop(ap: AnimationPlayer, clip: String) -> bool:
 	return ap.has_animation(clip) and ap.current_animation == _playback_key(ap, clip, Animation.LOOP_LINEAR)
 
 ## Business actors accumulate only ticks spent in their current pose. Sampling once
-## per rendered frame keeps skeleton work bounded at Skip speed.
+## per rendered frame keeps skeleton work bounded at Skip speed. Ambient loops use the
+## same ticks converted back to wall-clock time.
 static func set_manual_pose(actor: Node3D, manual: bool) -> void:
 	if is_instance_valid(actor):
 		var ap := animation_player(actor)
 		if ap:
 			ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL if manual else AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
-			ap.set_meta("_pose_delta", 0.0)
+			_reset_pose_clock(ap)
 
 static func step_pose(actor: Node3D, delta: float) -> void:
 	if is_instance_valid(actor):
 		var ap := animation_player(actor)
 		if ap and ap.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL:
 			ap.set_meta("_pose_delta", float(ap.get_meta("_pose_delta", 0.0)) + delta)
+			ap.set_meta("_pose_real", float(ap.get_meta("_pose_real", 0.0)) + delta / maxf(sim_speed, 0.01))
 
 static func render_pose(actor: Node3D) -> void:
 	if is_instance_valid(actor):
 		var ap := animation_player(actor)
 		if ap and ap.callback_mode_process == AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL:
-			ap.advance(float(ap.get_meta("_pose_delta", 0.0)))
-			ap.set_meta("_pose_delta", 0.0)
+			var clock := "_pose_real" if _ambient_keys.has(ap.current_animation) else "_pose_delta"
+			ap.advance(float(ap.get_meta(clock, 0.0)))
+			_reset_pose_clock(ap)
 
 static func hand_position(actor: Node3D, bone_name: String = "RightHand") -> Vector3:
 	var skeleton: Skeleton3D

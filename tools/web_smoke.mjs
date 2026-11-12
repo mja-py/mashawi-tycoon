@@ -22,6 +22,8 @@ const title = await waitPhase(page, 'title');
 check(title && title.hasSave === false, 'fresh profile has no save');
 await page.waitForTimeout(2500);
 await page.screenshot({ path: `${out}/2_title.png` });
+const titleAudio = await page.evaluate(() => window.godotAudio);
+check(titleAudio && titleAudio.music === '' && titleAudio.ambience !== '', `street ambience plays on the title, no music (${JSON.stringify(titleAudio)})`);
 // The title layout moves between versions: tap the real New Game button via --uitest geometry.
 await page.waitForFunction(() => window.godotMenuTargets?.new_game);
 const newGame = await page.evaluate(() => window.godotMenuTargets.new_game);
@@ -32,6 +34,8 @@ check(prep && prep.day === 1 && prep.money === 1500, `new game starts day 1 with
 check(prep && prep.hasSave === true, 'new game is saved straight away');
 await page.waitForTimeout(1500);
 await page.screenshot({ path: `${out}/3_prep.png` });
+const prepAudio = await page.evaluate(() => window.godotAudio);
+check(prepAudio && prepAudio.music === '' && prepAudio.ambience !== '' && prepAudio.sizzle === false, `planning has street ambience, no music, grill quiet (${JSON.stringify(prepAudio)})`);
 // portrait check
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(800);

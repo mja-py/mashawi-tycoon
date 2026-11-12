@@ -19,6 +19,7 @@ func _ready() -> void:
 	_test_game_flow(game)
 	_test_stages(game)
 	_test_goals(game)
+	_test_goal_ladder(game)
 	_test_save_load(game)
 	_test_pricing(game)
 	_test_save_validation(game)
@@ -28,13 +29,21 @@ func _ready() -> void:
 	_test_later_item_handoff(game)
 	_test_skip_pickup(game)
 	_test_restaurant_service(game)
+	_test_closing_meal_handoff(game)
+	_test_dine_in_share(game)
 	_test_reopen_same_district(game)
 	_test_terrace_clearance(game)
 	_test_cast_appearances()
+	_test_ambient_animation()
 	_test_guide_journey()
 	_test_logic_audit(game)
 	_test_reload_audit(game)
 	_test_economy_audit(game)
+	_test_station_copy()
+	_test_played_day_reputation(game)
+	_test_group_orders(game)
+	_test_reveal_before_open(game)
+	game.delete_save() # the suite must not leave user://save_test.json behind
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
 
@@ -52,6 +61,7 @@ func _test_reload_audit(game) -> void:
 	check(game.load_game() and game.money == -125.0 and game.stats["total_profit"] == -80.0, "negative cash and lifetime losses survive actual save/load")
 	game.begin_day()
 	check(game.day_seed == seed_before and game.weather == weather_before, "reload cannot reroll a committed business day")
+	check(game.day_committed(), "a reloaded open day is flagged as already in progress")
 	game.tutorial = GuideJourney.clean({"active": true, "step": 11, "started_day": 999})
 	game._validate()
 	check(game.tutorial["started_day"] == game.day, "corrupt future tutorial dates cannot strand the report lesson")
@@ -193,12 +203,289 @@ func _test_guide_journey() -> void:
 	view["phase"] = "prep"
 	check(GuideJourney.reached(state, view), "returning from the report completes the full-day loop")
 
+## The day a player watches scores satisfaction like the statistical day: walking to the
+## pickup spot and giving your own order are not "waiting too long".
+func _test_played_day_reputation(game) -> void:
+	var averages := {}
+	var deltas := {}
+	for mode in ["played", "fast"]:
+		game.new_game()
+		for id in Data.INGREDIENTS:
+			game.inventory[id] = 60
+		game.weather = "sunny"
+		game.forecast = "sunny"
+		game.day_seed = 4242
+		var stats: Dictionary
+		if mode == "played":
+			var world := World.new()
+			add_child(world)
+			world.set_location(game.location)
+			var sim := DaySim.new()
+			add_child(sim)
+			stats = DayRunner.play(sim, world, game.sim_context())
+			check(not stats["_unfinished"], "a headless played day closes on its own (%d ticks)" % int(stats["_ticks"]))
+			check(int(stats["served"]) >= 8, "the played first day serves customers (%d)" % int(stats["served"]))
+			sim.free()
+			world.free()
+		else:
+			var day_rng := RandomNumberGenerator.new()
+			day_rng.seed = 4242
+			stats = FastSim.run(game.sim_context(), day_rng)
+		averages[mode] = float(stats["satisfaction_sum"]) / maxi(1, int(stats["served"]))
+		deltas[mode] = Economy.popularity_delta(stats, game.popularity)
+	check(absf(averages["played"] - averages["fast"]) < 0.06,
+		"an uncrowded played day satisfies like the statistical day (%.2f vs %.2f)" % [averages["played"], averages["fast"]])
+	check(deltas["played"] > 0.0 and deltas["fast"] > 0.0,
+		"a decent first day raises reputation in the day the player watches (%.3f played, %.3f fast)" % [deltas["played"], deltas["fast"]])
+	game.new_game()
+
+## One visible buyer carries a party: stock is held per portion, every portion is sold and
+## paid for (with its own add-on chances), the kitchen cooks every portion, the buyer counts
+## once as a lifetime customer, and a full street turns walkers away as a counted crowd.
+func _test_group_orders(game) -> void:
+	game.new_game()
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 0
+	game.inventory["bread"] = 40
+	game.inventory["chicken"] = 40
+	game.inventory["veg"] = 40
+	game.inventory["sauce"] = 40
+	game.inventory["charcoal"] = 40
+	var per: int = game.portions_possible("chicken_tikka")
+	var ledger := StockLedger.new()
+	var a := RefCounted.new()
+	var b := RefCounted.new()
+	check(ledger.hold(a, "chicken_tikka", 6) == 6 and ledger.portions_free("chicken_tikka") == per - 6,
+		"a party of six holds six portions of stock (%d of %d left)" % [ledger.portions_free("chicken_tikka"), per])
+	check(ledger.hold(b, "chicken_tikka", per) == per - 6, "the next party can only hold what is left")
+	ledger.release(b)
+	check(ledger.portions_free("chicken_tikka") == per - 6 and game.inventory["chicken"] == 40, "a buyer who walks off gives the held stock back; nothing left the store")
+	var money: float = game.money
+	var chicken: int = game.inventory["chicken"]
+	var price: float = float(game.menu["chicken_tikka"]["price"])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var sale := ledger.settle(a, "chicken_tikka", 6, 1.0, "drink", false, "sunny", rng)
+	var needs: Dictionary = Economy.portion_ingredients("chicken_tikka", game.menu["chicken_tikka"])
+	check(int(sale["sold"]) == 6 and is_equal_approx(float(sale["total"]), price * 6.0) and is_equal_approx(game.money - money, price * 6.0),
+		"the party pays for all six portions (%s)" % str(sale))
+	check(chicken - int(game.inventory["chicken"]) == int(needs["chicken"]) * 6 and ledger.is_empty(), "six portions of chicken leave the store and the hold is cleared")
+	# Add-ons are offered per food portion: a party of 30 brings many more extras than one.
+	for id in ["salad", "laban", "soda"]:
+		game.menu[id]["unlocked"] = true
+		game.menu[id]["enabled"] = true
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 5000
+	var extras := {"one": 0, "party": 0}
+	for i in range(20):
+		var s1 := ledger.settle(RefCounted.new(), "chicken_tikka", 1, 1.0, "food", false, "sunny", rng)
+		var s30 := ledger.settle(RefCounted.new(), "chicken_tikka", 30, 1.0, "food", false, "sunny", rng)
+		for id in s1["extras"]:
+			extras["one"] += int(s1["extras"][id])
+		for id in s30["extras"]:
+			extras["party"] += int(s30["extras"][id])
+	check(extras["party"] > extras["one"] * 10, "add-ons are rolled for every portion of a party (%s)" % str(extras))
+	# The kitchen cooks every portion; the buyer's own cooking is not "waiting".
+	var tp := Throughput.new()
+	tp.setup({"kitchen": {"grill": 1.0}, "station_of_kind": {"grill": "grill"}, "queue_cap": 6, "seats": 4, "dine_in_share": 1.0}, rng)
+	var served := []
+	tp.on_served = func(payload, item: String, wait_s: float, dine_in: bool, portions: int) -> void:
+		served.append([payload, wait_s, dine_in, portions])
+	var big_party := int(Data.SERVICE["dine_max_party"]) + 1
+	tp.enqueue("party", "chicken_tikka", big_party)
+	var t := 0.0
+	while served.is_empty() and t < 20.0:
+		tp.tick(0.05)
+		t += 0.05
+	check(served.size() == 1 and t >= big_party - 0.1 and int(served[0][3]) == big_party,
+		"a grill at one portion a second takes %d seconds for a party of %d (%.2f s)" % [big_party, big_party, t])
+	check(served.size() == 1 and float(served[0][1]) < 0.2, "a party waiting only for its own food is not kept waiting (%s)" % str(served))
+	check(served.size() == 1 and not bool(served[0][2]), "a party bigger than a table takes away even with free seats")
+	# A whole day: lifetime customers count buyers, portions count the parties' food.
+	game.new_game()
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 5000
+	game.rig["stage"] = "truck"
+	game.plots["fahidi"] = {"stage": "restaurant", "stations": {"counter": 10, "grill": 14, "karak": 8, "seating": 8}, "reputation": 0.7, "last_visit": game.day}
+	game.popularity = 0.7
+	game.weather = "sunny"
+	game.forecast = "sunny"
+	game.weather_day = game.day
+	var before: int = game.total_served
+	var day_rng := RandomNumberGenerator.new()
+	day_rng.seed = 77
+	var day: Dictionary = FastSim.run(game.sim_context(), day_rng)
+	var primary := 0
+	for id in day["sold"]:
+		if Data.MENU_ITEMS[id]["kind"] in ["food", "drink"]:
+			primary += int(day["sold"][id])
+	check(game.total_served - before == int(day["served"]) and int(day["portions"]) > int(day["served"]) * 3,
+		"lifetime customers count one per order, not per portion (%d buyers, %d portions)" % [int(day["served"]), int(day["portions"])])
+	check(primary >= int(day["portions"]), "every portion of every party was sold (%d sold, %d portions)" % [primary, int(day["portions"])])
+	# A busy stall on a level-1 grill: the grill is the played day's bottleneck, and levelling
+	# it sells more.
+	var stall_days := {}
+	for grill in [1, 6]:
+		game.new_game()
+		for id in Data.INGREDIENTS:
+			game.inventory[id] = 5000
+		game.rig = {"stage": "stall", "stations": {"grill": grill, "karak": 2, "doner": 1}}
+		game.location = "metro"
+		game.popularity = 0.9
+		game.plot()["reputation"] = 0.9
+		for id in Data.MENU_ITEMS:
+			game.menu[id]["unlocked"] = game.item_available(id)
+			game.menu[id]["enabled"] = game.item_available(id)
+		game.weather = "sunny"
+		game.forecast = "sunny"
+		game.weather_day = game.day
+		game.day_seed = 31
+		var street := World.new()
+		add_child(street)
+		street.set_location(game.location)
+		var stall_sim := DaySim.new()
+		add_child(stall_sim)
+		stall_days[grill] = DayRunner.play(stall_sim, street, game.sim_context())
+		stall_sim.free()
+		street.free()
+	var slow: Dictionary = stall_days[1]
+	var fast_grill: Dictionary = stall_days[6]
+	check(Economy.bottleneck(slow["util"]) == "grill", "a level-1 grill holds up a busy stall (%s)" % str(slow["util"]))
+	check(int(fast_grill["portions"]) > int(slow["portions"]) * 1.15,
+		"levelling the grill sells more at the stall (%d -> %d portions)" % [int(slow["portions"]), int(fast_grill["portions"])])
+	# A street with one buyer place turns most would-be buyers away, and says so.
+	var ctx: Dictionary = game.sim_context()
+	ctx["buyers"] = 1
+	day_rng.seed = 77
+	var crowded: Dictionary = FastSim.run(ctx, day_rng)
+	check(int(crowded["crowd"]) > 20 and int(crowded["served"]) < int(day["served"]),
+		"a full street turns would-be buyers away as a counted crowd (%d)" % int(crowded["crowd"]))
+	game.new_game()
+
+## A tier purchase holds the street for its reveal; opening the shop must build it first.
+func _test_reveal_before_open(game) -> void:
+	var main := get_parent()
+	check(main.hud != null, "the test run has a HUD to drive")
+	var hud = main.hud
+	game.new_game()
+	game.money = 100000.0
+	var phase_before = main.phase
+	main.phase = main.Phase.PREP
+	main.world.set_location(game.location)
+	main.world.apply_visual()
+	check(main.world.cart != null, "the street is built for the reveal test")
+	var tier_before: int = Data.station_tier(game.station_level("grill"))
+	while Data.station_tier(game.station_level("grill")) == tier_before:
+		hud._confirm_purchase(null, func(): return game.buy_station_level("grill"), "tier")
+		if Data.station_tier(game.station_level("grill")) == tier_before:
+			hud.flush_reveal()
+	check(hud.holds_world_visual(), "a new station tier holds the street for its reveal")
+	hud.flush_reveal()
+	check(not hud.holds_world_visual(), "opening the shop releases the held reveal")
+	check(not main.world.visual_needs_reload(), "the stand is built before the day starts, not during it")
+	var guest := ModelLib.spawn_guest("creek-abaya", self)
+	var player := ModelLib.animation_player(guest)
+	ModelLib.set_manual_pose(guest, true)
+	ModelLib.ambient_variety = false
+	if player.has_animation("glance"):
+		ModelLib.play_once(guest, "glance")
+		ModelLib.sim_speed = 12.0
+		for tick in 12:
+			ModelLib.step_pose(guest, 1.0 / 60.0)
+		ModelLib.render_pose(guest)
+		check(player.current_animation_position < 0.03, "a queue glance keeps its natural pace at Skip (%.3f s in one frame)" % player.current_animation_position)
+	else:
+		check(false, "the cast ships the glance clip")
+	ModelLib.sim_speed = 1.0
+	ModelLib.ambient_variety = true
+	guest.free()
+	main.phase = phase_before
+	game.new_game()
+
+## The numbers a player reads on a station card are the numbers the formulas use.
+func _test_station_copy() -> void:
+	var st: Dictionary = Data.STATIONS
+	var expected := {
+		"signage": [st["signage"]["attract_per_level"]],
+		"lights": [st["lights"]["evening_traffic_per_level"]],
+		"music": [st["music"]["satisfaction_per_level"], st["music"]["attract_per_level"]],
+		"shade": [st["shade"]["hot_traffic_per_level"]],
+		"majlis": [st["majlis"]["satisfaction_per_level"], st["majlis"]["spend_per_level"]],
+	}
+	var previous := TranslationServer.get_locale()
+	for locale in ["en", "ar"]:
+		TranslationServer.set_locale(locale)
+		for id in expected:
+			var text := tr(String(st[id]["effect"]))
+			for share in expected[id]:
+				var shown := "+%d%%" % roundi(float(share) * 100.0)
+				check(text.contains(shown), "%s card (%s) states %s per level" % [id, locale, shown])
+	TranslationServer.set_locale(previous)
+	var hot := {"shade_level": 3, "lights_level": 2}
+	var loc: Dictionary = Data.LOCATIONS["creek"]
+	var plain := Economy.arrival_rate(loc, "hot", 12.0, {})
+	check(is_equal_approx(Economy.arrival_rate(loc, "hot", 12.0, hot) / plain, 1.0 + 3.0 * float(st["shade"]["hot_traffic_per_level"])),
+		"shade lifts hot-day traffic by its data value")
+	var evening := Economy.arrival_rate(loc, "sunny", 19.0, {})
+	check(is_equal_approx(Economy.arrival_rate(loc, "sunny", 19.0, hot) / evening, 1.0 + 2.0 * float(st["lights"]["evening_traffic_per_level"])),
+		"lights lift evening traffic by their data value")
+	check(is_equal_approx(Economy.arrival_rate(loc, "sunny", 12.0, hot), Economy.arrival_rate(loc, "sunny", 12.0, {})),
+		"lights and shade do nothing at a sunny midday")
+
+## Standing loops keep a natural pace: not sped up by Skip, not left fast by a gesture,
+## and not in step with the neighbours.
+func _test_ambient_animation() -> void:
+	var stage := Node3D.new()
+	add_child(stage)
+	var vendor := ModelLib.spawn_crew(true, stage, Vector3.ZERO, 0, 0.66)
+	var vendor_player := ModelLib.animation_player(vendor)
+	ModelLib.set_manual_pose(vendor, true)
+	ModelLib.play_loop(vendor, "idle")
+	ModelLib.play_once(vendor, "interact-right", "idle", 1.6)
+	check(is_equal_approx(vendor_player.speed_scale, 1.6), "the handoff gesture plays at its requested speed")
+	for i in 60:
+		vendor_player.advance(0.05)
+	check(ModelLib.is_playing_loop(vendor_player, "idle"), "the vendor returns to idle after a handoff")
+	check(vendor_player.speed_scale >= 0.93 and vendor_player.speed_scale <= 1.07,
+		"the vendor's idle returns to a natural pace after a fast handoff (%.2f)" % vendor_player.speed_scale)
+	ModelLib.ambient_variety = false
+	var positions := {}
+	for clip in ["idle", "walk"]:
+		for speed in [1.0, 12.0]:
+			var guest := ModelLib.spawn_guest("creek-abaya", stage)
+			var player := ModelLib.animation_player(guest)
+			ModelLib.set_manual_pose(guest, true)
+			ModelLib.play_loop(guest, clip)
+			ModelLib.sim_speed = speed
+			# One rendered frame: Skip consumes twelve ticks where 1x consumes one.
+			for tick in int(speed):
+				ModelLib.step_pose(guest, 1.0 / 60.0)
+			ModelLib.render_pose(guest)
+			positions["%s@%d" % [clip, int(speed)]] = player.current_animation_position
+	check(absf(positions["idle@12"] - positions["idle@1"]) < 0.002,
+		"idle advances at the same pace at 1x and at Skip (%.3f vs %.3f)" % [positions["idle@1"], positions["idle@12"]])
+	check(positions["walk@12"] > positions["walk@1"] * 6.0, "walking still follows the simulation clock at Skip")
+	ModelLib.sim_speed = 1.0
+	ModelLib.ambient_variety = true
+	var phases := {}
+	for i in 6:
+		var guest := ModelLib.spawn_guest("creek-abaya", stage)
+		ModelLib.play_loop(guest, "idle")
+		phases[snappedf(ModelLib.animation_player(guest).current_animation_position, 0.05)] = true
+	check(phases.size() >= 3, "people standing together do not idle in step (%d distinct phases of 6)" % phases.size())
+	for model in World.DISTRICT_CAST["fahidi"]:
+		var guest := ModelLib.spawn_guest(model, stage)
+		check(guest != null and ModelLib.animation_player(guest).has_animation("idle") and ModelLib.animation_player(guest).has_animation("sit"),
+			"%s keeps its standing and seated loops" % model)
+	stage.free()
+
 func _test_cast_appearances() -> void:
 	var stage := Node3D.new()
 	add_child(stage)
 	for location in World.DISTRICT_CAST:
 		for id in World.DISTRICT_CAST[location]:
 			check(id != "souq-woman" and ModelLib.GUEST_HEIGHTS.has(id), "%s uses reviewed cast %s" % [location, id])
+			check(not World.RETIRED_CAST.has(id), "%s keeps modest dress: %s is not on the street" % [location, id])
 	var original := ModelLib.spawn_guest("creek-abaya", stage)
 	var guest := ModelLib.spawn_guest("souq-abaya", stage)
 	var woman := ModelLib.spawn_crew(true, stage, Vector3.ZERO, 0, 0.66)
@@ -502,6 +789,124 @@ func _test_restaurant_service(game) -> void:
 	world.queue_free()
 	game.new_game()
 
+## The closing render used to read the position of a plate the table had already cleared
+## (headless days never drew the hand-over, so the reference outlived the plate).
+func _test_closing_meal_handoff(game) -> void:
+	game.new_game()
+	game.money = 100000.0
+	game.rig["stage"] = "truck"
+	game.plot()["stage"] = "restaurant"
+	game.plot()["stations"] = {"counter": 6, "grill": 6, "seating": 4}
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 400
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	var worker: DiningStaff = world.plot.dining_staff[0]
+	var cleared := Node3D.new()
+	world.plot.add_child(cleared)
+	worker._meal = cleared
+	worker._meal_target = cleared.global_position + Vector3(0.3, 0.0, 0.0)
+	worker._meal_elapsed = 0.0
+	world.plot.remove_child(cleared)
+	worker.step(1.0 / 60.0)
+	worker.render_service()
+	check(worker.meal_in_hand() == null, "a plate cleared off its table mid hand-over is let go before the closing render")
+	cleared.free()
+	var plate := Node3D.new()
+	world.plot.add_child(plate)
+	var target := plate.global_position + Vector3(0.3, 0.0, 0.0)
+	worker._meal = plate
+	worker._meal_target = target
+	worker._meal_elapsed = 0.0
+	for i in range(6):
+		worker.step(1.0 / 60.0)
+	check(worker.meal_in_hand() == plate, "the plate is still in the server's hands a few ticks in")
+	for i in range(20):
+		worker.step(1.0 / 60.0)
+	check(worker.meal_in_hand() == null and plate.global_position.is_equal_approx(target), "undrawn ticks set the plate down on its spot")
+	plate.queue_free()
+	game.weather = "sunny"
+	game.forecast = "sunny"
+	game.weather_day = game.day
+	game.day_seed = 104729
+	var sim := DaySim.new()
+	add_child(sim)
+	var stats := DayRunner.play(sim, world, game.sim_context())
+	var held := 0
+	for w in world.plot.dining_staff:
+		if w.meal_in_hand() != null:
+			held += 1
+	check(not stats["_unfinished"] and int(stats["dine_in"]) > 0 and held == 0,
+		"a played restaurant day closes with every plate set down (%d diners)" % int(stats["dine_in"]))
+	sim.queue_free()
+	world.queue_free()
+	game.new_game()
+
+## A fixed stage at the parity run's mid levels: the full menu, ample stock, the
+## autoplayer's prices. Same setup as tests/balance_curve.gd's location matrix.
+func _setup_fixed(game, tier: int, location: String, pop: float) -> void:
+	var levels: Dictionary = load("res://tests/sim_parity.gd").get_script_constant_map()["LEVELS"][tier]["mid"]
+	game.new_game()
+	game.money = 1e7
+	game.popularity = pop
+	game.weather = "sunny"
+	game.forecast = "sunny"
+	game.weather_day = game.day
+	var def: Dictionary = Data.stage_def(tier)
+	var stations := {}
+	for id in levels:
+		if id in def["stations"]:
+			stations[id] = mini(int(levels[id]), Economy.station_level_cap(Data.STATIONS[id], def))
+	game.rig["stage"] = "truck"
+	game.rig["stations"] = {}
+	game.location = location
+	game.plots[location] = {"stage": def["id"], "stations": stations, "reputation": pop, "last_visit": game.day}
+	for id in Data.MENU_ITEMS:
+		var on: bool = game.item_available(id)
+		game.menu[id]["unlocked"] = on
+		game.menu[id]["enabled"] = on
+		game.menu[id]["recipe"] = {"meat": 3, "veg": 3, "sauce": 2}
+		game.menu[id]["level"] = mini(tier, Data.MENU_ITEMS[id]["enhance"].size())
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 5000
+	game.clamp_prices()
+	Autoplayer.prices()
+
+## With the terrace at mid levels, a visible share of buyers sit down: at least a fifth of
+## kiosk buyers and three in ten restaurant buyers (each one a seated, served guest).
+func _test_dine_in_share(game) -> void:
+	for tier in [3, 4]:
+		var want := 0.20 if tier == 3 else 0.30
+		var diners := 0
+		var buyers := 0
+		var est_diners := 0.0
+		var est_buyers := 0.0
+		for location in ["creek", "downtown"]:
+			_setup_fixed(game, tier, location, 0.8)
+			var world := World.new()
+			add_child(world)
+			world.set_location(location)
+			var est := Economy.throughput_estimate(game.sim_context())
+			est_diners += float(est["dine_in"])
+			est_buyers += float(est["served"])
+			for i in range(3):
+				_setup_fixed(game, tier, location, 0.8)
+				game.day_seed = 224737 + 7919 * i
+				var sim := DaySim.new()
+				add_child(sim)
+				var stats := DayRunner.play(sim, world, game.sim_context())
+				diners += int(stats["dine_in"])
+				buyers += int(stats["served"])
+				sim.free()
+			world.free()
+		var name: String = Data.stage_def(tier)["id"]
+		check(float(diners) / maxf(1.0, float(buyers)) >= want,
+			"%s at mid seating: %d of %d played buyers ate in (>= %.0f%%)" % [name, diners, buyers, 100.0 * want])
+		check(est_diners / maxf(1.0, est_buyers) >= want,
+			"%s at mid seating: the estimate seats %.0f%% of buyers too" % [name, 100.0 * est_diners / maxf(1.0, est_buyers)])
+	game.new_game()
+
 func _test_daily_stock(game) -> void:
 	game.new_game()
 	game.weather = "sunny"
@@ -571,10 +976,29 @@ func _test_stations() -> void:
 	check(Economy.station_cost(counter, 0) == 250.0, "counter level 1 costs the base price")
 	var c10 := Economy.station_cost(counter, 10)
 	check(c10 > 250.0 * 7.0 and c10 < 250.0 * 7.6 and fmod(c10, 50.0) == 0.0, "counter level 11 costs base x 1.22^10 rounded (%s)" % c10)
-	check(is_equal_approx(Economy.counter_capacity(0), 0.5) and Economy.queue_cap(0, Data.stage_def(0)) == 4, "day-1 parity: 2 min per order, 4 in line")
-	check(Economy.counter_capacity(10) > Economy.counter_capacity(0) * 4.0, "ten counter levels quadruple order speed")
+	check(is_equal_approx(Economy.order_seconds(1, 0), float(Data.SERVICE["order_s"])) and Economy.queue_cap(0, Data.stage_def(0)) == 4,
+		"day-1 parity: a single order takes the service table's beat, 4 in line")
+	check(Economy.order_seconds(4, 0) > Economy.order_seconds(1, 0) and Economy.handoff_seconds(4, 0) > Economy.handoff_seconds(1, 0),
+		"a family's order and bag take longer than a single portion")
+	check(Economy.counter_capacity(10) >= Economy.counter_capacity(0) * 1.9 and Economy.order_seconds(4, 10) < Economy.order_seconds(4, 0) * 0.55,
+		"ten counter levels about double order and handoff speed")
 	check(Economy.queue_cap(3, Data.stage_def(2)) == 4 + 3 + 2, "queue cap adds counter levels and the stage bonus")
-	check(Economy.kitchen_capacity(Data.STATIONS["doner"], 0) == 0.0 and Economy.kitchen_capacity(Data.STATIONS["doner"], 1) > 0.0, "doner spit does nothing until installed")
+	check(Economy.kitchen_capacity("doner", 0) == 0.0 and Economy.kitchen_capacity("doner", 1) > 0.0, "doner spit does nothing until installed")
+	check(is_equal_approx(Economy.kitchen_capacity("grill", 0), 1.0 / float(Data.SERVICE["cook_s"]["grill"])),
+		"a level-0 grill cooks one portion per cook_s seconds of the played day")
+	check(is_equal_approx(Economy.kitchen_capacity("grill", 3) / Economy.kitchen_capacity("grill", 0), 1.0 + 3.0 * float(Data.STATIONS["grill"]["per_level"])),
+		"grill levels add their per-level speed")
+	check(Economy.buyer_budget(5, 20) + Economy.ambient_budget(5) <= int(Data.GUEST_BUDGET["total_max"]) and Economy.buyer_budget(0, 0) < Economy.buyer_budget(4, 0),
+		"bigger stages put more rigged buyers on the street, never past the frame-time cap")
+	check(Economy.buyer_budget(3, 10) > Economy.buyer_budget(3, 0), "counter tiers add buyer places")
+	var party := Economy.party_weights(5, "downtown")
+	check(Economy.party_mean(party) > Economy.party_mean(Economy.party_weights(0, "fahidi")) * 2.0, "flagship parties are far larger than at the cart")
+	var draw := RandomNumberGenerator.new()
+	draw.seed = 9
+	var sizes := {}
+	for i in range(400):
+		sizes[Economy.pick_party(Economy.party_weights(0, "fahidi"), draw)] = true
+	check(sizes.keys().all(func(n): return int(n) >= 1 and int(n) <= 2), "the cart sells to singles and pairs")
 	var mix := Economy.kitchen_capacity_mix({"grill": 1.0, "karak": 2.0}, {"grill": 0.78, "karak": 0.22})
 	check(mix > 1.0 and mix < 2.0 and mix < 1.0 / 0.78, "harmonic mix sits between the slowest and fastest station (%f)" % mix)
 	check(Economy.kitchen_capacity_mix({"grill": 1.0}, {"": 1.0}) == INF, "counter-only items need no kitchen")
@@ -614,7 +1038,7 @@ func _test_game_flow(game) -> void:
 	game.money = 20000.0
 	var money_before: float = game.money
 	check(game.buy_stage() and game.stage_tier() == 1 and game.rig["stage"] == "stall", "build the stall")
-	check(is_equal_approx(money_before - game.money, 2000.0), "stall costs 2000")
+	check(is_equal_approx(money_before - game.money, float(Data.PLOT_STAGES[1]["cost"])), "the stall costs its listed price")
 	check(game.location_stage_ok("metro") and not game.location_stage_ok("mall"), "stall reaches metro, not the mall")
 	check(game.buy_station_level("doner") and game.item_available("shawarma"), "doner spit unlocks shawarma")
 	check(game.unlock_item("shawarma") and game.menu["shawarma"]["unlocked"], "add shawarma to the menu")
@@ -672,7 +1096,8 @@ func _test_stages(game) -> void:
 	var big := Economy.throughput_estimate(_ctx_for(game, {"counter": 15, "grill": 15, "karak": 10, "seating": 10}, 3, "downtown"))
 	var small := Economy.throughput_estimate(_ctx_for(game, {"counter": 0, "grill": 0}, 3, "downtown"))
 	check(float(big["served"]) > float(small["served"]) * 1.2, "more station levels, more customers served downtown (%s vs %s)" % [big["served"], small["served"]])
-	check(float(small["util"]["counter"]) > 0.5 and float(big["util"]["counter"]) < float(small["util"]["counter"]), "an empty kiosk downtown works its counter hard; levels relieve it (%s)" % str(small["util"]))
+	check(small["bottleneck"] == "grill" and float(big["util"]["grill"]) < float(small["util"]["grill"]),
+		"an empty kiosk downtown is held up by its level-0 grill; levels relieve it (%s)" % str(small["util"]))
 	check(game.station_level("grill") == 2 and game.location == "fahidi", "what_if leaves the state alone")
 	# a maxed kiosk day in FastSim
 	for id in ["counter", "grill", "karak", "seating"]:
@@ -682,17 +1107,21 @@ func _test_stages(game) -> void:
 	for ing in Data.INGREDIENTS:
 		game.inventory[ing] = 1000
 	game.weather = "sunny"
-	game.rng.seed = 2026 # a fixed day: the unseeded run lands at 73-90 served
+	game.rng.seed = 2026 # a fixed day
 	var fast := FastSim.run(game.sim_context(), game.rng)
-	check(int(fast["served"]) > 80 and int(fast["dine_in"]) > 10, "maxed kiosk day at fahidi serves plenty with diners (%s served, %s dined)" % [fast["served"], fast["dine_in"]])
+	# the free souk is the quiet place (Release 2b): fewer passers-by, smaller groups
+	check(int(fast["portions"]) > 70 and int(fast["portions"]) > int(fast["served"]) * 2 and int(fast["dine_in"]) > 5,
+		"maxed kiosk day at the quiet souk still sells group portions, with diners (%s portions, %s buyers, %s dined)" % [fast["portions"], fast["served"], fast["dine_in"]])
 
 func _test_goals(game) -> void:
 	game.new_game()
-	check(game.current_goal()["id"] == "first_30" and not game.goal_ready(), "first goal waits for 30 customers")
+	check(game.current_goal()["id"] == "first_30" and not game.goal_ready(), "first goal waits for 8 customers")
 	check(not game.claim_goal(), "cannot claim early")
 	game.inventory["chicken"] = 500
-	game.end_day({"served": 35, "revenue": 350.0, "cogs": 100.0, "satisfaction_sum": 25.0, "sold": {}})
-	check(game.goal_ready(), "30 served in a day completes the first goal")
+	game.end_day({"served": 7, "revenue": 70.0, "cogs": 25.0, "satisfaction_sum": 5.0, "sold": {}})
+	check(not game.goal_ready(), "seven served in a day is one short")
+	game.end_day({"served": 12, "revenue": 120.0, "cogs": 40.0, "satisfaction_sum": 8.0, "sold": {}})
+	check(game.goal_ready(), "8 served in a day completes the first goal")
 	var m: float = game.money
 	check(game.claim_goal() and game.money == m + 150.0 and game.goal_index == 1 and game.goals_claimed == ["first_30"], "claim pays once and advances")
 	check(not game.claim_goal(), "next goal not ready yet")
@@ -700,6 +1129,48 @@ func _test_goals(game) -> void:
 	game.buy_station_level("counter")
 	check(game.goal_ready() and game.claim_goal() and game.current_goal()["id"] == "stars15", "counter goal, then stars")
 	check(game.goal_progress() > 0.5 and game.goal_progress() < 1.0, "progress toward 1.5 stars is partial")
+
+## Every rung of the ladder is a goal type the game measures, met by a played-day-sized day
+## (Release 2b thresholds: portions where "plates" are meant, diners a kiosk terrace seats).
+func _test_goal_ladder(game) -> void:
+	var known := ["day_served", "day_portions", "day_profit", "day_dine_in", "total_served", "stars", "levels_owned",
+		"stage", "station_level", "location", "location_any", "item_unlocked"]
+	var ids := {}
+	for goal in Data.GOALS:
+		var req: Dictionary = goal["req"]
+		check(String(req["type"]) in known, "goal %s has a measured type (%s)" % [goal["id"], req["type"]])
+		check(not ids.has(goal["id"]) and float(goal["reward"].get("money", 0.0)) > 0.0, "goal %s is unique and pays" % goal["id"])
+		ids[goal["id"]] = true
+		check(Economy.goal_progress(goal, {}) < 1.0, "goal %s is not met by an empty snapshot" % goal["id"])
+	var played := {"day_served": 25, "day_portions": 320, "day_profit": 450.0, "day_dine_in": 9, "total_served": 250, "stars": 4.6,
+		"levels_owned": 60, "stage": 5, "stations": {"counter": 1, "grill": 3}, "visited": ["creek", "downtown"], "unlocked": ["shawarma"]}
+	for goal in Data.GOALS:
+		check(is_equal_approx(Economy.goal_progress(goal, played), 1.0), "goal %s is reachable by a strong played day" % goal["id"])
+	var plates := {}
+	var buyers := {}
+	for goal in Data.GOALS:
+		if goal["id"] == "served300":
+			plates = goal
+		if goal["id"] == "first_30":
+			buyers = goal
+	check(String(plates["req"]["type"]) == "day_portions" and int(plates["req"]["n"]) == 300, "three hundred plates count portions, not buyers")
+	check(Economy.goal_progress(plates, {"day_served": 300, "day_portions": 120}) < 0.5, "300 buyers' worth of headcount is not 300 plates")
+	check(int(buyers["req"]["n"]) <= 15, "the first goal fits a cart day of 5-15 buyers")
+	# The goal snapshot reads portions from the report (older reports only have buyers).
+	game.new_game()
+	game.end_day({"served": 30, "portions": 140, "revenue": 900.0, "cogs": 200.0, "satisfaction_sum": 20.0, "sold": {}})
+	check(int(game.goal_snapshot()["day_portions"]) == 140, "goal snapshot carries the day's portions")
+	game.history.back().erase("portions")
+	check(int(game.goal_snapshot()["day_portions"]) == 30, "a report without portions counts its buyers")
+	# A place counts once a day opens there, not when the prep screen passes through it.
+	game.new_game()
+	game.money = 5000.0
+	check(game.set_location("creek") and game.set_location("fahidi"), "prep can pass through the Creek")
+	check(not "creek" in game.goal_snapshot()["visited"], "passing through on the prep screen is not a day at the Creek")
+	game.set_location("creek")
+	game.begin_day()
+	check("creek" in game.goal_snapshot()["visited"], "opening a day at the Creek visits it")
+	game.new_game()
 
 func _test_save_load(game) -> void:
 	game.new_game()

@@ -72,6 +72,8 @@ const TWO_COLUMNS_FROM := 1100.0
 const TOP_BAR_HEIGHT := 60.0
 const BOTTOM_BAR_HEIGHT := 84.0
 const PANEL_GAP := 6.0
+## Where toasts settle (logical px from the top).
+const TOAST_Y := 74.0
 var report_dim: PanelContainer
 var report_panel: PanelContainer
 var report_body: VBoxContainer
@@ -92,6 +94,21 @@ var banner: PanelContainer
 var banner_label: Label
 var _banner_tween: Tween
 var _refreshing := false
+## Customer lines and sale pops above the street (drawn under the bars and panels).
+var float_layer: FloatLayer
+## Small dots on the prep tabs: something to claim, to afford, or to restock.
+var _tab_badges := {}
+var _badge_state := {}
+## A stage / tier purchase holds the street until the Build panel has closed (main checks it).
+var _reveal_hold := false
+var _reveal_token := 0
+var _build_return: Control
+var _build_return_tween: Tween
+## "gain" / "spend" / "loss" for the next money change _refresh notices ("" = by direction).
+var _money_kind_next := ""
+var _money_bounce_at := -1.0
+var _money_flash_tween: Tween
+var _toast_frame := -1
 
 const PANELS := {
 	"supplies": "ui.supplies", "menu": "ui.menu", "place": "ui.place", "build": "ui.build", "promote": "ui.promote", "goals": "ui.goals",
@@ -121,9 +138,12 @@ func _build_all() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 	_apply_safe_area()
+	float_layer = FloatLayer.new()
+	root.add_child(float_layer)
 	_build_top_bar()
 	_build_prep_bar()
 	_build_day_bar()
+	_build_build_return()
 	_build_panel()
 	_build_title()
 	_build_report() # above the title so its dialogs (new-game confirm) show over it
@@ -137,6 +157,9 @@ func _on_language_changed() -> void:
 		coach.dispose()
 		coach = null
 	current_panel = ""
+	float_layer.remove_from_group(FloatLayer.GROUP)
+	_tab_badges.clear()
+	_badge_state.clear()
 	root.queue_free()
 	_build_all()
 	if main.world:
@@ -232,6 +255,8 @@ func _publish_menu_targets() -> void:
 	buttons.append_array(report_dim.find_children("*", "Button", true, false))
 	buttons.append_array(title_screen.find_children("*", "Button", true, false))
 	buttons.append_array(top_bar.find_children("*", "Button", true, false))
+	if is_instance_valid(_build_return):
+		buttons.append_array(_build_return.find_children("*", "Button", true, false))
 	if is_instance_valid(coach):
 		buttons.append_array(coach.find_children("*", "Button", true, false))
 	for node in buttons:
@@ -249,7 +274,8 @@ func _publish_menu_targets() -> void:
 	var panel_bounds := panel.get_global_rect().intersection(bounds)
 	var view := {"menuTop": panel_bounds.position.y, "menuBottom": panel_bounds.end.y / vp.y, "tabsTop": prep_bar.get_global_rect().position.y / vp.y,
 		"curtain": _curtain_amount if curtain.visible else 0.0, "closing": closing_progress.value if closing_progress.visible and day_bar.visible else -1.0,
-		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text}
+		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text,
+		"badges": _badge_state.duplicate(), "floats": float_layer.live_count(), "buildReturn": _build_return.visible}
 	if main:
 		view["service"] = main.sim.service_view()
 		view["warmedCast"] = main.world.warmed_cast.keys()
@@ -458,6 +484,8 @@ func _build_prep_bar() -> void:
 		var caption := _label(tr(PANELS[id]), "Light", HORIZONTAL_ALIGNMENT_CENTER)
 		caption.add_theme_font_size_override("font_size", 16)
 		face.add_child(caption)
+		if id in ["supplies", "build", "goals"]:
+			_tab_badges[id] = _tab_badge(b)
 	h.add_child(_spacer())
 	var open := _button(tr("ui.open_shop"), "Primary", Vector2(220, 64))
 	_menu_target(open, "open_shop")
@@ -471,7 +499,7 @@ func _build_day_bar() -> void:
 	h.add_theme_constant_override("separation", 8)
 	day_bar.add_child(h)
 	for s in [1.0, 2.0, 4.0]:
-		var b := _button("%dx" % int(s), "Tab", Vector2(72, 60))
+		var b := _button(tr("ui.speed_x") % int(s), "Tab", Vector2(72, 60))
 		b.toggle_mode = true
 		b.pressed.connect(func(): _set_speed(s))
 		h.add_child(b)
@@ -503,6 +531,110 @@ func _build_day_bar() -> void:
 	closing_progress.add_theme_stylebox_override("fill", UiTheme.flat(UiTheme.GOLD_LIGHT, 3))
 	closing_progress.hide()
 	v.add_child(closing_progress)
+
+## A dot in the tab's top corner (the end corner, so it mirrors in Arabic). Hidden until
+## _refresh_badges finds something waiting behind the tab.
+func _tab_badge(tab: Button) -> Control:
+	var frame := MarginContainer.new()
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "right", "top", "bottom"]:
+		frame.add_theme_constant_override("margin_" + side, 6)
+	tab.add_child(frame)
+	var column := VBoxContainer.new()
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_child(column)
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.alignment = BoxContainer.ALIGNMENT_END
+	column.add_child(row)
+	var dot := Panel.new()
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dot.custom_minimum_size = Vector2(15, 15)
+	dot.add_theme_stylebox_override("panel", UiTheme.flat(Color("e8b25a"), 8, UiTheme.NIGHT_DARK, 2))
+	dot.visible = false
+	row.add_child(dot)
+	return dot
+
+## Recomputed when the game changes during preparation (never per frame).
+func _refresh_badges() -> void:
+	if _tab_badges.is_empty():
+		return
+	var prep: bool = main != null and main.phase == main.Phase.PREP
+	var state := {
+		"goals": prep and Game.goal_ready(),
+		"build": prep and _something_affordable(),
+		"supplies": prep and float(Game.daily_stock_plan()["cost"]) > 0.0,
+	}
+	for id in state:
+		var dot: Control = _tab_badges.get(id)
+		if dot == null:
+			continue
+		var on: bool = state[id]
+		if on and not bool(_badge_state.get(id, false)):
+			dot.visible = true
+			dot.pivot_offset = dot.custom_minimum_size * 0.5
+			dot.scale = Vector2.ONE * 0.2
+			dot.create_tween().tween_property(dot, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		elif not on:
+			dot.visible = false
+		_badge_state[id] = on
+
+func _something_affordable() -> bool:
+	if Game.stage_lock_reason().is_empty() and float(Game.next_stage_def().get("cost", INF)) <= Game.money:
+		return true
+	for id in Data.STATIONS:
+		var def: Dictionary = Data.STATIONS[id]
+		if def.get("virtual", false) or def.get("later", false):
+			continue
+		if Game.station_lock_reason(id).is_empty() and Game.station_cost(id) <= Game.money:
+			return true
+	return false
+
+## After a stage or tier purchase closes the panel: a small way back to Build, above the
+## Open button at the end of the bar, so the stand and the crew stay in clear view.
+func _build_build_return() -> void:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.add_theme_constant_override("separation", 0)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	row.offset_bottom = -BOTTOM_BAR_HEIGHT - 12.0
+	row.offset_top = row.offset_bottom - 52.0
+	row.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	row.visible = false
+	root.add_child(row)
+	var back := _menu_target(_button(tr("ui.back_to_build"), "Ghost", Vector2(0, 52)), "reveal_build")
+	back.pressed.connect(func():
+		_hide_build_return()
+		open_panel("build"))
+	row.add_child(back)
+	var edge := Control.new()
+	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	edge.custom_minimum_size.x = 16.0 # the bar's own side margin
+	row.add_child(edge)
+	_build_return = row
+
+func _show_build_return() -> void:
+	if _build_return_tween:
+		_build_return_tween.kill()
+	# It exists only once it can be used: after the curtain when the street was rebuilt.
+	_build_return.visible = false
+	_build_return.modulate.a = 0.0
+	_build_return_tween = _build_return.create_tween()
+	_build_return_tween.tween_interval(0.85 if is_transitioning() else 0.5)
+	_build_return_tween.tween_callback(_build_return.show)
+	_build_return_tween.tween_property(_build_return, "modulate:a", 1.0, 0.25)
+	# Long enough to look at the result, then the street is the player's again.
+	_build_return_tween.tween_interval(7.0)
+	_build_return_tween.tween_property(_build_return, "modulate:a", 0.0, 0.4)
+	_build_return_tween.tween_callback(_build_return.hide)
+
+func _hide_build_return() -> void:
+	if _build_return_tween:
+		_build_return_tween.kill()
+	if _build_return:
+		_build_return.hide()
 
 func _build_panel() -> void:
 	panel_dim = Panel.new()
@@ -601,7 +733,7 @@ func _build_toast() -> void:
 	toast = PanelContainer.new()
 	toast.theme_type_variation = "Toast"
 	toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	toast.position = Vector2(0, 74)
+	toast.position = Vector2(0, TOAST_Y)
 	toast.visible = false
 	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(toast)
@@ -666,7 +798,7 @@ func _build_title() -> void:
 		Sfx.play("switch")
 		Loc.toggle())
 	tools_row.add_child(lang)
-	var graphics := _graphics_button("graphics_title", tr("ui.graphics"))
+	var graphics := _graphics_button("graphics_title", tr("ui.settings"))
 	graphics.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tools_row.add_child(graphics)
 	var help := _menu_target(_button(tr("guide.help"), "Ghost", Vector2(0, 54)), "guide_title")
@@ -685,12 +817,17 @@ func show_title() -> void:
 		coach.dispose()
 		coach = null
 	close_panel()
+	_hide_build_return()
+	float_layer.clear()
 	report_dim.visible = false
 	prep_bar.visible = false
 	day_bar.visible = false
 	top_bar.visible = false
 	title_screen.visible = true
 	_fade_in(title_screen, 0.35)
+	Sfx.play_music("title")
+	Sfx.set_loop("sizzle", false)
+	Sfx.set_ambience(Game.location)
 	if _title_shown:
 		_pop_in(title_card, 0.4)
 	_title_shown = true
@@ -707,8 +844,12 @@ func show_prep() -> void:
 	day_bar.visible = false
 	clock_chip.visible = false
 	close_panel()
+	_hide_build_return()
+	float_layer.clear()
 	_slide_in(top_bar, -1)
 	_slide_in(prep_bar, 1)
+	Sfx.play_music("prep")
+	Sfx.set_loop("sizzle", false)
 	_refresh()
 
 func show_day() -> void:
@@ -723,8 +864,13 @@ func show_day() -> void:
 	prep_bar.visible = false
 	day_bar.visible = true
 	clock_chip.visible = true
+	_hide_build_return()
+	float_layer.clear()
 	_slide_in(day_bar, 1)
 	_banner("%s  ·  %s" % [tr("ui.day") % Game.day, tr(Game.loc()["name"])])
+	Sfx.stinger("day_open")
+	Sfx.play_music("day")
+	Sfx.set_loop("sizzle", true)
 	ticker_label.text = ""
 	ticker_label.modulate.a = 1.0
 	closing_progress.hide()
@@ -747,16 +893,38 @@ func show_finishing(from_hour: float, end_hour: float) -> void:
 
 func show_report(r: Dictionary) -> void:
 	day_bar.visible = false
+	float_layer.clear()
+	Sfx.set_loop("sizzle", false)
+	var profit := float(r["profit"])
+	# Paying rent and wages is spending; only a losing day flashes as a loss.
+	_money_kind_next = "loss" if profit < 0.0 else "spend"
 	_refresh()
+	_money_kind_next = ""
 	_detach_coach_card()
 	for c in report_body.get_children():
 		c.queue_free()
+	var yesterday := _report_before(r)
+	var best := _is_best_day(r)
 	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
 	report_body.add_child(head)
 	var rt := _label(tr("ui.r_title") % [r["day"], tr(Data.LOCATIONS[r["location"]]["name"])], "Title")
 	rt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	head.add_child(rt)
+	var best_chip: PanelContainer
+	if best:
+		best_chip = PanelContainer.new()
+		best_chip.add_theme_stylebox_override("panel", UiTheme.flat(UiTheme.PALM_DARK, 8, UiTheme.GOLD_LIGHT, 2))
+		best_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var bl := _label("◆  " + tr("ui.r_best_day"), "Light")
+		bl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		bl.add_theme_font_size_override("font_size", 19)
+		bl.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+		best_chip.add_child(bl)
+		best_chip.modulate.a = 0.0
+		head.add_child(best_chip)
 	var wchip := _chip(tr(Data.WEATHER[r["weather"]]["name"]), Icons.weather_icon(r["weather"]), true)
+	wchip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(wchip)
 	var cols_scroll: ScrollContainer = TouchScroll.new()
 	cols_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -775,12 +943,19 @@ func show_report(r: Dictionary) -> void:
 	var g1 := _grid()
 	v1.add_child(g1)
 	_row(g1, tr("ui.r_passers"), str(r["passers"]))
-	_row(g1, tr("ui.r_served"), str(r["served"]), UiTheme.GOOD)
+	var served_label := _row(g1, tr("ui.r_served"), str(r["served"]), UiTheme.GOOD)
+	_delta_row(g1, int(r["served"]) - int(yesterday.get("served", 0)), yesterday.is_empty(), func(v: float) -> String:
+		return Loc.ltr("%+d" % int(v)))
+	# One buyer may order for a family or an office: show the portions when they differ.
+	if int(r.get("portions", r["served"])) != int(r["served"]):
+		_row(g1, tr("ui.r_portions"), str(r["portions"]), UiTheme.GOOD)
 	if int(r.get("dine_in", 0)) > 0:
 		_row(g1, tr("ui.r_dine_in"), str(r["dine_in"]), UiTheme.GOOD)
 	_row(g1, tr("ui.r_left_wait"), str(r["left_wait"]), UiTheme.BAD if r["left_wait"] > 0 else UiTheme.INK)
 	_row(g1, tr("ui.r_left_full"), str(r["queue_full"]), UiTheme.BAD if r["queue_full"] > 0 else UiTheme.INK)
 	_row(g1, tr("ui.r_sold_out"), str(r["sold_out"]), UiTheme.BAD if r["sold_out"] > 0 else UiTheme.INK)
+	if int(r.get("crowd", 0)) > 0:
+		_row(g1, tr("ui.r_crowd"), str(r["crowd"]), UiTheme.BAD)
 	if int(r.get("lost_rival", 0)) > 0:
 		_row(g1, tr("ui.r_lost_rival"), str(r["lost_rival"]), UiTheme.BAD)
 	if int(r.get("too_pricey", 0)) > 0:
@@ -801,7 +976,7 @@ func show_report(r: Dictionary) -> void:
 	var sold_lines := []
 	for id in r["sold"]:
 		sold_lines.append("%d %s" % [r["sold"][id], tr(Data.MENU_ITEMS[id]["name"])])
-	var sold := _label(tr("ui.r_sold") % (", ".join(sold_lines) if not sold_lines.is_empty() else tr("ui.r_nothing")), "Small")
+	var sold := _label(tr("ui.r_sold") % (_join(sold_lines) if not sold_lines.is_empty() else tr("ui.r_nothing")), "Small")
 	sold.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sold.add_theme_font_override("font", UiTheme.bold())
 	v1.add_child(sold)
@@ -810,7 +985,7 @@ func show_report(r: Dictionary) -> void:
 	cols.add_child(c2)
 	var g2 := _grid()
 	c2.add_child(g2)
-	_row(g2, tr("ui.r_revenue"), Loc.money(r["revenue"]), UiTheme.GOOD)
+	var revenue_label := _row(g2, tr("ui.r_revenue"), Loc.money(r["revenue"]), UiTheme.GOOD)
 	_row(g2, tr("ui.r_cogs"), Loc.money(float(r["cogs"])), UiTheme.BAD)
 	_row(g2, tr("ui.r_rent"), Loc.money(float(r["rent"])), UiTheme.BAD)
 	if float(r["wages"]) > 0:
@@ -820,11 +995,29 @@ func show_report(r: Dictionary) -> void:
 		var parts := []
 		for ing in sp:
 			parts.append("%d %s" % [sp[ing], tr(Data.INGREDIENTS[ing]["name"])])
-		_row(g2, tr("ui.r_spoiled") % ", ".join(parts), Loc.money(float(r["spoil_cost"])), UiTheme.BAD)
-	var profit := float(r["profit"])
+		_row(g2, tr("ui.r_spoiled") % _join(parts), Loc.money(float(r["spoil_cost"])), UiTheme.BAD)
 	var pl := _row(g2, tr("ui.r_profit"), Loc.money(profit), UiTheme.GOOD if profit >= 0 else UiTheme.BAD)
 	pl.theme_type_variation = "Big"
+	_delta_row(g2, profit - float(yesterday.get("profit", 0.0)), yesterday.is_empty(), _signed_money)
 	_row(g2, tr("ui.r_cash"), Loc.money(r["money"]))
+	# A goal waiting to be claimed: say so here, with a way straight to it.
+	if bool(r.get("goal_ready", false)) or Game.goal_ready():
+		var goal_row := HBoxContainer.new()
+		goal_row.add_theme_constant_override("separation", 12)
+		report_body.add_child(goal_row)
+		var gl := _label("◆  " + tr("ui.r_goal_ready"), "Heading")
+		gl.add_theme_font_size_override("font_size", 21)
+		gl.add_theme_color_override("font_color", UiTheme.GOOD)
+		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		goal_row.add_child(gl)
+		var to_goals := _menu_target(_button(tr("ui.r_open_goals"), "Ghost", Vector2(200, 52)), "report_goals")
+		to_goals.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		to_goals.pressed.connect(func():
+			Sfx.play("confirm")
+			fade_through(func():
+				main.show_prep()
+				open_panel("goals")))
+		goal_row.add_child(to_goals)
 	# footer
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 12)
@@ -840,7 +1033,75 @@ func show_report(r: Dictionary) -> void:
 	foot.add_child(next)
 	_apply_safe_area()
 	_show_report_overlay()
-	Sfx.play("bong")
+	Sfx.stinger("day_close")
+	# The headline figures count up once the sheet has landed, then a best day is called out.
+	_count_up(served_label, float(r["served"]), func(v: float) -> String: return str(int(round(v))), 0.3)
+	_count_up(revenue_label, float(r["revenue"]), Loc.money, 0.35)
+	var counting := _count_up(pl, profit, Loc.money, 0.45, 1.0)
+	if best_chip:
+		counting.tween_callback(func():
+			best_chip.modulate.a = 1.0
+			_pop_in(best_chip, 0.45)
+			Sfx.stinger("best_day"))
+
+## The report that came before `r` in the history ({} on the first day).
+func _report_before(r: Dictionary) -> Dictionary:
+	var previous := {}
+	for entry in Game.history:
+		if not entry is Dictionary:
+			continue
+		if int(entry.get("day", -1)) >= int(r["day"]):
+			break
+		previous = entry
+	return previous
+
+## A new best day: the best profit so far, not the first day, and better than every earlier day.
+func _is_best_day(r: Dictionary) -> bool:
+	var profit := float(r["profit"])
+	if profit <= 0.0 or int(Game.stats.get("days_played", 0)) < 2 or profit + 0.01 < float(Game.stats.get("best_day_profit", 0.0)):
+		return false
+	var earlier := 0
+	for entry in Game.history:
+		if entry is Dictionary and int(entry.get("day", -1)) < int(r["day"]):
+			earlier += 1
+			if float(entry.get("profit", 0.0)) >= profit:
+				return false
+	return earlier > 0
+
+## "vs yesterday" under a headline row: an arrow and a sign as well as the colour.
+func _delta_row(g: GridContainer, delta: float, first_day: bool, fmt: Callable) -> void:
+	if first_day:
+		_row(g, tr("ui.r_vs_yesterday"), tr("ui.r_first_day"), UiTheme.MUTED)
+		return
+	var up := delta > 0.004
+	var down := delta < -0.004
+	var arrow := "▲" if up else ("▼" if down else "=")
+	var text: String = arrow + "  " + (fmt.call(delta) if up or down else fmt.call(0.0))
+	var vl := _row(g, tr("ui.r_vs_yesterday"), text, UiTheme.GOOD if up else (UiTheme.BAD if down else UiTheme.MUTED))
+	vl.add_theme_font_size_override("font_size", 17)
+
+## Counts a label from zero to `value`; the label keeps its final width so the table holds still.
+func _count_up(l: Label, value: float, fmt: Callable, delay: float = 0.3, dur: float = 0.8) -> Tween:
+	l.custom_minimum_size.x = maxf(l.custom_minimum_size.x, l.get_minimum_size().x)
+	l.text = fmt.call(0.0)
+	var tw := l.create_tween()
+	tw.tween_interval(delay)
+	# whole numbers while counting (money shows decimals only for the exact final figure)
+	tw.tween_method(func(v: float): l.text = fmt.call(roundf(v)), 0.0, value, dur).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(func(): l.text = fmt.call(value))
+	return tw
+
+## Money with an explicit sign: "+AED 40" / "−AED 40" (kept in reading order in Arabic).
+func _signed_money(v: float) -> String:
+	var sign := "+" if v >= 0.0 else "−"
+	return ("\u200e" if Loc.is_rtl() else "") + sign + Loc.money(absf(v))
+
+## A list in the reader's language: "a, b" / "a، b".
+func _join(parts: Array) -> String:
+	var out := PackedStringArray()
+	for p in parts:
+		out.append(String(p))
+	return (tr("ui.list_sep") + " ").join(out)
 
 func _grid() -> GridContainer:
 	var g := GridContainer.new()
@@ -872,11 +1133,16 @@ func _refresh() -> void:
 		return
 	_refreshing = true
 	if not is_nan(_last_money) and not is_equal_approx(_last_money, Game.money):
-		_money_pop(Game.money > _last_money)
-	else:
+		# Spending is neutral; red is kept for a real loss (show_report marks a losing day).
+		var kind := _money_kind_next
+		if kind.is_empty():
+			kind = "gain" if Game.money > _last_money else "spend"
+		_money_pop(kind)
+	elif not (_money_tween and _money_tween.is_running()):
 		money_label.text = Loc.money(Game.money)
 		_shown_money = Game.money
 	_last_money = Game.money
+	Sfx.set_ambience(Game.location)
 	day_label.text = tr("ui.day") % Game.day
 	loc_label.text = tr(Game.loc()["name"])
 	var in_day: bool = main != null and main.phase == main.Phase.DAY
@@ -892,24 +1158,29 @@ func _refresh() -> void:
 		t.texture = Icons.star_icon(clampf(stars - i, 0.0, 1.0))
 	if current_panel != "":
 		_rebuild_panel()
+	_refresh_badges()
 	_refreshing = false
 
 func _on_clock(hour: float) -> void:
 	var minute := floori(hour * 60.0)
 	if minute != _clock_minute:
 		_clock_minute = minute
-		clock_label.text = "%02d:%02d" % [floori(hour) % 24, minute % 60]
+		clock_label.text = Loc.ltr(tr("ui.clock") % [floori(hour) % 24, minute % 60])
 	if closing_progress.visible:
 		closing_progress.value = clampf(inverse_lerp(_closing_from, maxf(_closing_until, _closing_from + 0.01), hour), 0.0, 1.0)
 
 func _on_sale(items: Array[String], total: float) -> void:
+	# The till counts up with a small bounce (rate-limited: a 12x day sells several times a second).
+	if not is_equal_approx(_last_money, Game.money):
+		_money_pop("gain", Time.get_ticks_msec() / 1000.0 - _money_bounce_at > 0.3)
+		_last_money = Game.money
 	_on_stats(main.sim.stats)
 	var names := PackedStringArray()
 	for id in items:
 		names.append(tr(Data.MENU_ITEMS[id]["name"]))
 	if _sale_tween:
 		_sale_tween.kill()
-	ticker_label.text = "%s  ·  +%s" % [", ".join(names), Loc.money(total)]
+	ticker_label.text = "%s  ·  %s" % [_join(Array(names)), _signed_money(total)]
 	ticker_label.modulate.a = 0.0
 	_pulse(ticker_label)
 	_sale_tween = ticker_label.create_tween()
@@ -918,7 +1189,9 @@ func _on_sale(items: Array[String], total: float) -> void:
 	_sale_tween.tween_property(ticker_label, "modulate:a", 0.0, 0.3)
 
 func _on_stats(stats: Dictionary) -> void:
-	money_label.text = Loc.money(Game.money)
+	if not (_money_tween and _money_tween.is_running()):
+		money_label.text = Loc.money(Game.money)
+		_shown_money = Game.money
 	live_label.text = tr("ui.live") % [stats.get("served", 0), Loc.money(stats.get("revenue", 0.0)), stats.get("queue", 0), stats.get("kitchen", 0), stats.get("seated", 0)]
 
 func _set_speed(s: float) -> void:
@@ -927,9 +1200,17 @@ func _set_speed(s: float) -> void:
 	if main:
 		main.set_speed(s)
 
+## Toast kind -> [glyph, panel variation]. Glyphs are all in Baloo Bhaijaan 2.
+const TOASTS := {
+	"good": ["\u221a", "ToastGood"], "info": ["\u25c6", "Toast"],
+	"warn": ["!", "ToastWarn"], "error": ["\u00d7", "ToastError"],
+}
+
 func _toast(text: String, kind: String = "info") -> void:
-	var glyph := "\u221a  " if kind == "info" else ("\u00d7  " if kind == "error" else "!  ")
-	toast_label.text = glyph + text
+	var look: Array = TOASTS.get(kind, TOASTS["info"])
+	toast_label.text = String(look[0]) + "  " + text
+	toast.theme_type_variation = look[1]
+	_toast_frame = Engine.get_process_frames()
 	if kind == "error":
 		Sfx.play("error")
 	elif kind == "warn":
@@ -942,12 +1223,12 @@ func _toast(text: String, kind: String = "info") -> void:
 	toast.visible = true
 	toast.modulate = Color(1, 1, 1, 0)
 	toast.reset_size()
-	toast.position = Vector2((root.size.x - toast.size.x) / 2.0, 58.0)
+	toast.position = Vector2((root.size.x - toast.size.x) / 2.0, TOAST_Y - 16.0)
 	if _toast_tween:
 		_toast_tween.kill()
 	_toast_tween = create_tween().set_parallel(true)
 	_toast_tween.tween_property(toast, "modulate:a", 1.0, 0.18)
-	_toast_tween.tween_property(toast, "position:y", 74.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_toast_tween.tween_property(toast, "position:y", TOAST_Y, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_toast_tween.set_parallel(false)
 	_toast_tween.tween_interval(2.4)
 	_toast_tween.tween_property(toast, "modulate:a", 0.0, 0.4)
@@ -966,13 +1247,13 @@ func _on_open_shop() -> void:
 			_toast(tr("ui.buy_first"), "error")
 			open_panel("supplies")
 		return
-	Sfx.play("confirm")
+	# show_day plays the opening stinger
 	main.start_day()
 
 func _graphics_button(target: String, caption: String) -> Button:
 	var b := _menu_target(_button(caption, "Ghost", Vector2(0, 54)), target)
-	b.tooltip_text = tr("ui.graphics")
-	b.accessibility_name = tr("ui.graphics")
+	b.tooltip_text = tr("ui.settings")
+	b.accessibility_name = tr("ui.settings")
 	b.pressed.connect(_show_graphics)
 	return b
 
@@ -988,30 +1269,106 @@ func _show_graphics() -> void:
 		child.queue_free()
 	var heading := HBoxContainer.new()
 	report_body.add_child(heading)
-	heading.add_child(_label(tr("ui.graphics"), "Title"))
+	heading.add_child(_label(tr("ui.settings"), "Title"))
 	var done := _menu_target(_button(tr("ui.close"), "Ghost", Vector2(105, 52)), "graphics_close")
 	done.pressed.connect(close_graphics)
 	heading.add_child(done)
-	_graphics_choices("ui.graphics_fps", "fps", main.FRAME_CAPS,
+	# Graphics and sound side by side on a phone in landscape; stacked (and scrolling) when narrow.
+	var wide := root.size.x >= 1000.0
+	var cols: BoxContainer = HBoxContainer.new() if wide else VBoxContainer.new()
+	cols.add_theme_constant_override("separation", 22 if wide else 10)
+	cols.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if wide:
+		report_body.add_child(cols)
+	else:
+		var scroll: ScrollContainer = TouchScroll.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		report_body.add_child(scroll)
+		scroll.add_child(cols)
+	var gfx := VBoxContainer.new()
+	gfx.add_theme_constant_override("separation", 8)
+	gfx.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.add_child(gfx)
+	_graphics_choices(gfx, "ui.graphics_fps", "fps", main.FRAME_CAPS,
 		[tr("ui.graphics_cool"), tr("ui.graphics_smooth")], main.frame_cap,
 		func(value: int): main.set_graphics(value, main.render_scale))
 	var names: Array[String] = [tr("ui.graphics_auto")]
 	for scale in main.RENDER_SCALES.slice(1):
 		names.append(Loc.ltr("%d%%" % scale))
-	_graphics_choices("ui.graphics_scale", "scale", main.RENDER_SCALES, names, main.render_scale,
+	_graphics_choices(gfx, "ui.graphics_scale", "scale", main.RENDER_SCALES, names, main.render_scale,
 		func(value: int): main.set_graphics(main.frame_cap, value))
-	report_body.add_child(_label(tr("ui.graphics_hint"), "Muted"))
+	gfx.add_child(_label(tr("ui.graphics_hint"), "Muted"))
 	var help := _menu_target(_button(tr("guide.help"), "Ghost", Vector2(0, 52)), "guide_settings")
 	help.pressed.connect(show_guide)
-	report_body.add_child(help)
-	report_panel.custom_minimum_size = Vector2(minf(680.0, root.size.x - 16.0), 0.0)
+	gfx.add_child(help)
+	var sound := VBoxContainer.new()
+	sound.add_theme_constant_override("separation", 8)
+	sound.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.add_child(sound)
+	_sound_settings(sound)
+	var w := minf(1080.0 if wide else 680.0, root.size.x - 16.0)
+	report_panel.custom_minimum_size = Vector2(w, 0.0 if wide else root.size.y - 16.0)
 	_show_report_overlay()
 
-func _graphics_choices(label: String, target: String, values: Array, captions: Array, active: int, select: Callable) -> void:
-	report_body.add_child(_label(tr(label), "Heading"))
+## Mute switch and one slider per bus. Sfx persists them (like the graphics choices).
+func _sound_settings(box: VBoxContainer) -> void:
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	box.add_child(head)
+	head.add_child(_label(tr("ui.sound"), "Heading"))
+	var holder := []
+	var on_toggle := func(on: bool) -> void:
+		Sfx.set_muted(not on)
+		var b: Button = holder[0]
+		b.text = ("√  " + tr("ui.sound_on")) if on else ("×  " + tr("ui.sound_off"))
+		if on:
+			b.remove_theme_color_override("font_color")
+			Sfx.play("toggle")
+		else:
+			b.add_theme_color_override("font_color", UiTheme.BAD)
+	var mute := _toggle_button(not Sfx.muted, tr("ui.sound_on"), tr("ui.sound_off"), on_toggle, 190.0)
+	holder.append(mute)
+	head.add_child(_menu_target(mute, "sound_mute"))
+	for bus in Sfx.BUSES:
+		if bus == "Music" and not Sfx.has_music():
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		box.add_child(row)
+		var name := _label(tr("ui.vol_" + String(bus).to_lower()), "Muted")
+		name.autowrap_mode = TextServer.AUTOWRAP_OFF
+		name.size_flags_horizontal = 0
+		name.custom_minimum_size.x = 150
+		row.add_child(name)
+		var slider := HSlider.new()
+		slider.min_value = 0.0
+		slider.max_value = 1.0
+		slider.step = 0.05
+		slider.value = float(Sfx.volume[bus])
+		slider.custom_minimum_size = Vector2(160, 48)
+		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		slider.focus_mode = Control.FOCUS_NONE
+		slider.accessibility_name = name.text
+		row.add_child(slider)
+		var pct := _label(Loc.ltr("%d%%" % roundi(slider.value * 100.0)), "Small", HORIZONTAL_ALIGNMENT_RIGHT)
+		pct.autowrap_mode = TextServer.AUTOWRAP_OFF
+		pct.size_flags_horizontal = 0
+		pct.custom_minimum_size.x = 56
+		pct.add_theme_font_override("font", UiTheme.bold())
+		row.add_child(pct)
+		slider.value_changed.connect(func(v: float):
+			Sfx.set_volume(bus, v)
+			pct.text = Loc.ltr("%d%%" % roundi(v * 100.0)))
+		if bus == "SFX":
+			slider.drag_ended.connect(func(_changed: bool): Sfx.play("tick"))
+
+func _graphics_choices(box: VBoxContainer, label: String, target: String, values: Array, captions: Array, active: int, select: Callable) -> void:
+	box.add_child(_label(tr(label), "Heading"))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	report_body.add_child(row)
+	box.add_child(row)
 	var group := ButtonGroup.new()
 	for i in range(values.size()):
 		var value: int = values[i]
@@ -1155,6 +1512,7 @@ func open_panel(id: String) -> void:
 	if current_panel != id:
 		selected_dish = ""
 		_prep_detail = ""
+	_hide_build_return()
 	Sfx.play("open")
 	current_panel = id
 	for k in tabs:
@@ -1227,6 +1585,9 @@ func _rebuild_panel(animate: bool = false) -> void:
 		"build": _fill_build()
 		"promote": _fill_promote()
 		"goals": _fill_goals()
+	# The card roll is the landing view of five tabs: it gets its own short entrance.
+	if animate and panel_roll.visible:
+		panel_roll.play_entrance()
 	await get_tree().process_frame
 	if revision != _panel_revision:
 		return
@@ -1274,8 +1635,8 @@ func _supply_outlook() -> void:
 	for id in Data.MENU_ITEMS:
 		if Game.is_on_sale(id):
 			can.append("%d %s" % [Game.portions_possible(id), tr(Data.MENU_ITEMS[id]["name"])])
-	var expect := Game.expected_customers()
-	var summary := _label(tr("ui.s_can_make") % (", ".join(can) if not can.is_empty() else tr("ui.r_nothing")), "Small")
+	var expect := Game.expected_portions()
+	var summary := _label(tr("ui.s_can_make") % (_join(can) if not can.is_empty() else tr("ui.r_nothing")), "Small")
 	summary.add_theme_font_override("font", UiTheme.bold())
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel_body.add_child(summary)
@@ -1656,7 +2017,7 @@ func _build_stage_detail() -> void:
 		if why != "":
 			_card_action(v, _locked_button(why, 260))
 		else:
-			var buy := _buy_button(tr("ui.b_build") % [tr(nxt["name"]), Loc.money(float(nxt["cost"]))], float(nxt["cost"]), Game.buy_stage, 260)
+			var buy := _buy_button(tr("ui.b_build") % [tr(nxt["name"]), Loc.money(float(nxt["cost"]))], float(nxt["cost"]), Game.buy_stage, 260, "Primary", "stage")
 			_card_action(v, _menu_target(buy, "buy_stage"))
 	# where today's customers would get stuck
 	var bn: String = est["bottleneck"]
@@ -1665,7 +2026,7 @@ func _build_stage_detail() -> void:
 	elif bn != "":
 		_hint(tr("ui.b_bn") % _station_name(bn))
 	else:
-		_hint(tr("ui.b_bn_none") % int(round(float(est["served"]))))
+		_hint(tr("ui.b_bn_none") % int(round(float(est["portions"]))))
 
 func _station_card(id: String, est: Dictionary) -> void:
 	var def: Dictionary = Data.STATIONS[id]
@@ -1700,7 +2061,7 @@ func _station_card(id: String, est: Dictionary) -> void:
 		return
 	# what one more level would do to today's numbers
 	var next := Economy.throughput_estimate(Game.what_if({"stations": {id: lvl + 1}}))
-	var gain := float(next["served"]) - float(est["served"])
+	var gain := float(next["portions"]) - float(est["portions"])
 	var pgain := float(next["profit"]) - float(est["profit"])
 	if gain >= 1.0 or pgain >= 5.0:
 		var g := _label(tr("ui.b_gain") % [int(round(gain)), Loc.money(pgain)], "Small")
@@ -1708,7 +2069,9 @@ func _station_card(id: String, est: Dictionary) -> void:
 		v.add_child(g)
 	var cost := Game.station_cost(id)
 	var text := (tr("ui.b_unlock") % Loc.money(cost)) if lvl == 0 and int(def.get("owned_from", 0)) > 0 else (tr("ui.b_buy_level") % [lvl + 1, Loc.money(cost)])
-	_card_action(v, _menu_target(_buy_button(text, cost, Game.buy_station_level.bind(id), 230), "buy_station"))
+	# Crossing a visual tier (levels 1/4/7/10) changes the stand: close the panel and show it.
+	var reveal := "tier" if Data.station_tier(lvl + 1) > Data.station_tier(lvl) else ""
+	_card_action(v, _menu_target(_buy_button(text, cost, Game.buy_station_level.bind(id), 230, "Primary", reveal), "buy_station"))
 
 func _fill_goals() -> void:
 	var g := Game.current_goal()
@@ -1734,9 +2097,8 @@ func _fill_goals() -> void:
 		v.add_child(_label(rw, "Small"))
 		if Game.goal_ready():
 			var b := _menu_target(_button(tr("ui.g_claim"), "Primary", Vector2(230, 52)), "claim_goal")
-			b.pressed.connect(func():
-				if Game.claim_goal():
-					Sfx.play("confirm"))
+			# The goal_claimed signal plays the stinger and opens the mentor's line.
+			b.pressed.connect(func(): Game.claim_goal())
 			_card_action(v, b)
 		else:
 			_card_action(v, _locked_button(tr("ui.g_progress") % int(round(prog * 100.0)), 230))
@@ -1764,6 +2126,7 @@ func _fill_goals() -> void:
 	_row(grid, tr("ui.x_places"), str(st["locations_visited"].size()))
 
 func _on_goal_claimed(g: Dictionary) -> void:
+	Sfx.stinger("goal_claimed")
 	show_dialog(tr(Data.MENTOR), [tr(String(g.get("say", "")))], tr("ui.g_ok"))
 
 func _fill_promote() -> void:
@@ -1858,45 +2221,130 @@ func _locked_button(text: String, width: float = 170.0) -> Button:
 	return b
 
 ## A buy button: disabled when unaffordable; `action` returns true when the purchase went through.
-func _buy_button(text: String, cost: float, action: Callable, width: float = 170.0, variation: String = "Primary") -> Button:
+## `reveal` ("stage" / "tier") closes the panel afterwards and shows the result on the street.
+func _buy_button(text: String, cost: float, action: Callable, width: float = 170.0, variation: String = "Primary", reveal: String = "") -> Button:
 	var b := _button(text, variation, Vector2(width, 52))
 	b.disabled = cost > Game.money
-	b.pressed.connect(func(): _confirm_purchase(b, action))
+	b.pressed.connect(func(): _confirm_purchase(b, action, reveal))
 	return b
 
+## "√ Purchase confirmed · −AED 120" drops out under the money figure, clear of the cards.
 func _build_purchase_badge() -> void:
 	_purchase_badge = PanelContainer.new()
-	_purchase_badge.add_theme_stylebox_override("panel", UiTheme.flat(UiTheme.PALM_DARK, 8, UiTheme.GOLD_LIGHT, 2))
+	var style := UiTheme.flat(UiTheme.PALM_DARK, 8, UiTheme.GOLD_LIGHT, 1)
+	style.content_margin_top = 2
+	style.content_margin_bottom = 3
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	_purchase_badge.add_theme_stylebox_override("panel", style)
 	_purchase_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_purchase_badge.z_index = 21
 	_purchase_badge.hide()
 	root.add_child(_purchase_badge)
-	_purchase_badge.add_child(_label(tr("ui.purchase_confirmed"), "Light", HORIZONTAL_ALIGNMENT_CENTER))
+	var l := _label(tr("ui.purchase_confirmed"), "Light", HORIZONTAL_ALIGNMENT_CENTER)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.add_theme_font_size_override("font_size", 15)
+	_purchase_badge.add_child(l)
 
-func _confirm_purchase(button: Button, action: Callable) -> void:
-	# The transaction rebuilds the shop cards synchronously. Keep the stamp on
-	# the HUD so it survives the old button and lands over the updated card.
-	var point := root.get_global_transform_with_canvas().affine_inverse() * button.get_global_rect().get_center()
-	if not action.call():
+## Main asks before redrawing the stand: a stage / tier purchase is shown after the panel closes.
+func holds_world_visual() -> bool:
+	return _reveal_hold
+
+## The day is about to open: show whatever was just bought now. A reveal still waiting
+## for its panel to close must never rebuild the stand once customers are on the street.
+func flush_reveal() -> void:
+	_reveal_token += 1
+	if not _reveal_hold:
 		return
-	Sfx.play("buy")
+	_reveal_hold = false
+	_hide_build_return()
+	if main and main.world.cart:
+		main.world.apply_visual()
+
+func _confirm_purchase(button: Button, action: Callable, reveal: String = "") -> void:
+	var before := Game.money
+	_reveal_hold = not reveal.is_empty() and main != null and main.phase == main.Phase.PREP and main.world.cart != null
+	if not action.call():
+		_reveal_hold = false
+		return
+	if _reveal_hold:
+		_reveal_purchase(reveal)
+	else:
+		Sfx.play("buy")
+	_stamp_purchase(before - Game.money)
+
+func _stamp_purchase(spent: float) -> void:
+	# A purchase that announced itself ("Grill is now level 4.") carries its price in that
+	# one toast; silent ones (supply packs) get the stamp under the money figure.
+	if _toast_frame == Engine.get_process_frames() and toast.visible and spent > 0.004:
+		toast_label.text = toast_label.text.trim_suffix(".") + "  ·  " + _signed_money(-spent)
+		toast.reset_size()
+		toast.position.x = (root.size.x - toast.size.x) / 2.0
+		return
 	if _purchase_tween:
 		_purchase_tween.kill()
+	var l: Label = _purchase_badge.get_child(0)
+	l.text = "√  " + tr("ui.purchase_confirmed")
+	if spent > 0.004:
+		l.text += "  ·  " + _signed_money(-spent)
 	_purchase_badge.show()
 	_purchase_badge.reset_size()
 	var badge_size := _purchase_badge.size
-	_purchase_badge.position = Vector2(clampf(point.x - badge_size.x * 0.5, 8.0, maxf(8.0, root.size.x - badge_size.x - 8.0)),
-		clampf(point.y - badge_size.y, 90.0, root.size.y - BOTTOM_BAR_HEIGHT - badge_size.y))
-	_purchase_badge.pivot_offset = badge_size * 0.5
-	_purchase_badge.scale = Vector2.ONE * 0.78
+	var to_root := root.get_global_transform_with_canvas().affine_inverse()
+	var money_rect := to_root * money_label.get_global_rect()
+	var x := clampf(money_rect.end.x - badge_size.x if Loc.is_rtl() else money_rect.position.x, 8.0, maxf(8.0, root.size.x - badge_size.x - 8.0))
+	# Flush with the bar's lower edge: clear of the bar's chips above and of an open
+	# panel's title below.
+	var y := top_bar.get_rect().end.y
+	# Never touch the toast at the top centre (a long one on a narrow phone).
+	if toast.visible:
+		var toast_rect := Rect2(Vector2(toast.position.x, TOAST_Y), toast.size).grow(6.0)
+		if toast_rect.intersects(Rect2(Vector2(x, y), badge_size)):
+			y = toast_rect.end.y
+	_purchase_badge.position = Vector2(x, y + 6.0)
+	_purchase_badge.pivot_offset = Vector2(badge_size.x * 0.5, 0.0)
+	_purchase_badge.scale = Vector2.ONE * 0.85
 	_purchase_badge.modulate.a = 0.0
 	_purchase_tween = _purchase_badge.create_tween()
 	_purchase_tween.tween_property(_purchase_badge, "scale", Vector2.ONE, 0.27).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_purchase_tween.parallel().tween_property(_purchase_badge, "position:y", y, 0.22).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_purchase_tween.parallel().tween_property(_purchase_badge, "modulate:a", 1.0, 0.12)
-	_purchase_tween.tween_interval(0.38)
-	_purchase_tween.tween_property(_purchase_badge, "modulate:a", 0.0, 0.24)
-	_purchase_tween.parallel().tween_property(_purchase_badge, "position:y", _purchase_badge.position.y - 23.0, 0.24)
+	_purchase_tween.tween_interval(0.9)
+	_purchase_tween.tween_property(_purchase_badge, "modulate:a", 0.0, 0.3)
+	_purchase_tween.parallel().tween_property(_purchase_badge, "position:y", y - 3.0, 0.3)
 	_purchase_tween.tween_callback(_purchase_badge.hide)
+
+## Close the panel first, then let the new piece rise and the camera frame it, with a stinger.
+## A small "Back to Build" button stays for a few seconds (the street is the payoff, not the list).
+func _reveal_purchase(kind: String) -> void:
+	_reveal_token += 1
+	var token := _reveal_token
+	close_panel()
+	await get_tree().create_timer(0.22).timeout
+	if token != _reveal_token:
+		return # a newer reveal, or the opening day, owns the hold and applied everything
+	_reveal_hold = false
+	if not main or not main.world.cart:
+		return
+	if main.phase != main.Phase.PREP:
+		if main.phase != main.Phase.DAY:
+			main.world.apply_visual()
+		return
+	var world: World = main.world
+	var cue := "stage_up" if kind == "stage" else "tier_up"
+	if world.visual_needs_reload() and not is_transitioning():
+		# A wider plot rebuilds the street behind the curtain, then the camera settles on it.
+		fade_through(func():
+			world.apply_visual()
+			world.push_in()
+			Sfx.stinger(cue))
+	else:
+		world.apply_visual()
+		if kind != "stage":
+			world.reveal_push()
+		Sfx.stinger(cue)
+	if current_panel.is_empty() and main.phase == main.Phase.PREP:
+		_show_build_return()
 
 ## label  [-]  value  [+]   with on_delta.call(-1 / +1). The buttons grey out at the ends.
 func _stepper(parent: Container, label: String, value: String, value_w: float, variation: String, on_delta: Callable,
@@ -1994,22 +2442,35 @@ func _stagger_cards() -> void:
 		i += 1
 
 ## The money figure jumps and flashes green (gain) or coral (loss).
-func _money_pop(gain: bool) -> void:
+## "gain" bounces and flashes green, "spend" dips in a neutral ivory (buying is not losing),
+## "loss" flashes coral (a losing day). `bounce` false only retargets the running count.
+func _money_pop(kind: String = "gain", bounce: bool = true) -> void:
 	if _money_tween:
 		_money_tween.kill()
-	money_label.pivot_offset = Vector2(money_label.size.x / 2.0, money_label.size.y / 2.0)
-	money_label.scale = Vector2.ONE
-	money_label.add_theme_color_override("font_color", UiTheme.GOOD if gain else UiTheme.BAD)
+	var target := Game.money
 	_money_tween = create_tween()
 	# the figure counts towards the new value instead of jumping
 	_money_tween.tween_method(func(v: float):
 		_shown_money = v
-		money_label.text = Loc.money(v), _shown_money, Game.money, 0.4)
-	_money_tween.parallel()
-	_money_tween.tween_property(money_label, "scale", Vector2(1.18, 1.18), 0.08).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_money_tween.tween_property(money_label, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_money_tween.parallel().tween_method(func(k: float):
-		money_label.add_theme_color_override("font_color", (UiTheme.GOOD if gain else UiTheme.BAD).lerp(UiTheme.GOLD_LIGHT, k)), 0.0, 1.0, 0.5)
+		money_label.text = Loc.money(roundf(v)), _shown_money, target, 0.4)
+	_money_tween.tween_callback(func():
+		_shown_money = target
+		money_label.text = Loc.money(target))
+	if not bounce:
+		return
+	_money_bounce_at = Time.get_ticks_msec() / 1000.0
+	if _money_flash_tween:
+		_money_flash_tween.kill()
+	var flash: Color = UiTheme.GAIN_LIGHT if kind == "gain" else (UiTheme.LOSS_LIGHT if kind == "loss" else UiTheme.IVORY)
+	var peak := Vector2.ONE * (0.93 if kind == "spend" else 1.16)
+	money_label.pivot_offset = money_label.size / 2.0
+	money_label.scale = Vector2.ONE
+	money_label.add_theme_color_override("font_color", flash)
+	_money_flash_tween = create_tween()
+	_money_flash_tween.tween_property(money_label, "scale", peak, 0.08).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_money_flash_tween.tween_property(money_label, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_money_flash_tween.parallel().tween_method(func(k: float):
+		money_label.add_theme_color_override("font_color", flash.lerp(UiTheme.GOLD_LIGHT, k)), 0.0, 1.0, 0.5)
 
 ## Faint woven-paper texture behind panels (one cached texture / draw call).
 func _lattice_bg(p: Control) -> void:

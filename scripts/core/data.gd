@@ -7,6 +7,9 @@ const BAILOUT_BELOW := 200.0
 const BAILOUT_AMOUNT := 600.0
 const BAILOUT_MAX := 6
 const START_POPULARITY := 0.22
+## Buyers in a day whose word of mouth moves popularity by the full amount; a smaller day
+## counts in proportion (never below 30%). A cart serves 8-15, a stall 20-30.
+const WORD_OF_MOUTH_BUYERS := 15.0
 const DAY_START_HOUR := 10
 const DAY_END_HOUR := 22
 const REAL_SECONDS_PER_GAME_HOUR := 10.0
@@ -126,27 +129,94 @@ const PLOT_STAGES := [
 	{"id": "cart", "name": "plot.cart", "desc": "plot.cart.desc", "cost": 0.0, "scope": "rig", "max_staff": 0,
 		"appeal": 1.0, "price_cap_bonus": 0.0, "queue_bonus": 0, "dine_in": 0.0, "level_cap_bonus": 0, "icon": "icons/stand-big",
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music"]},
-	{"id": "stall", "name": "plot.stall", "desc": "plot.stall.desc", "cost": 2000.0, "scope": "rig", "max_staff": 1,
+	{"id": "stall", "name": "plot.stall", "desc": "plot.stall.desc", "cost": 1400.0, "scope": "rig", "max_staff": 1,
 		"appeal": 1.05, "price_cap_bonus": 0.10, "queue_bonus": 1, "dine_in": 0.0, "level_cap_bonus": 0, "icon": "icons/shade-sail",
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights"]},
-	{"id": "truck", "name": "plot.truck", "desc": "plot.truck.desc", "cost": 6000.0, "scope": "rig", "max_staff": 2,
+	{"id": "truck", "name": "plot.truck", "desc": "plot.truck.desc", "cost": 5000.0, "scope": "rig", "max_staff": 2,
 		"appeal": 1.10, "price_cap_bonus": 0.20, "queue_bonus": 2, "dine_in": 0.0, "level_cap_bonus": 0, "icon": "icons/truck-big", "model": "cars/truck",
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets"]},
-	{"id": "kiosk", "name": "plot.kiosk", "desc": "plot.kiosk.desc", "cost": 25000.0, "scope": "plot", "max_staff": 4,
-		"appeal": 1.20, "price_cap_bonus": 0.35, "queue_bonus": 3, "dine_in": 0.25, "level_cap_bonus": 0, "icon": "icons/kiosk",
+	{"id": "kiosk", "name": "plot.kiosk", "desc": "plot.kiosk.desc", "cost": 7000.0, "scope": "plot", "max_staff": 4,
+		"appeal": 1.20, "price_cap_bonus": 0.35, "queue_bonus": 3, "dine_in": 0.35, "level_cap_bonus": 0, "icon": "icons/kiosk",
 		"requires_rig": 2, "requires_local_rep": 0.4,
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice"]},
-	{"id": "restaurant", "name": "plot.restaurant", "desc": "plot.restaurant.desc", "cost": 90000.0, "scope": "plot", "max_staff": 7,
-		"appeal": 1.35, "price_cap_bonus": 0.60, "queue_bonus": 4, "dine_in": 0.45, "level_cap_bonus": 0, "icon": "icons/restaurant",
+	{"id": "restaurant", "name": "plot.restaurant", "desc": "plot.restaurant.desc", "cost": 18000.0, "scope": "plot", "max_staff": 7,
+		"appeal": 1.35, "price_cap_bonus": 0.60, "queue_bonus": 4, "dine_in": 0.70, "level_cap_bonus": 0, "icon": "icons/restaurant",
 		"requires_rig": 2, "requires_local_rep": 0.55, "branchable": true,
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice",
 			"majlis", "washroom", "staffroom", "office"]},
-	{"id": "flagship", "name": "plot.flagship", "desc": "plot.flagship.desc", "cost": 300000.0, "scope": "plot", "max_staff": 10,
-		"appeal": 1.50, "price_cap_bonus": 0.90, "queue_bonus": 5, "dine_in": 0.60, "level_cap_bonus": 5, "icon": "icons/flagship",
+	{"id": "flagship", "name": "plot.flagship", "desc": "plot.flagship.desc", "cost": 60000.0, "scope": "plot", "max_staff": 10,
+		"appeal": 1.50, "price_cap_bonus": 0.90, "queue_bonus": 5, "dine_in": 0.80, "level_cap_bonus": 5, "icon": "icons/flagship",
 		"requires_rig": 2, "requires_local_rep": 0.7, "branchable": true, "unlocks_city": "sharjah",
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice",
 			"majlis", "washroom", "staffroom", "office"]},
 ]
+
+## The service clock of the day a player watches, in sim-seconds (one game hour is
+## REAL_SECONDS_PER_GAME_HOUR of them, so a 10:00-22:00 day lasts 120). DaySim plays these
+## beats; Throughput, FastSim and Economy.throughput_estimate read the same numbers.
+##   order_s / handoff_s: a one-portion order at a level-0 counter; each further portion in
+##     the party adds *_per_portion_s. The counter's "per_level" speeds both up.
+##   cook_s: seconds one portion takes at a level-0 station; "per_level" in STATIONS adds speed.
+##   patience_s: standing in line (or at the pickup spot) before it is a full wait, scaled by
+##     the location's "patience". dine_s: eating once the meal is on the table.
+##   dine_max_party: bigger parties (office and family orders) always take away.
+##   walk: what the visible walking costs, measured from DaySim per stage group (cart/stall,
+##     truck, fixed plots) and street kind (promenade / road), for FastSim and the estimate:
+##     in = spawn to decision, line = decision to the counter, step = moving up one place,
+##     pickup = counter to the pickup spot, out = handoff beat end to gone, turn = turning
+##     back after a refusal, pass = walking on past the stand, seat = counter to chair,
+##     seat_out = chair to gone, deliver = server dispatch to meal on the table (with its
+##     beats), back = server home after a delivery, clean = a whole table-clearing job.
+const SERVICE := {
+	"order_s": 0.48, "order_per_portion_s": 0.14,
+	"handoff_s": 0.72, "handoff_per_portion_s": 0.10,
+	"cook_s": {"grill": 6.0, "doner": 4.5, "fryer": 2.0, "karak": 1.4, "sweets": 2.0, "juice": 1.6},
+	## a bigger kitchen puts more hands on every station: cook speed x this, by plot stage
+	"kitchen_crew": [1.0, 1.0, 1.25, 1.6, 2.1, 2.6],
+	"patience_s": 14.0,
+	"dine_s": 5.0,
+	"dine_max_party": 6,
+	## measured from undrawn played days with mid station levels at creek, jbr and fahidi;
+	## re-measure when queue, pickup or terrace geometry moves (tests/sim_parity.gd shows drift)
+	"walk": {
+		"cart": {"promenade": {"line": 1.85, "step": 0.90, "pickup": 0.75, "out": 6.70},
+			"road": {"line": 1.38, "step": 0.65, "pickup": 0.68, "out": 7.10}},
+		"truck": {"promenade": {"line": 1.66, "step": 0.77, "pickup": 0.33, "out": 6.88},
+			"road": {"line": 1.27, "step": 0.45, "pickup": 0.34, "out": 7.10}},
+		"fixed": {"promenade": {"line": 1.85, "step": 0.80, "pickup": 0.52, "out": 8.20, "seat_out": 6.00},
+			"road": {"line": 1.55, "step": 0.62, "pickup": 0.45, "out": 7.00, "seat_out": 8.00}},
+		## extra seconds on the deeper restaurant and flagship terraces: [kiosk, restaurant, flagship]
+		"terrace": {"seat": [0.0, 0.35, 0.75], "deliver": [0.0, 0.25, 0.70], "back": [0.0, 0.45, 0.95], "clean": [0.0, 0.80, 1.80]},
+	},
+}
+
+## Party size of one visible buyer (one queue entry, one chair when eating in): [portions,
+## weight] by plot stage. Mostly singles and pairs at the cart; families and office orders
+## from the kiosk up, catering trays at the restaurant and flagship (the 12-guest street cap
+## means bigger takings must come from bigger orders). A location's "groups" multiplies the
+## weight of parties of 3 or more.
+const PARTY_SIZES := [
+	[[1, 0.88], [2, 0.12]],
+	[[1, 0.62], [2, 0.28], [3, 0.10]],
+	[[1, 0.42], [2, 0.33], [3, 0.15], [4, 0.10]],
+	[[1, 0.20], [2, 0.25], [3, 0.15], [4, 0.15], [6, 0.12], [8, 0.08], [12, 0.05]],
+	[[1, 0.08], [2, 0.12], [3, 0.10], [4, 0.14], [6, 0.14], [8, 0.12], [12, 0.13], [16, 0.09], [24, 0.08]],
+	[[1, 0.05], [2, 0.08], [3, 0.07], [4, 0.10], [6, 0.10], [8, 0.10], [12, 0.12], [16, 0.12], [24, 0.12], [36, 0.08], [48, 0.06]],
+]
+
+## Rigged people on the street at once (iPhone frame time). Buyers are the only ones who can
+## stop and buy; ambient walkers are scenery on their own budget so they never take a
+## buyer's place. Counter tiers (levels 4/7/10) add "per_counter_tier" buyers (rounded down).
+const GUEST_BUDGET := {
+	"buyers": [4, 6, 7, 8, 9, 10],
+	## counter tiers never take a stage past this many buyers
+	"buyers_max": [5, 8, 9, 10, 11, 11],
+	"per_counter_tier": 0.5,
+	"ambient": [2, 2, 2, 1, 1, 1],
+	"total_max": 12,
+	## a would-be rival or price refusal only gets a body while this many buyer places are free
+	"spare_for_reactions": 3,
+}
 
 const STATION_GROUPS := [["front", "build.group.front"], ["kitchen", "build.group.kitchen"], ["dining", "build.group.dining"], ["extras", "build.group.extras"]]
 ## Visual tiers: a station looks different from level 1, 4, 7 and 10 (station_tier()).
@@ -158,25 +228,25 @@ const STATION_TIERS := [1, 4, 7, 10]
 const STATIONS := {
 	"counter": {"name": "station.counter", "desc": "station.counter.desc", "effect": "station.counter.effect", "group": "front",
 		"base": 250.0, "growth": 1.22, "max": 20, "min_stage": 0, "scope": "any", "icon": "icons/stand-big",
-		"orders_per_min": 0.5, "per_level": 0.35, "queue_per_level": 1, "roles": ["cashier"]},
+		"per_level": 0.10, "queue_per_level": 1, "roles": ["cashier"]},
 	"grill": {"name": "station.grill", "desc": "station.grill.desc", "effect": "station.grill.effect", "group": "kitchen",
 		"base": 300.0, "growth": 1.22, "max": 25, "min_stage": 0, "scope": "any", "icon": "icons/grill-double",
-		"cooks_per_min": 0.6, "per_level": 0.30, "kinds": ["grill"], "roles": ["cook"]},
+		"per_level": 0.30, "kinds": ["grill"], "roles": ["cook"]},
 	"doner": {"name": "station.doner", "desc": "station.doner.desc", "effect": "station.doner.effect", "group": "kitchen",
 		"base": 900.0, "growth": 1.22, "max": 20, "min_stage": 1, "scope": "any", "icon": "food/doner-spit", "owned_from": 1,
-		"cooks_per_min": 0.8, "per_level": 0.30, "kinds": ["doner"], "roles": ["cook"], "unlocks_items": ["shawarma"]},
+		"per_level": 0.30, "kinds": ["doner"], "roles": ["cook"], "unlocks_items": ["shawarma"]},
 	"fryer": {"name": "station.fryer", "desc": "station.fryer.desc", "effect": "station.fryer.effect", "group": "kitchen",
 		"base": 400.0, "growth": 1.22, "max": 15, "min_stage": 1, "scope": "any", "icon": "icons/fryer", "owned_from": 1,
-		"cooks_per_min": 1.0, "per_level": 0.30, "kinds": ["fry"], "roles": ["cook"], "unlocks_items": ["fries"]},
+		"per_level": 0.30, "kinds": ["fry"], "roles": ["cook"], "unlocks_items": ["fries"]},
 	"karak": {"name": "station.karak", "desc": "station.karak.desc", "effect": "station.karak.effect", "group": "kitchen",
 		"base": 200.0, "growth": 1.22, "max": 15, "min_stage": 0, "scope": "any", "icon": "icons/karak-station",
-		"cooks_per_min": 1.5, "per_level": 0.30, "kinds": ["drink"], "roles": ["barista"]},
+		"per_level": 0.30, "kinds": ["drink"], "roles": ["barista"]},
 	"sweets": {"name": "station.sweets", "desc": "station.sweets.desc", "effect": "station.sweets.effect", "group": "kitchen",
 		"base": 2500.0, "growth": 1.25, "max": 10, "min_stage": 2, "scope": "any", "icon": "food/sweets-counter", "owned_from": 1,
-		"cooks_per_min": 1.0, "per_level": 0.30, "kinds": ["sweet"], "roles": ["cook"], "unlocks_items": ["saffron_cake", "sago_halwa", "omani_halwa"]},
+		"per_level": 0.30, "kinds": ["sweet"], "roles": ["cook"], "unlocks_items": ["saffron_cake", "sago_halwa", "omani_halwa"]},
 	"juice": {"name": "station.juice", "desc": "station.juice.desc", "effect": "station.juice.effect", "group": "kitchen",
 		"base": 1800.0, "growth": 1.20, "max": 10, "min_stage": 3, "scope": "plot", "icon": "icons/juice-bar", "owned_from": 1, "later": true,
-		"cooks_per_min": 1.2, "per_level": 0.30, "kinds": ["juice"], "roles": ["barista"]},
+		"per_level": 0.30, "kinds": ["juice"], "roles": ["barista"]},
 	"coldbox": {"name": "station.coldbox", "desc": "station.coldbox.desc", "effect": "station.coldbox.effect", "group": "kitchen",
 		"base": 800.0, "growth": 1.5, "max": 3, "min_stage": 0, "scope": "any", "icon": "icons/fridge",
 		"spoil_meat": [0.35, 0.10, 0.10, 0.0], "spoil_veg": [0.20, 0.20, 0.0, 0.0]},
@@ -187,14 +257,14 @@ const STATIONS := {
 		"base": 600.0, "growth": 1.25, "max": 10, "min_stage": 1, "scope": "any", "icon": "icons/string-lights",
 		"evening_traffic_per_level": 0.08, "evening_from": 18.0},
 	"music": {"name": "station.music", "desc": "station.music.desc", "effect": "station.music.effect", "group": "extras",
-		"base": 650.0, "growth": 1.3, "max": 5, "min_stage": 0, "scope": "any", "icon": "icons/speaker",
+		"base": 650.0, "growth": 1.3, "max": 5, "min_stage": 0, "scope": "any", "icon": "icons/dallah",
 		"satisfaction_per_level": 0.02, "attract_per_level": 0.03},
 	"shade": {"name": "station.shade", "desc": "station.shade.desc", "effect": "station.shade.effect", "group": "extras",
 		"base": 550.0, "growth": 1.25, "max": 8, "min_stage": 0, "scope": "any", "icon": "icons/shade-sail",
-		"hot_cut_per_level": 0.10, "storm_cut": 0.5},
+		"hot_traffic_per_level": 0.04, "storm_cut": 0.5},
 	"seating": {"name": "station.seating", "desc": "station.seating.desc", "effect": "station.seating.effect", "group": "dining",
-		"base": 1200.0, "growth": 1.22, "max": 25, "min_stage": 3, "scope": "plot", "icon": "icons/table-set", "owned_from": 1,
-		"seats_per_level": 2, "dwell_min": 45.0, "clean_min": 5.0, "roles": ["server", "cleaner"]},
+		"base": 800.0, "growth": 1.22, "max": 25, "min_stage": 3, "scope": "plot", "icon": "icons/table-set", "owned_from": 1,
+		"seats_per_level": 2, "roles": ["server", "cleaner"]},
 	"majlis": {"name": "station.majlis", "desc": "station.majlis.desc", "effect": "station.majlis.effect", "group": "dining",
 		"base": 6000.0, "growth": 1.25, "max": 10, "min_stage": 4, "scope": "plot", "icon": "icons/majlis", "owned_from": 1,
 		"seats_per_level": 4, "satisfaction_per_level": 0.04, "spend_per_level": 0.03},
@@ -242,22 +312,23 @@ const BAD_WEATHER := "sandstorm"
 
 ## "min_stage" = the plot stage tier needed to set up there; "competition" = share of customers
 ## rival stalls take unless you promote; "promo_power" = how much louder promotions are in that
-## crowd; "car_access" = how well a valet/parking station works here (customers by car).
+## crowd; "car_access" = how well a valet/parking station works here (customers by car);
+## "groups" = how often a buyer orders for a family or an office (see PARTY_SIZES).
 const LOCATIONS := {
-	"fahidi": {"name": "loc.fahidi", "desc": "loc.fahidi.desc", "rent": 0.0, "traffic": 0.55, "price_tol": 1.0, "quality_care": 0.8,
+	"fahidi": {"name": "loc.fahidi", "desc": "loc.fahidi.desc", "groups": 0.8, "rent": 0.0, "traffic": 0.2, "price_tol": 0.95, "quality_care": 0.8,
 		"patience": 1.0, "exposure": 1.0, "peaks": [13.0, 19.0], "layout": "fahidi", "unlock_pop": 0.0, "min_stage": 0, "car_access": 0.3},
-	"creek": {"name": "loc.creek", "desc": "loc.creek.desc", "rent": 125.0, "traffic": 0.85, "price_tol": 0.85, "quality_care": 0.9,
+	"creek": {"name": "loc.creek", "desc": "loc.creek.desc", "groups": 1.15, "rent": 70.0, "traffic": 0.55, "price_tol": 1.0, "quality_care": 0.9,
 		"patience": 1.2, "exposure": 1.6, "hot_bonus": 0.2, "peaks": [13.0, 17.0], "layout": "creek", "unlock_pop": 0.0, "min_stage": 0, "car_access": 0.6},
-	"metro": {"name": "loc.metro", "desc": "loc.metro.desc", "rent": 200.0, "traffic": 1.05, "price_tol": 0.95, "quality_care": 0.7,
+	"metro": {"name": "loc.metro", "desc": "loc.metro.desc", "groups": 1.3, "rent": 175.0, "traffic": 0.7, "price_tol": 1.1, "quality_care": 0.85,
 		"patience": 0.6, "exposure": 0.7, "peaks": [9.0, 18.0], "layout": "metro", "unlock_pop": 0.2, "min_stage": 1, "car_access": 0.4},
-	"jbr": {"name": "loc.jbr", "desc": "loc.jbr.desc", "rent": 275.0, "traffic": 0.95, "price_tol": 1.1, "quality_care": 0.9,
+	"jbr": {"name": "loc.jbr", "desc": "loc.jbr.desc", "groups": 1.3, "rent": 250.0, "traffic": 0.65, "price_tol": 1.15, "quality_care": 0.9,
 		"patience": 1.1, "exposure": 1.8, "hot_bonus": 0.8, "peaks": [14.0, 18.0], "layout": "jbr", "unlock_pop": 0.3, "min_stage": 1, "car_access": 0.8},
-	"downtown": {"name": "loc.downtown", "desc": "loc.downtown.desc", "rent": 450.0, "traffic": 1.35, "price_tol": 1.3, "quality_care": 1.3,
+	"downtown": {"name": "loc.downtown", "desc": "loc.downtown.desc", "groups": 1.5, "rent": 700.0, "traffic": 0.95, "price_tol": 1.3, "quality_care": 1.3,
 		"patience": 0.9, "exposure": 0.9, "peaks": [12.5, 19.5], "layout": "downtown", "unlock_pop": 0.45, "min_stage": 2, "car_access": 1.0},
-	"mall": {"name": "loc.mall", "desc": "loc.mall.desc", "rent": 600.0, "traffic": 1.45, "price_tol": 1.25, "quality_care": 1.2,
+	"mall": {"name": "loc.mall", "desc": "loc.mall.desc", "groups": 1.5, "rent": 850.0, "traffic": 1.15, "price_tol": 1.25, "quality_care": 1.2,
 		"patience": 1.0, "exposure": 0.0, "peaks": [13.0, 20.0], "layout": "mall", "unlock_pop": 0.5, "min_stage": 2, "car_access": 1.2,
 		"competition": 0.55, "promo_power": 1.8},
-	"gv": {"name": "loc.gv", "desc": "loc.gv.desc", "rent": 500.0, "traffic": 1.6, "price_tol": 1.15, "quality_care": 1.1,
+	"gv": {"name": "loc.gv", "desc": "loc.gv.desc", "groups": 1.6, "rent": 550.0, "traffic": 1.6, "price_tol": 1.35, "quality_care": 1.1,
 		"patience": 1.0, "exposure": 0.8, "peaks": [20.0, 23.0], "layout": "gv", "unlock_pop": 0.6, "min_stage": 2, "hours": [16, 24], "car_access": 1.0,
 		"competition": 0.7, "promo_power": 2.0},
 }
@@ -275,26 +346,28 @@ const MARKETING := {
 
 ## The goal ladder: one goal at a time, claimed from the Goals tab. "req" types are evaluated
 ## by Economy.goal_progress() against Game.goal_snapshot(). "say" = the mentor's line on claim.
+## Thresholds follow the played day: a cart serves 10-25 buyers, a restaurant 25-45 buyers
+## carrying 200-420 portions ("plates"), a kiosk terrace seats 5-12 diners a day.
 const MENTOR := "mentor.saeed"
 const GOALS := [
-	{"id": "first_30", "req": {"type": "day_served", "n": 30}, "reward": {"money": 150.0}, "say": "goal.first_30.say"},
+	{"id": "first_30", "req": {"type": "day_served", "n": 8}, "reward": {"money": 150.0}, "say": "goal.first_30.say"},
 	{"id": "counter1", "req": {"type": "station_level", "station": "counter", "n": 1}, "reward": {"money": 200.0}, "say": "goal.counter1.say"},
 	{"id": "stars15", "req": {"type": "stars", "n": 1.5}, "reward": {"money": 250.0, "popularity": 0.02}, "say": "goal.stars15.say"},
-	{"id": "served200", "req": {"type": "total_served", "n": 200}, "reward": {"money": 300.0}, "say": "goal.served200.say"},
+	{"id": "served200", "req": {"type": "total_served", "n": 150}, "reward": {"money": 300.0}, "say": "goal.served200.say"},
 	{"id": "creek", "req": {"type": "location", "id": "creek"}, "reward": {"money": 300.0}, "say": "goal.creek.say"},
-	{"id": "grill3", "req": {"type": "station_level", "station": "grill", "n": 3}, "reward": {"money": 400.0}, "say": "goal.grill3.say"},
+	{"id": "grill3", "req": {"type": "station_level", "station": "grill", "n": 2}, "reward": {"money": 300.0}, "say": "goal.grill3.say"},
 	{"id": "stall", "req": {"type": "stage", "n": 1}, "reward": {"money": 600.0}, "say": "goal.stall.say"},
 	{"id": "shawarma", "req": {"type": "item_unlocked", "id": "shawarma"}, "reward": {"money": 500.0}, "say": "goal.shawarma.say"},
-	{"id": "profit400", "req": {"type": "day_profit", "n": 400.0}, "reward": {"money": 600.0}, "say": "goal.profit400.say"},
+	{"id": "profit400", "req": {"type": "day_profit", "n": 300.0}, "reward": {"money": 600.0}, "say": "goal.profit400.say"},
 	{"id": "stars25", "req": {"type": "stars", "n": 2.5}, "reward": {"money": 800.0}, "say": "goal.stars25.say"},
 	{"id": "truck", "req": {"type": "stage", "n": 2}, "reward": {"money": 1500.0}, "say": "goal.truck.say"},
 	{"id": "downtown", "req": {"type": "location_any", "ids": ["downtown", "mall", "gv"]}, "reward": {"money": 1500.0}, "say": "goal.downtown.say"},
 	{"id": "levels20", "req": {"type": "levels_owned", "n": 20}, "reward": {"money": 2000.0}, "say": "goal.levels20.say"},
-	{"id": "kiosk", "req": {"type": "stage", "n": 3}, "reward": {"money": 5000.0}, "say": "goal.kiosk.say"},
-	{"id": "diners50", "req": {"type": "day_dine_in", "n": 50}, "reward": {"money": 4000.0}, "say": "goal.diners50.say"},
-	{"id": "served300", "req": {"type": "day_served", "n": 300}, "reward": {"money": 5000.0}, "say": "goal.served300.say"},
-	{"id": "levels60", "req": {"type": "levels_owned", "n": 60}, "reward": {"money": 8000.0}, "say": "goal.levels60.say"},
-	{"id": "stars45", "req": {"type": "stars", "n": 4.5}, "reward": {"money": 10000.0}, "say": "goal.stars45.say"},
+	{"id": "kiosk", "req": {"type": "stage", "n": 3}, "reward": {"money": 4000.0}, "say": "goal.kiosk.say"},
+	{"id": "diners50", "req": {"type": "day_dine_in", "n": 8}, "reward": {"money": 3000.0}, "say": "goal.diners50.say"},
+	{"id": "served300", "req": {"type": "day_portions", "n": 300}, "reward": {"money": 6000.0}, "say": "goal.served300.say"},
+	{"id": "levels60", "req": {"type": "levels_owned", "n": 60}, "reward": {"money": 10000.0}, "say": "goal.levels60.say"},
+	{"id": "stars45", "req": {"type": "stars", "n": 4.5}, "reward": {"money": 12000.0}, "say": "goal.stars45.say"},
 ]
 
 ## Thought-bubble keys per mood; the number of lines per mood is in BUBBLE_COUNT.

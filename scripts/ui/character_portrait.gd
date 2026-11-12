@@ -87,10 +87,6 @@ func _process(delta: float) -> void:
 			_gesture_left = maxf(0.0, _gesture_left - advance)
 			if _gesture_left == 0.0:
 				ModelLib.play_loop(actor, "idle")
-		if _gesture_left == 0.0 and ModelLib.is_playing_loop(_animation, "idle") and _animation.current_animation_position >= 0.3:
-			# Keep the mentor facing the player instead of scanning the promenade.
-			_animation.seek(0.3, true)
-			_animation.pause()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_frames += 1
 

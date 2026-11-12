@@ -30,6 +30,9 @@ try {
   await tap(page, 44, 80); // Close
   await tap(page, 85, 360); // Open stand
   await waitPhase(page, 'day');
+  await page.waitForFunction(() => window.godotAudio?.sizzle === true, null, { timeout: 15000 }).catch(() => {});
+  const dayAudio = await page.evaluate(() => window.godotAudio);
+  check(dayAudio && dayAudio.music === '' && dayAudio.sizzle === true && dayAudio.ambience !== '', `ambience and grill sizzle play in the day, no music (${JSON.stringify(dayAudio)})`);
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${out}/2_day.png` });
 
@@ -71,12 +74,13 @@ try {
   await page.waitForSelector('#play', { state: 'visible', timeout: 180000 });await page.tap('#play');await waitReady(page,180000);await waitPhase(page,'title');
   await page.waitForFunction(()=>window.godotMenuTargets?.continue_game);
   const resume = await page.evaluate(()=>window.godotMenuTargets.continue_game);
-  await tap(page,resume.x*844,resume.y*390);await waitPhase(page,'prep');
+  // An opened day resumes from its checkpoint: no second planning pass with the weather known.
+  await tap(page,resume.x*844,resume.y*390);await waitPhase(page,'day');
   await page.waitForFunction(()=>!window.godotPresentation.curtain);
   const retry = await page.evaluate(()=>JSON.parse(localStorage.getItem('mashawi_save')));
   check(retry.money === opening.money && JSON.stringify(retry.inventory) === JSON.stringify(opening.inventory), 'reload restores the opening cash and inventory checkpoint');
   check(retry.day_seed === opening.day_seed && retry.weather === opening.weather, 'reload cannot reroll the weather or customer stream');
-  await tap(page,85,360);await waitPhase(page,'day');await tap(page,610,360);
+  await tap(page,610,360);
   await page.waitForFunction(()=>window.godotPresentation?.service?.purchases.length>0);
   const replayPurchase = await page.evaluate(()=>window.godotPresentation.service.purchases[0]);
   check(replayPurchase.item === firstPurchase.item && replayPurchase.dineIn === firstPurchase.dineIn, 'the replay starts with the same actual customer purchase');

@@ -85,6 +85,16 @@ func _place_meal() -> void:
 	tray.hide()
 	_return_home()
 
+## The plate reaches its place on the table; the worker lets go of it.
+func _land_meal() -> void:
+	if is_instance_valid(_meal) and _meal.is_inside_tree():
+		_meal.global_position = _meal_target
+	_meal = null
+
+## The plate the worker is still setting down (null once it rests on the table).
+func meal_in_hand() -> Node3D:
+	return _meal
+
 func _clean(table: int) -> void:
 	_table = table
 	site.tables[table]["assigned"] = true
@@ -167,11 +177,13 @@ func render_service() -> void:
 		var hands := ModelLib.hand_position(model).lerp(ModelLib.hand_position(model, "LeftHand"), 0.5) + Vector3.DOWN * 0.015
 		tray.global_position = _tray_from.lerp(hands, smoothstep(0.0, 1.0, _tray_transfer))
 		tray.global_rotation = Vector3(0.0, model.global_rotation.y, 0.0)
-	if is_instance_valid(_meal):
+	if _meal != null:
+		# The plate can leave the table (cleared, or the street rebuilt) while still in flight.
+		if not is_instance_valid(_meal) or not _meal.is_inside_tree():
+			_meal = null
+			return
 		var progress := clampf(_meal_elapsed / DISH_TRANSFER_SECONDS, 0.0, 1.0)
 		_meal.global_position = _meal_from.lerp(_meal_target, 0.5 - 0.5 * cos(PI * progress))
-		if progress == 1.0:
-			_meal = null
 
 func step(delta: float) -> void:
 	if model == null:
@@ -179,8 +191,12 @@ func step(delta: float) -> void:
 	ModelLib.step_pose(model, delta)
 	model.rotation.y = rotate_toward(model.rotation.y, _yaw, delta * 8.0)
 	_tray_transfer = move_toward(_tray_transfer, 1.0, delta / TRAY_TRANSFER_SECONDS)
-	if is_instance_valid(_meal):
+	if _meal != null:
+		# The tick owns the hand-over: an undrawn (headless) day must not keep a reference
+		# to a plate the table has since cleared away.
 		_meal_elapsed += delta
+		if _meal_elapsed >= DISH_TRANSFER_SECONDS:
+			_land_meal()
 	if state == State.WALK:
 		var target := _route[0]
 		position = position.move_toward(target, delta * 0.88)

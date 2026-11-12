@@ -170,11 +170,117 @@ func _build() -> void:
 	_neon_light.position = Vector3(0, 1.5, 0.5)
 	_neon_light.visible = false
 	add_child(_neon_light)
-	# speaker (upgrade)
+	# hospitality (upgrade; retain the legacy independently hidden _speaker group)
 	_speaker = Node3D.new()
 	_body.add_child(_speaker)
-	ModelLib.box(_speaker, Vector3(0.16, 0.26, 0.16), Vector3(0.72, 0.13, -0.1), dark)
-	ModelLib.cylinder(_speaker, 0.05, 0.02, Vector3(0.72, 0.16, -0.01), Color(0.4, 0.4, 0.42)).rotation.x = PI / 2
+	var b := MeshBatch.new()
+	var brass := gold
+	var timber := Color("503520")
+	var date_brown := Color("442719")
+	var hospitality_center := Vector3(0.72, 0, -0.10)
+	var table_top := 0.130
+	var shelf_size := Vector3(0.160, 0.014, 0.160)
+	var leg_height := table_top - shelf_size.y
+	var leg_size := Vector3(0.016, leg_height, 0.016)
+	var leg_spacing := 0.057
+	b.add_box(shelf_size, timber, Transform3D(Basis.IDENTITY, hospitality_center + Vector3.UP * (table_top - shelf_size.y * 0.5)))
+	for side_x in [-1.0, 1.0]:
+		for side_z in [-1.0, 1.0]:
+			var leg_center := Vector3(side_x * leg_spacing, leg_height * 0.5, side_z * leg_spacing)
+			b.add_box(leg_size, timber, Transform3D(Basis.IDENTITY, hospitality_center + leg_center))
+	var tray_center := hospitality_center + Vector3(-0.032, table_top + 0.003, 0.035)
+	var tray_radius := 0.032
+	var tray_height := 0.006
+	var date_radius := 0.009
+	var date_height := 0.010
+	var date_offsets := [Vector3(-0.012, 0.008, 0), Vector3(0.009, 0.008, -0.009), Vector3(0.003, 0.014, 0.008)]
+	b.add_cyl(tray_radius, tray_height, brass, Transform3D(Basis.IDENTITY, tray_center), 0.0, 12)
+	for offset: Vector3 in date_offsets:
+		b.add_cyl(date_radius, date_height, date_brown, Transform3D(Basis.IDENTITY, tray_center + offset), 0.0, 8)
+	# Fresh tapered meshes give the belly/lid real slopes; cached resources stay untouched.
+	var taper := func(center: Vector3, lower_radius: float, upper_radius: float, height: float, color: Color, sides: int = 10) -> void:
+		var shape := CylinderMesh.new()
+		shape.bottom_radius = lower_radius
+		shape.top_radius = upper_radius
+		shape.height = height
+		shape.radial_segments = sides
+		shape.rings = 1
+		shape.material = ModelLib.flat_material(color)
+		b.add_mesh("hospitality_%d" % shape.get_instance_id(), shape, Transform3D(Basis.IDENTITY, center))
+	var dallah := func(origin: Vector3, size: float) -> void:
+		# Radius/height profile: foot, rounded belly, narrow waist, flared neck, pointed lid.
+		var body_profile := [Vector2(0.031, 0.000), Vector2(0.043, 0.014),
+			Vector2(0.052, 0.042), Vector2(0.047, 0.070), Vector2(0.025, 0.105),
+			Vector2(0.023, 0.132), Vector2(0.037, 0.149), Vector2(0.039, 0.155),
+			Vector2(0.008, 0.179), Vector2(0.0, 0.192)]
+		for i in range(body_profile.size() - 1):
+			var lower: Vector2 = body_profile[i]
+			var upper: Vector2 = body_profile[i + 1]
+			var center := origin + Vector3.UP * (lower.y + upper.y) * 0.5 * size
+			taper.call(center, lower.x * size, upper.x * size, (upper.y - lower.y) * size, brass)
+		# Broad crescent spout and an open curved handle lie in X/Y, facing the camera.
+		var spout_points := [Vector3(0.037, 0.052, 0), Vector3(0.067, 0.073, 0),
+			Vector3(0.081, 0.104, 0), Vector3(0.091, 0.135, 0), Vector3(0.109, 0.154, 0)]
+		var spout_radii := [0.016, 0.013, 0.010, 0.006]
+		var handle_points := [Vector3(-0.027, 0.135, 0), Vector3(-0.064, 0.144, 0),
+			Vector3(-0.084, 0.122, 0), Vector3(-0.086, 0.087, 0),
+			Vector3(-0.064, 0.058, 0), Vector3(-0.045, 0.058, 0)]
+		var handle_radius := 0.007
+		var stroke_sides := 8
+		for stroke in [spout_points, handle_points]:
+			for i in range(stroke.size() - 1):
+				var start: Vector3 = origin + stroke[i] * size
+				var end: Vector3 = origin + stroke[i + 1] * size
+				var direction := end - start
+				var radius: float = (spout_radii[i] if stroke == spout_points else handle_radius) * size
+				var axis := Basis(Quaternion(Vector3.UP, direction.normalized()))
+				b.add_cyl(radius, direction.length() + radius * 0.4, brass,
+					Transform3D(axis, (start + end) * 0.5), 0.0, stroke_sides)
+	var pot_origin := hospitality_center + Vector3(0.018, table_top, -0.027)
+	var pot_scale := 0.53
+	dallah.call(pot_origin, pot_scale)
+	# Bake this local batch's palette into vertex colours: one surface / one draw call.
+	# Read primitive arrays only; never alter ModelLib's cached meshes or materials.
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	for key in b._order:
+		var group: Dictionary = b._groups[key]
+		var source: Mesh = group["mesh"]
+		for surface in range(source.get_surface_count()):
+			var arrays := source.surface_get_arrays(surface)
+			var source_vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var source_normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			var source_indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			var material := group["mat"] as StandardMaterial3D
+			if material == null:
+				material = source.surface_get_material(surface) as StandardMaterial3D
+			var color := material.albedo_color
+			for transform: Transform3D in group["xforms"]:
+				var offset := vertices.size()
+				var normal_basis := transform.basis.inverse().transposed()
+				for i in range(source_vertices.size()):
+					vertices.append(transform * source_vertices[i])
+					normals.append((normal_basis * source_normals[i]).normalized())
+					colors.append(color)
+				for index in source_indices:
+					indices.append(offset + index)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var corner := ArrayMesh.new()
+	corner.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var palette := ModelLib.flat_material_unique(Color.WHITE)
+	palette.vertex_color_use_as_albedo = true
+	palette.vertex_color_is_srgb = true
+	corner.surface_set_material(0, palette)
+	b = MeshBatch.new()
+	b.add_mesh("hospitality", corner, Transform3D.IDENTITY)
+	b.flush(_speaker)
 	_speaker.visible = false
 	# fridge (upgrade)
 	_fridge = Node3D.new()
@@ -209,10 +315,14 @@ func _build() -> void:
 		ModelLib.batch_primitives(group)
 
 func preview_crew(active: bool) -> void:
+	# A serving gesture is a one-shot: looping it snaps the arm back every cycle.
 	if _vendor:
-		ModelLib.play_loop(_vendor, "interact-right" if active else "idle")
+		if active:
+			ModelLib.play_once(_vendor, "interact-right")
+		else:
+			ModelLib.play_loop(_vendor, "idle")
 	if _helper:
-		ModelLib.play_loop(_helper, "emote-yes" if active else "idle")
+		ModelLib.play_loop(_helper, "idle")
 
 func server() -> Node3D:
 	return _vendor

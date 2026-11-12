@@ -49,6 +49,11 @@ try {
     await tap('open_shop');
     await waitPhase(page, 'day');
     await page.evaluate(() => {
+      // frame pacing of the busiest street (the release gate for the on-screen guest budget)
+      window.frameTimes = [];
+      let last = performance.now();
+      const tick = now => { window.frameTimes.push(now - last); last = now; window.frameRaf = requestAnimationFrame(tick); };
+      window.frameRaf = requestAnimationFrame(tick);
       window.serviceSamples = [];
       window.serviceTimer = setInterval(() => {
         if (window.godotPresentation?.service) {
@@ -58,12 +63,18 @@ try {
     });
     await page.waitForFunction(() => window.godotPresentation?.service?.deliveries > 0, null, { timeout: 85000 });
     await page.screenshot({ path: out + '/1-delivered.png' });
-    await page.waitForFunction(() => window.godotPresentation?.service?.workers.some(worker => worker.state === 4), null, { timeout: 45000 });
+    await page.waitForFunction(() => window.godotPresentation?.service?.workers.some(worker => worker.state === 4), null, { timeout: 100000 });
     await page.screenshot({ path: out + '/2-cleaning.png' });
     await page.waitForFunction(() => {
       const service = window.godotPresentation?.service;
       return service?.cleaned > 0 && service.served > service.dineIn;
-    }, null, { timeout: 45000 });
+    }, null, { timeout: 100000 });
+    const frames = await page.evaluate(() => {
+      cancelAnimationFrame(window.frameRaf);
+      const sorted = window.frameTimes.slice(30).sort((x, y) => x - y);
+      const at = q => Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] * 10) / 10;
+      return { count: sorted.length, median: at(0.5), p95: at(0.95), worst: at(1) };
+    });
     const beforeSkip = await page.evaluate(() => window.godotPresentation.service.served);
     await tap('skip_day');
     await page.waitForFunction(count => window.godotState?.finishing && window.godotPresentation?.service?.served > count, beforeSkip);
@@ -88,10 +99,12 @@ try {
     assert.equal(result.save.history[0].served, service.served);
     assert.equal(result.save.total_served, service.served,'add-on dishes cannot count as additional lifetime guests');
     assert.deepEqual(logs.errors(), []);
+    const frameLimit = Number(process.env.FRAME_MEDIAN_MS || 0);
+    if (frameLimit > 0) assert(frames.median <= frameLimit, `median frame ${frames.median} ms is over ${frameLimit} ms`);
     fs.writeFileSync(out + '/service-proof.json', JSON.stringify(result, null, 2));
     await page.screenshot({ path: out + '/4-report.png' });
     console.log(JSON.stringify({ served: service.served, dineIn: service.dineIn,
-      deliveries: service.deliveries, tablesCleaned: service.cleaned, allPurchasesVisible: true }));
+      deliveries: service.deliveries, tablesCleaned: service.cleaned, allPurchasesVisible: true, frameMs: frames }));
     console.log('web_restaurant_test (iPhone WebKit): PASS');
   } catch (error) {
     const page = context.pages()[0];

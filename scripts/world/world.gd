@@ -21,19 +21,25 @@ const PROMENADE_Z := 0.01
 const CART_POS := Vector3(0.0, 0.0, -1.42)
 const WALK_EDGE := 5.6
 const MAX_WALKERS := 16
-const MAX_RIGGED_GUESTS := 6
+## Rigged people before a day sets its own budget (Data.GUEST_BUDGET, configure_guests).
+const DEFAULT_BUYERS := 6
+const DEFAULT_AMBIENT := 2
 const HANDOFF_TRANSFER_SECONDS := 0.58
 ## The first few faces establish each district. The same compact set is reused
 ## in different combinations for service customers and background walkers.
+## Dress is modest everywhere, out of respect for Islamic and Emirati custom (owner's
+## request, 2026-11-12): women wear an abaya and headscarf, men a kandura or long trousers.
 const DISTRICT_CAST := {
-	"fahidi": ["creek-kandura", "creek-abaya", "souq-man", "souq-abaya", "city-commuter", "beach-walker"],
-	"creek": ["beach-walker", "creek-abaya", "creek-kandura", "village-evening", "souq-man"],
+	"fahidi": ["creek-kandura", "creek-abaya", "souq-man", "souq-abaya", "city-commuter", "village-evening"],
+	"creek": ["creek-abaya", "creek-kandura", "village-evening", "souq-man", "souq-abaya"],
 	"metro": ["city-commuter", "souq-man", "creek-kandura", "souq-abaya", "city-commuter", "creek-abaya"],
-	"jbr": ["jbr-modest-swimmer", "jbr-local-swimmer", "beach-walker", "souq-man", "creek-abaya", "beach-walker"],
-	"downtown": ["downtown-fashion", "downtown-tailored", "city-commuter", "village-evening", "creek-kandura", "creek-abaya"],
-	"mall": ["creek-abaya", "city-commuter", "creek-kandura", "souq-abaya", "souq-man", "beach-walker"],
-	"gv": ["village-evening", "downtown-tailored", "creek-kandura", "downtown-fashion", "creek-abaya", "souq-man"],
+	"jbr": ["village-evening", "souq-man", "creek-abaya", "creek-kandura", "city-commuter", "souq-abaya"],
+	"downtown": ["downtown-tailored", "city-commuter", "village-evening", "creek-kandura", "creek-abaya", "souq-abaya"],
+	"mall": ["creek-abaya", "city-commuter", "creek-kandura", "souq-abaya", "souq-man", "village-evening"],
+	"gv": ["village-evening", "downtown-tailored", "creek-kandura", "souq-abaya", "creek-abaya", "souq-man"],
 }
+## Shipped models kept off the street: swimwear, shorts above the knee, uncovered hair.
+const RETIRED_CAST := ["jbr-local-swimmer", "jbr-modest-swimmer", "beach-walker", "downtown-fashion"]
 const BUILDING_ROT := 0.0
 const ROAD_ROT := 0.0
 
@@ -74,7 +80,10 @@ var _batch := MeshBatch.new()
 var _sky_day := Color(0.55, 0.78, 0.98)
 var _sand: GPUParticles3D
 var walkers := 0
-var _rigged_guests := 0
+var _rigged_buyers := 0
+var _rigged_ambient := 0
+var buyer_limit := DEFAULT_BUYERS
+var ambient_limit := DEFAULT_AMBIENT
 var _next_guest := 0
 var _next_passer := 2
 var warmed_cast := {}
@@ -184,6 +193,27 @@ func push_in() -> void:
 	camera.size = size * 1.06
 	_cam_tween = create_tween()
 	_cam_tween.tween_property(camera, "size", size, 0.9).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+## After a purchase changes the stand: lean in on it for a moment, then settle back.
+func reveal_push() -> void:
+	if _cart_preview or location_id == "":
+		return
+	var size := _stage_camera_size(_stage_at(location_id))
+	if _cam_tween:
+		_cam_tween.kill()
+	_cam_tween = create_tween()
+	_cam_tween.tween_property(camera, "size", size * 0.92, 0.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_cam_tween.tween_interval(0.35)
+	_cam_tween.tween_property(camera, "size", size, 0.7).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+## "+AED n" over a buyer, drawn by the HUD's float layer (nothing when there is no HUD).
+## Purely visual: no game state and no random draws.
+func sale_pop(buyer: Node3D, amount: float) -> void:
+	if not is_inside_tree() or not is_instance_valid(buyer):
+		return
+	var layer := get_tree().get_first_node_in_group(FloatLayer.GROUP) as FloatLayer
+	if layer:
+		layer.money(buyer, amount)
 
 func preview_cart() -> void:
 	_cart_preview = true
@@ -732,12 +762,30 @@ func reset_day_guests() -> void:
 			guest.queue_free()
 	active_guests.clear()
 	walkers = 0
-	_rigged_guests = 0
+	_rigged_buyers = 0
+	_rigged_ambient = 0
 	_next_guest = 0
 	_next_passer = 2
 
+## How many rigged buyers and ambient walkers today's street may hold at once.
+func configure_guests(buyers: int, ambient: int) -> void:
+	buyer_limit = maxi(buyers, 1)
+	ambient_limit = maxi(ambient, 0)
+
+## Free places for a visible buyer (only buyers can stop and buy).
+func buyer_room() -> int:
+	return buyer_limit - _rigged_buyers
+
+func buyers_on_street() -> int:
+	return _rigged_buyers
+
+func ambient_room() -> int:
+	return ambient_limit - _rigged_ambient
+
 func set_day_managed(managed: bool) -> void:
 	managed_customers = managed
+	if not managed:
+		ModelLib.sim_speed = 1.0
 	for guest in active_guests:
 		if is_instance_valid(guest) and guest.state != Customer.State.DONE:
 			guest.set_day_managed(managed)
@@ -774,6 +822,13 @@ func render_service() -> void:
 			active_guests.remove_at(i)
 	_render_handoff()
 
+## Headless days are never drawn, so finished guests leave the list here.
+func prune_guests() -> void:
+	for i in range(active_guests.size() - 1, -1, -1):
+		var guest := active_guests[i]
+		if not is_instance_valid(guest) or guest.state == Customer.State.DONE:
+			active_guests.remove_at(i)
+
 func spawn_walker(direction: int, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
 	var z := WALK_Z if potential_customer else NEAR_WALK_Z
 	if Paving.DESIGNS.has(location_id):
@@ -782,10 +837,8 @@ func spawn_walker(direction: int, potential_customer: bool = true, with_visuals:
 	return spawn_guest(direction, start, potential_customer, with_visuals)
 
 func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true, with_visuals: bool = true) -> Customer:
-	# Keep room for service actors when the promenade already has passersby.
-	var guest_limit := MAX_RIGGED_GUESTS + (2 if plot and plot.stage >= Plot.FIXED else 0)
-	var limit := guest_limit if potential_customer else guest_limit - 2
-	var rigged := with_visuals and _rigged_guests < limit
+	# Buyers and ambient walkers keep separate budgets, so scenery never takes a buyer's place.
+	var rigged := with_visuals and (_rigged_buyers < buyer_limit if potential_customer else _rigged_ambient < ambient_limit)
 	if not rigged and not potential_customer:
 		return null
 	var c := Customer.new()
@@ -803,7 +856,10 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 		else:
 			model_id = cast[_next_passer % cast.size()]
 			_next_passer += 1
-		_rigged_guests += 1
+		if potential_customer:
+			_rigged_buyers += 1
+		else:
+			_rigged_ambient += 1
 	var walk_speed := Customer.WALK_SPEED
 	if potential_customer:
 		walk_speed *= guest_rng.randf_range(0.85, 1.2)
@@ -815,8 +871,10 @@ func spawn_guest(direction: int, start: Vector3, potential_customer: bool = true
 	c.gone.connect(func(guest):
 		if guest in active_guests:
 			walkers -= 1
-			if rigged:
-				_rigged_guests -= 1)
+			if rigged and potential_customer:
+				_rigged_buyers -= 1
+			elif rigged:
+				_rigged_ambient -= 1)
 	return c
 
 func clear_virtual_walkers() -> void:
@@ -843,12 +901,11 @@ func handoff(customer: Customer, sold_items: Array[String], seconds: float) -> v
 	_clear_handoff()
 	_counter_gesture_left = seconds
 	customer.face_point(actor.global_position)
-	ModelLib.play_once(actor, "interact-right")
+	ModelLib.play_once(actor, "interact-right", "idle", 1.6)
 	var animation := ModelLib.animation_player(actor)
 	if animation:
 		animation.advance(0.0)
 		animation.seek(0.45, true)
-		animation.speed_scale = 1.6
 	var bag := Node3D.new()
 	_level.add_child(bag)
 	_handoff_prop = bag

@@ -176,11 +176,18 @@ func _apply_dev_flags() -> void:
 			if kv.size() == 2 and Data.STATIONS.has(kv[0]):
 				Game._station_store()[kv[0]] = int(kv[1])
 	if DevTools.has("autodays"):
+		if _autoplay_started:
+			return # a seeded run re-applies the state flags above, nothing below
+		_autoplay_started = true
 		Game.persist = false
 		_autoplay(int(DevTools.get_flag("autodays")))
 		return
 	if DevTools.has("cast-review"):
 		_cast_review()
+		if DevTools.has("screenshot"):
+			await get_tree().create_timer(float(DevTools.get_flag("delay", "1.0")), true, false, true).timeout
+			await DevTools.screenshot(DevTools.get_flag("screenshot"))
+			get_tree().quit()
 		return
 	if DevTools.has("gallery"):
 		_gallery(DevTools.get_flag("gallery"))
@@ -247,7 +254,8 @@ func _stock_up_for_test() -> void:
 		set_speed(float(DevTools.get_flag("speed")))
 
 func _on_game_changed() -> void:
-	if world.cart:
+	# A stage or tier purchase is revealed by the HUD once the Build panel has closed.
+	if world.cart and not (hud and hud.holds_world_visual()):
 		if hud and phase == Phase.PREP and not hud.is_transitioning() and world.visual_needs_reload():
 			hud.fade_through(world.apply_visual)
 		else:
@@ -303,7 +311,11 @@ func new_game() -> void:
 func continue_game() -> void:
 	_enter_prep(Game.load_game, func():
 		if hud:
-			hud.resume_tutorial())
+			hud.resume_tutorial()
+		# A day that already opened carries on from its checkpoint. Its weather is
+		# known by now, so a return to planning would let the player plan around it.
+		if Game.day_committed():
+			start_day())
 
 ## Title -> prep behind a short curtain (the street is rebuilt for the saved place).
 func _enter_prep(load_state: Callable, then: Callable = Callable()) -> void:
@@ -340,6 +352,8 @@ func start_day(skip_weather_roll: bool = false) -> void:
 		Game.weather = "sunny"
 	elif not skip_weather_roll:
 		Game.begin_day()
+	if hud:
+		hud.flush_reveal() # a purchase bought a moment ago is built before the day reads the plot
 	world.set_location(Game.location)
 	if hud:
 		hud.show_day()
@@ -410,11 +424,29 @@ func _cast_review() -> void:
 	world.env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	world.env.environment.ambient_light_color = Color("fff0df")
 	world.env.environment.ambient_light_energy = 0.8
+	ModelLib.ambient_variety = false # stills must show the requested frame
 	var actors: Array[Node3D] = [
 		ModelLib.spawn_guest("creek-abaya", world, Vector3(-1.65, 0, 0), 1.65),
 		ModelLib.spawn_crew(true, world, Vector3(-0.55, 0, 0), 0, 1.65),
 		ModelLib.spawn_guest("souq-abaya", world, Vector3(0.55, 0, 0), 1.65),
 		ModelLib.spawn_crew(false, world, Vector3(1.65, 0, 0), 0, 1.65)]
+	if DevTools.has("cast-all"):
+		# Every shipped character full length, for dress and modesty reviews.
+		for actor in actors:
+			actor.queue_free()
+		actors.clear()
+		var ids: Array = ModelLib.GUEST_HEIGHTS.keys()
+		ids.sort()
+		ids.append_array(ModelLib.GUEST_VARIANTS.keys())
+		var per_row := 7
+		for i in ids.size() + 1:
+			var at := Vector3((float(i % per_row) - (per_row - 1) * 0.5) * 1.05, 1.0 - 2.05 * float(i / per_row), 0)
+			if i < ids.size():
+				actors.append(ModelLib.spawn_guest(ids[i], world, at, 1.65))
+			else:
+				actors.append(ModelLib.spawn("crew/filipina-server", world, at, 0, 1.0))
+		world.camera.position = Vector3(0, 0.9, 6)
+		world.camera.size = 4.3
 	for actor in actors:
 		var clip := DevTools.get_flag("cast-clip", "idle")
 		ModelLib.play_loop(actor, clip)
@@ -465,236 +497,51 @@ func _gallery(folder: String) -> void:
 
 # ---------------------------------------------------------------- balance autoplay (headless)
 
+var _autoplay_started := false
+
 func _autoplay(days: int) -> void:
-	## Simulates N days with a greedy "best next purchase" player and prints a growth table
-	## (uses FastSim). `--policy=basic` keeps the old supplies-only player.
-	print("day | loc      | st | weather   | passers served  dine | revenue   profit | money     pop  rep | lvl | bottleneck")
+	## Simulates N days with a greedy "best next purchase" player and prints a growth table.
+	## `--sim=day` plays the real visible day (DaySim) without drawing it; the default
+	## `--sim=fast` is the statistical FastSim. `--seed=N` makes a run repeatable.
+	## `--policy=basic` keeps the old supplies-only player.
+	var played := DevTools.get_flag("sim", "fast") == "day"
+	if DevTools.has("seed"):
+		var run_seed := int(DevTools.get_flag("seed"))
+		seed(run_seed)
+		Game.rng.seed = run_seed
+		Game.new_game()
+		_apply_dev_flags()
+	var runner: DaySim
+	if played:
+		# A sim of its own: the HUD listens to the player's one.
+		runner = DaySim.new()
+		add_child(runner)
+	print("sim %s | seed %s" % ["day (played)" if played else "fast", DevTools.get_flag("seed", "random")])
+	print("day | loc      | st | weather   | passers served  port  dine crowd | revenue   profit | money     pop  rep | lvl | lost: wait full out | bottleneck")
 	var total_profit := 0.0
 	var buys := 0
+	var started := Time.get_ticks_msec()
 	for d in range(days):
-		if DevTools.get_flag("policy", "greedy") == "basic":
-			_policy_basic()
-		else:
-			buys += _policy_greedy()
-		Game.begin_day()
-		var stats := FastSim.run(Game.sim_context(), Game.rng)
+		var day := Autoplayer.play_day(played, runner, world, DevTools.get_flag("policy", "greedy"))
+		if played:
+			# Let finished guests leave the tree before the next street is built.
+			await get_tree().process_frame
+		var stats: Dictionary = day["stats"]
+		var r: Dictionary = day["report"]
+		buys += int(day["buys"])
 		if DevTools.has("dbg"):
 			var ctx := Game.sim_context()
 			print("    ctx pop %.2f appeal %.2f counter %.2f kitchen %s qcap %d prices %s" % [ctx["popularity"], ctx["appeal"], ctx["counter_cap"], str(ctx["kitchen"]), ctx["queue_cap"], str(Game.menu["chicken_tikka"]["price"])])
-			print("    stats served %d sat_avg %.2f wait_avg %.1f sold_out %d queue_full %d left_wait %d max_queue %d util %s" % [stats["served"], float(stats["satisfaction_sum"]) / maxi(1, int(stats["served"])), float(stats["wait_sum"]) / maxi(1, int(stats["served"])), stats["sold_out"], stats["queue_full"], stats["left_wait"], stats["max_queue"], str(stats["util"])])
-		var r := Game.end_day(stats)
+			print("    stats served %d portions %d crowd %d buyers %d sat_avg %.2f wait_avg %.1f sold_out %d queue_full %d left_wait %d max_queue %d util %s" % [stats["served"], int(stats.get("portions", 0)), int(stats.get("crowd", 0)), int(ctx["buyers"]), float(stats["satisfaction_sum"]) / maxi(1, int(stats["served"])), float(stats.get("wait_sum", 0.0)) / maxi(1, int(stats["served"])), stats["sold_out"], stats["queue_full"], stats["left_wait"], stats.get("max_queue", 0), str(stats.get("util", {}))])
 		total_profit += float(r["profit"])
-		if Game.goal_ready():
-			Game.claim_goal()
-		print("%3d | %-8s | %2d | %-9s | %5d %5d %5d | %7.0f %7.0f | %8.0f %.2f %.2f | %3d | %s" % [r["day"], r["location"], r["stage"], r["weather"],
-			r["passers"], r["served"], r["dine_in"], r["revenue"], r["profit"], r["money"], r["popularity"], r["local_rep"], Game.levels_owned(), r["bottleneck"]])
+		print("%3d | %-8s | %2d | %-9s | %5d %5d %5d %5d %5d | %7.0f %7.0f | %8.0f %.2f %.2f | %3d | %4d %4d %4d | %s" % [r["day"], r["location"], r["stage"], r["weather"],
+			r["passers"], r["served"], int(r.get("portions", r["served"])), r["dine_in"], int(r.get("crowd", 0)), r["revenue"], r["profit"], r["money"], r["popularity"], r["local_rep"], Game.levels_owned(),
+			int(stats.get("left_wait", 0)), int(stats.get("queue_full", 0)), int(stats.get("sold_out", 0)), r["bottleneck"]])
 		if int(r["day"]) % 10 == 0:
-			print("    ... total profit %.0f, %d purchases, goals claimed %d" % [total_profit, buys, Game.goals_claimed.size()])
+			print("    ... total profit %.0f, %d purchases, goals claimed %d, loans %d" % [total_profit, buys, Game.goals_claimed.size(), Game.bailouts])
+	print("autoplay: %d days in %.1f s, total profit %.0f, %d purchases, %d goals, %d loans" % [days, (Time.get_ticks_msec() - started) / 1000.0,
+		total_profit, buys, Game.goals_claimed.size(), Game.bailouts])
 	get_tree().quit()
 
-## Supplies for the day: cover the estimated customers x 1.3 for every item on sale.
-func _policy_supplies() -> void:
-	var est := Economy.throughput_estimate(Game.sim_context())
-	var expect := maxi(20, int(float(est["served"]) * 1.3))
-	var ds := Economy.drink_share(Game.forecast)
-	var need := {}
-	var food_vals := 0.0
-	var drink_vals := 0.0
-	var offer := Game.offer(true)
-	for o in offer:
-		if o["kind"] == "food":
-			food_vals += float(o["value"])
-		elif o["kind"] == "drink":
-			drink_vals += float(o["value"])
-	for o in offer:
-		var count := 0.0
-		match String(o["kind"]):
-			"food": count = expect * (1.0 - ds) * float(o["value"]) / maxf(food_vals, 0.001)
-			"drink": count = expect * (ds * float(o["value"]) / maxf(drink_vals, 0.001) + 0.3 / maxi(1, _count_kind("drink")))
-			"side": count = expect * 0.3 / maxi(1, _count_kind("side"))
-			"sweet": count = expect * 0.25 / maxi(1, _count_kind("sweet"))
-		var per := Economy.portion_ingredients(o["id"], Game.menu[o["id"]])
-		for ing in per:
-			need[ing] = float(need.get(ing, 0.0)) + count * float(per[ing])
-	for ing in need:
-		while int(Game.inventory[ing]) < int(need[ing]):
-			var packs: Array = Data.INGREDIENTS[ing]["packs"]
-			var gap: int = int(need[ing]) - int(Game.inventory[ing])
-			var idx := packs.size() - 1
-			for i in range(packs.size()):
-				if int(packs[i][0]) >= gap:
-					idx = i
-					break
-			if not Game.buy_pack(ing, idx):
-				break
-	if DevTools.has("pricemult"):
-		for id in Data.MENU_ITEMS:
-			Game.set_price(id, float(Data.MENU_ITEMS[id]["base_price"]) * float(DevTools.get_flag("pricemult")))
-
-func _count_kind(kind: String) -> int:
-	var n := 0
-	for id in Data.MENU_ITEMS:
-		if Data.MENU_ITEMS[id]["kind"] == kind and Game.is_on_sale(id):
-			n += 1
-	return n
-
-## Greedy investor: each prep, buy whatever pays itself back fastest while a cash buffer
-## for tomorrow's stock and rent remains. Returns the number of purchases.
-func _policy_greedy() -> int:
-	var bought := 0
-	for round in range(10):
-		var base := Economy.throughput_estimate(Game.sim_context())
-		var base_profit := float(base["profit"])
-		var buffer := 1.5 * (float(Game.loc()["rent"]) + Game.daily_wages() + float(Game.history.back().get("cogs", 150.0)) if not Game.history.is_empty() else 300.0)
-		# cash piling up means a longer horizon is fine
-		var horizon := 1.0 if Game.money < 8000.0 else (2.0 if Game.money < 30000.0 else 4.0)
-		var pick := {"score": 0.0, "best": {}} # a dictionary: lambdas capture locals by value
-		var consider := func(kind: String, id: String, cost: float, ctx: Dictionary, max_payback: float) -> void:
-			if cost <= 0.0 or Game.money - cost < buffer:
-				return
-			var gain := float(Economy.throughput_estimate(ctx)["profit"]) - base_profit
-			if DevTools.has("dbg"):
-				print("    cand %s %s cost %.0f gain %.1f money %.0f buffer %.0f" % [kind, id, cost, gain, Game.money, buffer])
-			if gain <= 0.0:
-				return
-			var payback := cost / gain
-			if payback > max_payback * horizon:
-				return
-			var score := gain / cost
-			if score > float(pick["score"]):
-				pick["score"] = score
-				pick["best"] = {"kind": kind, "id": id, "cost": cost}
-		# the current goal is worth chasing when it is a purchase (the reward pays part of it)
-		var goal := Game.current_goal()
-		if not goal.is_empty():
-			var req: Dictionary = goal["req"]
-			var reward := float(goal["reward"].get("money", 0.0))
-			match String(req["type"]):
-				"station_level":
-					var sid := String(req["station"])
-					if Game.station_lock_reason(sid) == "" and Game.station_level(sid) < int(req["n"]):
-						consider.call("station", sid, maxf(1.0, Game.station_cost(sid) - reward), Game.what_if({"stations": {sid: Game.station_level(sid) + 1}}), 400.0)
-				"stage":
-					if Game.stage_lock_reason() == "" and Game.stage_tier() < int(req["n"]):
-						var nd := Game.next_stage_def()
-						consider.call("stage", nd["id"], maxf(1.0, float(nd["cost"]) - reward), Game.what_if({"stage": Game.stage_tier() + 1}), 400.0)
-				"item_unlocked":
-					var iid := String(req["id"])
-					if not Game.menu[iid]["unlocked"] and Game.item_available(iid):
-						consider.call("item", iid, maxf(1.0, float(Data.MENU_ITEMS[iid]["unlock_cost"]) - reward), Game.what_if({"unlock": iid}), 400.0)
-					elif not Game.menu[iid]["unlocked"]:
-						var need := Game.required_station(Data.MENU_ITEMS[iid])
-						if need != "" and Game.station_lock_reason(need) == "":
-							consider.call("station", need, maxf(1.0, Game.station_cost(need) - reward), Game.what_if({"stations": {need: 1}, "unlock": iid}), 400.0)
-		for id in Game.active_stations():
-			if Game.station_lock_reason(id) != "":
-				continue
-			consider.call("station", id, Game.station_cost(id), Game.what_if({"stations": {id: Game.station_level(id) + 1}}), 30.0)
-		if Game.stage_lock_reason() == "":
-			# a stage is worth what the best place it opens is worth (with a few seats if it has a terrace)
-			var nxt := Game.next_stage_def()
-			var t := Game.stage_tier() + 1
-			var extra := {}
-			var bundle := float(nxt["cost"])
-			if float(nxt.get("dine_in", 0.0)) > 0.0:
-				extra = {"seating": 4}
-				for i in range(4):
-					bundle += Economy.station_cost(Data.STATIONS["seating"], i)
-			var best_ctx := Game.what_if({"stage": t, "stations": extra})
-			var best_profit := float(Economy.throughput_estimate(best_ctx)["profit"])
-			if String(nxt["scope"]) == "rig":
-				for id in Game.stage_locations():
-					if id != Game.location and Game.location_unlocked(id) and int(Data.LOCATIONS[id].get("min_stage", 0)) <= t:
-						var c := Game.what_if({"stage": t, "location": id})
-						var pr := float(Economy.throughput_estimate(c)["profit"])
-						if pr > best_profit:
-							best_profit = pr
-							best_ctx = c
-			consider.call("stage", nxt["id"], bundle, best_ctx, 60.0)
-		for id in Data.MENU_ITEMS:
-			if not Game.menu[id]["unlocked"] and Game.item_available(id):
-				consider.call("item", id, maxf(float(Data.MENU_ITEMS[id]["unlock_cost"]), 1.0), Game.what_if({"unlock": id}), 30.0)
-		for id in Game.stage_locations():
-			if id != Game.location and Game.location_unlocked(id) and Game.location_stage_ok(id):
-				consider.call("move", id, 25.0, Game.what_if({"location": id}), 1.0)
-		if Game.competition() > 0.0:
-			for id in Data.MARKETING:
-				if not Game.marketing.has(id):
-					consider.call("promo", id, float(Data.MARKETING[id]["cost"]), _ctx_with_boost(float(Data.MARKETING[id]["boost"])), float(Data.MARKETING[id]["days"]))
-		var best: Dictionary = pick["best"]
-		if best.is_empty():
-			break
-		var ok := false
-		match String(best["kind"]):
-			"station": ok = Game.buy_station_level(best["id"])
-			"stage": ok = Game.buy_stage()
-			"item": ok = Game.unlock_item(best["id"])
-			"move": ok = Game.set_location(best["id"])
-			"promo": ok = Game.start_marketing(best["id"])
-		if not ok:
-			break
-		bought += 1
-	_policy_prices()
-	# cheap quality: max the recipe once the first grill levels are in
-	if Game.station_level("grill") >= 2:
-		for id in Data.MENU_ITEMS:
-			if Data.MENU_ITEMS[id]["recipe"] and Game.menu[id]["unlocked"]:
-				Game.set_recipe(id, "meat", 3)
-				Game.set_recipe(id, "veg", 3)
-				Game.set_recipe(id, "sauce", 2)
-	if Game.money > 3000.0:
-		for id in Data.MENU_ITEMS:
-			if Game.menu[id]["unlocked"] and int(Game.menu[id]["level"]) < Data.MENU_ITEMS[id]["enhance"].size():
-				var cost := float(Data.MENU_ITEMS[id]["enhance"][int(Game.menu[id]["level"])]["cost"])
-				if Game.money - cost > 2500.0:
-					Game.enhance_item(id)
-					bought += 1
-	_policy_supplies()
-	return bought
-
-## Try a few price multipliers on the whole menu and keep the one the estimate likes best.
-func _policy_prices() -> void:
-	var best_mult := 1.0
-	var best_profit := -INF
-	var loc := Game.loc()
-	for mult in [0.9, 1.0, 1.1, 1.2, 1.35, 1.5, 1.8]:
-		# never a price that leaves the average customer unhappy (reputation is the engine)
-		var sat := Economy.satisfaction(Game.quality("chicken_tikka"), float(mult), 0.15, loc, Game.satisfaction_bonus())
-		if sat < 0.62 and float(mult) > 1.0:
-			continue
-		for id in Data.MENU_ITEMS:
-			Game.set_price(id, float(Data.MENU_ITEMS[id]["base_price"]) * mult)
-		var pr := float(Economy.throughput_estimate(Game.sim_context())["profit"])
-		if pr > best_profit:
-			best_profit = pr
-			best_mult = mult
-	for id in Data.MENU_ITEMS:
-		Game.set_price(id, float(Data.MENU_ITEMS[id]["base_price"]) * best_mult)
-
-func _ctx_with_boost(extra: float) -> Dictionary:
-	var ctx := Game.sim_context()
-	ctx["boost"] = float(ctx["boost"]) + extra
-	return ctx
-
-## The old player: supplies for 1.3x yesterday, Creek when popular, nothing else.
-func _policy_basic() -> void:
-	var expect := 30
-	if not Game.history.is_empty():
-		expect = maxi(15, int(float(Game.history.back()["served"]) * 1.3))
-	var target := {"bread": expect, "chicken": expect * 2, "veg": expect * 2, "sauce": expect, "charcoal": expect, "drink": int(expect * 0.5)}
-	for ing in target:
-		while int(Game.inventory[ing]) < int(target[ing]):
-			var packs: Array = Data.INGREDIENTS[ing]["packs"]
-			var gap: int = int(target[ing]) - int(Game.inventory[ing])
-			var idx := packs.size() - 1
-			for i in range(packs.size()):
-				if int(packs[i][0]) >= gap:
-					idx = i
-					break
-			if not Game.buy_pack(ing, idx):
-				break
-	if Game.popularity > 0.3 and Game.money > 1500 and Game.location == "fahidi":
-		Game.set_location("creek")
-	if DevTools.has("pricemult"):
-		for id in Data.MENU_ITEMS:
-			Game.set_price(id, float(Data.MENU_ITEMS[id]["base_price"]) * float(DevTools.get_flag("pricemult")))
+## The policies (greedy investor, prices, supplies, the old basic player) live in
+## scripts/sim/autoplayer.gd so tests/balance_curve.gd plays the same player.

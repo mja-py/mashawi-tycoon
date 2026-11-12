@@ -39,19 +39,21 @@ Emirati locals in kandura and abaya alongside residents and tourists.
 | Place             | Rent    | Crowd                                      |
 |-------------------|---------|--------------------------------------------|
 | Souk Al Seef      | free    | heritage Creek promenade and local shoppers |
-| Creek Park        | AED 125 | families, weather sensitive                |
-| Metro Station     | AED 200 | commuters in a hurry, won't wait           |
-| JBR Beach         | AED 275 | tourists, drinks sell by the crate in heat |
-| Downtown          | AED 450 | high standards, deep pockets               |
-| Mall Food Court   | AED 600 | all-day crowds, fierce competition         |
-| Global Village    | AED 500 | opens 16:00 to 24:00, fierce competition   |
+| Creek Park        | AED 70  | families, weather sensitive                |
+| Metro Station     | AED 175 | commuters in a hurry, won't wait           |
+| JBR Beach         | AED 250 | tourists, drinks sell by the crate in heat |
+| Downtown          | AED 700 | high standards, deep pockets               |
+| Mall Food Court   | AED 850 | all-day crowds, fierce competition         |
+| Global Village    | AED 550 | opens 16:00 to 24:00, fierce competition   |
 
 Menu (Dubai cafeteria style, priced per skewer): Chicken Tikka, Mutton Tikka, Kebab, Tikka Sandwich, Mixed Grill Plate, Salad, Fries, Laban, Soda, Karak. Every grilled item burns charcoal.
 Each dish can be enhanced up to three times. Grilled dishes use the meat / salad / sauce recipe.
 Weather: sunny, heatwave, cloudy, sandstorm, winter breeze.
 
-Progression: cart → stall (AED 2,000) → truck (AED 6,000), followed by location-owned
-kiosks, restaurants and flagships. The Metro and JBR require a stall plus reputation;
+Progression: cart → stall (AED 1,400) → truck (AED 5,000), followed by location-owned
+kiosks (7,000), restaurants (18,000) and flagships (60,000). One visible buyer can order
+for a whole party, so bigger stands earn through bigger orders; every sale is a customer
+you can see. The Hospitality upgrade adds dates and gahwa from the dallah. The Metro and JBR require a stall plus reputation;
 Downtown, the Mall and Global Village require a truck plus reputation. Promotions
 have a stronger effect against Mall and Global Village competition (x1.8 and x2.0).
 The truck can fit a sweets counter; buy it, unlock the dishes, then stock ingredients
@@ -68,7 +70,8 @@ Strings live in `assets/i18n/strings.csv` (keys, en, ar); all data names are key
 # compile-check every script, logic tests, 25-day balance simulation (all headless)
 tools/check.sh
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . -- --tests
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path . -- --autodays=25
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . -- --autodays=25 --sim=day --seed=1
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script tests/balance_curve.gd
 
 # screenshot a phase (for review without touching the editor)
 tools/shot.sh out.png 4 --phase=prep --panel=menu --lang=en
@@ -135,6 +138,11 @@ artwork, and models requires separate permission where copyright applies.
 [License and third-party notices](LICENSE.txt)
 
 The game includes CC0 assets from [Kenney](https://kenney.nl) and [KayKit](https://kaylousberg.com).
+The game has no music. Its street ambience is CC0 / public-domain recordings cut by
+`tools/build_audio.py`: "AMB Outside 1" by Kresiek The Furry and "High traffic road sounds"
+by IgnasD (OpenGameArt); "1 minute at the alexa mall in berlin" by thore, "On a pebble beach" by
+earthcalling, "Sunday in the city street noise1" by cori, "Restaurant ambience" by stephan
+and "Frying fries going in and out of oil" by ezwa (Wikimedia Commons, PDSounds).
 Custom food models are made with Blender (`tools/make_*.py`). Meshy-assisted models
 are adapted for the game. The game uses [Baloo Bhaijaan 2](assets/fonts/OFL-BalooBhaijaan2.txt)
 under the SIL Open Font License 1.1.

@@ -21,6 +21,9 @@ var _pointer := -1
 var _origin := Vector2.ZERO
 var _origin_cursor := 0.0
 var _dragging := false
+## 0 -> 1 while the roll makes its entrance (focused card first, neighbours just after).
+var _entrance := 1.0
+var _entrance_tween: Tween
 
 func _ready() -> void:
 	add_theme_constant_override("separation", 1)
@@ -47,9 +50,15 @@ func _ready() -> void:
 func _arrow(row: HBoxContainer, side: int) -> Button:
 	var b := Button.new()
 	b.theme_type_variation = "Ghost"
-	b.text = "<" if side < 0 else ">"
+	# The row is always left-to-right, so the glyph points where it moves on screen (the
+	# triangles are not bidi-mirrored, unlike < > and ‹ ›); the spoken name follows the
+	# reading direction (the left arrow is "next" in Arabic).
+	b.text = tr("ui.roll_left") if side < 0 else tr("ui.roll_right")
 	b.text_direction = Control.TEXT_DIRECTION_LTR
-	b.add_theme_font_size_override("font_size", 28)
+	var forward := (side > 0) != is_layout_rtl()
+	b.tooltip_text = tr("ui.roll_next") if forward else tr("ui.roll_prev")
+	b.accessibility_name = b.tooltip_text
+	b.add_theme_font_size_override("font_size", 20)
 	b.custom_minimum_size = Vector2(58, 48)
 	b.pressed.connect(func(): move_to(_index + side * int(_rtl)))
 	if DevTools.has("uitest"):
@@ -73,6 +82,18 @@ func configure(count: int, index: int, factory: Callable) -> void:
 	_rtl = -1.0 if is_layout_rtl() else 1.0
 	_show_index()
 	_layout_cards.call_deferred()
+
+## Cards rise and fade into place when a tab opens. Layout owns every card transform, so
+## the entrance is a factor _layout_cards applies rather than tweens on the cards.
+func play_entrance(duration: float = 0.34) -> void:
+	if _entrance_tween:
+		_entrance_tween.kill()
+	_entrance = 0.0
+	_layout_cards()
+	_entrance_tween = create_tween()
+	_entrance_tween.tween_method(func(v: float):
+		_entrance = v
+		_layout_cards(), 0.0, 1.0, duration)
 
 func choose(index: int, action: Callable) -> void:
 	if index == _index:
@@ -146,10 +167,14 @@ func _layout_cards() -> void:
 		card.size = Vector2(_card_width(), room)
 		card.pivot_offset = card.size * 0.5
 		var fit := minf(1.0, room / card.size.y)
-		card.scale = Vector2.ONE * fit * lerpf(1.0, 0.86, minf(distance, 1.0))
+		var arrive := 1.0
+		if _entrance < 1.0:
+			var e := clampf(_entrance * 1.5 - distance * 0.4, 0.0, 1.0)
+			arrive = 1.0 - pow(1.0 - e, 3.0)
+		card.scale = Vector2.ONE * fit * lerpf(1.0, 0.86, minf(distance, 1.0)) * lerpf(0.95, 1.0, arrive)
 		card.rotation = clampf(offset, -1.0, 1.0) * 0.03
-		card.position = (surface.size - card.size) * 0.5 + Vector2(offset * _step(), distance * 6.0)
-		card.modulate.a = lerpf(1.0, 0.8, minf(distance, 1.0))
+		card.position = (surface.size - card.size) * 0.5 + Vector2(offset * _step(), distance * 6.0 + (1.0 - arrive) * 18.0)
+		card.modulate.a = lerpf(1.0, 0.8, minf(distance, 1.0)) * arrive
 		card.z_index = 3 - mini(roundi(distance * 2.0), 3)
 
 func _input(event: InputEvent) -> void:

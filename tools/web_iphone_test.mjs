@@ -49,7 +49,7 @@ await waitReady(page, 180000);
 const prep = await waitPhase(page, 'prep', 60000);
 check(prep && prep.money === 1500 && prep.hasSave === true, `game runs on WebKit and saved on entering prep (${JSON.stringify(prep)})`);
 check(await css('#install') === 'none' && await css('#installmini') === 'none', 'guide gone once the game runs');
-check(await page.evaluate(() => { const s = localStorage.getItem('mashawi_save'); return !!s && JSON.parse(s).version === 3; }), 'localStorage backup copy of the save (version 3)');
+check(await page.evaluate(() => { const s = localStorage.getItem('mashawi_save'); return !!s && JSON.parse(s).version === 4; }), 'localStorage backup copy of the save (version 4)');
 await page.waitForTimeout(2500);
 await page.screenshot({ path: `${out}/3_prep.png` });
 await tap(page, 695, 360); // menu tab (RTL: 2nd from the right)

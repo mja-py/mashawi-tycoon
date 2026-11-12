@@ -1,0 +1,168 @@
+sim day (played) | seed 3
+day | loc      | st | weather   | passers served  dine | revenue   profit | money     pop  rep | lvl | lost: wait full out | bottleneck
+  1 | fahidi   |  0 | hot       |   258    17     0 |     132      14 |      916 0.24 0.25 |   0 |    0    0    0 | arrivals
+  2 | fahidi   |  0 | cloudy    |   262    20     0 |     228      99 |     1051 0.26 0.28 |   0 |    0    0    0 | arrivals
+  3 | fahidi   |  0 | hot       |   274    17     0 |     158      42 |     1048 0.28 0.31 |   0 |    0    0    0 | arrivals
+  4 | fahidi   |  0 | cloudy    |   292    19     0 |     286     129 |     1249 0.30 0.34 |   0 |    0    0    0 | arrivals
+  5 | fahidi   |  0 | hot       |   260    17     0 |     130       4 |     1131 0.32 0.37 |   0 |    0    0    0 | arrivals
+  6 | fahidi   |  0 | sunny     |   335    21     0 |     263     104 |     1303 0.34 0.40 |   0 |    0    0    0 | arrivals
+  7 | creek    |  0 | breeze    |   574    23     0 |     257     -60 |      259 0.37 0.39 |   2 |    0    0    0 | arrivals
+  8 | creek    |  0 | sunny     |   477    19     0 |     195     -50 |      329 0.40 0.42 |   2 |    0    0    0 | arrivals
+  9 | creek    |  0 | hot       |   502    23     0 |     238     -59 |      247 0.42 0.46 |   2 |    0    0    0 | arrivals
+ 10 | creek    |  0 | sandstorm |    24     4     0 |      52    -138 |      174 0.43 0.47 |   2 |    0    0    0 | arrivals
+    ... total profit 85, 4 purchases, goals claimed 0, loans 0
+ 11 | creek    |  0 | hot       |   462    24     0 |     243     -62 |      653 0.46 0.51 |   2 |    0    0    0 | arrivals
+ 12 | creek    |  0 | hot       |   511    28     0 |     247     -55 |      601 0.48 0.55 |   2 |    0    0    0 | arrivals
+ 13 | creek    |  0 | sunny     |   491    21     0 |     251     -75 |      434 0.51 0.58 |   2 |    0    0    0 | arrivals
+ 14 | creek    |  0 | hot       |   464    19     0 |     190     -76 |      421 0.53 0.61 |   2 |    0    0    0 | arrivals
+ 15 | creek    |  0 | hot       |   462    25     0 |     272     -57 |      329 0.55 0.64 |   2 |    0    0    0 | arrivals
+ 16 | creek    |  0 | sandstorm |    31     2     0 |      30    -165 |      234 0.56 0.65 |   2 |    0    0    0 | arrivals
+ 17 | creek    |  0 | sunny     |   531    25     0 |     293     -31 |      195 0.58 0.69 |   2 |    0    0    0 | arrivals
+ 18 | creek    |  0 | sunny     |   480    28     0 |     276    -104 |      526 0.61 0.72 |   2 |    0    0    0 | arrivals
+ 19 | creek    |  0 | hot       |   458    29     0 |     247     -87 |      490 0.63 0.75 |   2 |    0    0    0 | arrivals
+ 20 | creek    |  0 | breeze    |   660    28     0 |     307     -24 |      543 0.65 0.78 |   2 |    0    0    0 | arrivals
+    ... total profit -652, 4 purchases, goals claimed 0, loans 2
+ 21 | creek    |  0 | hot       |   531    29     0 |     238     -89 |      316 0.67 0.81 |   2 |    0    0    1 | arrivals
+ 22 | creek    |  0 | hot       |   494    22     0 |     203    -163 |       94 0.69 0.83 |   2 |    0    0    0 | arrivals
+ 23 | creek    |  0 | sunny     |   503    21     0 |     201    -128 |      636 0.71 0.85 |   2 |    0    0    0 | arrivals
+ 24 | creek    |  0 | hot       |   480    24     0 |     188    -104 |      583 0.73 0.88 |   2 |    0    0    0 | arrivals
+ 25 | creek    |  0 | sunny     |   467    20     0 |     246    -192 |      137 0.75 0.90 |   2 |    0    0    0 | arrivals
+ 26 | creek    |  0 | sunny     |   497    20     0 |     243    -111 |      810 0.76 0.92 |   2 |    0    0    0 | arrivals
+ 27 | creek    |  0 | hot       |   506    22     0 |     264     -42 |      529 0.78 0.95 |   3 |    0    0    0 | arrivals
+ 28 | creek    |  0 | breeze    |   684    29     0 |     357      -7 |      540 0.80 0.97 |   3 |    0    0    0 | arrivals
+ 29 | creek    |  0 | breeze    |   653    22     0 |     260    -117 |      143 0.82 0.99 |   3 |    0    0    0 | arrivals
+ 30 | creek    |  0 | hot       |   462    26     0 |     215    -127 |      620 0.84 1.00 |   3 |    0    0    0 | arrivals
+    ... total profit -1731, 5 purchases, goals claimed 0, loans 5
+ 31 | creek    |  0 | sunny     |   472    25     0 |     264     -97 |      294 0.86 1.00 |   4 |    0    0    0 | arrivals
+ 32 | creek    |  0 | hot       |   454    24     0 |     238    -150 |      117 0.88 1.00 |   4 |    0    0    0 | arrivals
+ 33 | creek    |  0 | hot       |   484    27     0 |     247     -92 |      701 0.89 1.00 |   4 |    0    0    0 | arrivals
+ 34 | creek    |  0 | breeze    |   639    29     0 |     349    -168 |      228 0.91 1.00 |   4 |    0    0    0 | 
+ 35 | creek    |  0 | sunny     |   521    26     0 |     312     -83 |      415 0.93 1.00 |   4 |    0    0    0 | arrivals
+ 36 | creek    |  0 | sunny     |   483    23     0 |     260    -145 |      270 0.95 1.00 |   4 |    0    0    0 | arrivals
+ 37 | creek    |  0 | hot       |   439    25     0 |     213    -151 |      163 0.96 1.00 |   4 |    0    0    0 | arrivals
+ 38 | creek    |  0 | hot       |   501    27     0 |     283     -52 |      173 0.98 1.00 |   4 |    0    0    0 | arrivals
+ 39 | creek    |  0 | hot       |   500    25     0 |     189     -93 |      141 0.99 1.00 |   4 |    0    0    0 | arrivals
+ 40 | creek    |  0 | sunny     |   496    29     0 |     310      14 |      192 1.00 1.00 |   4 |    0    0    0 | arrivals
+    ... total profit -2750, 6 purchases, goals claimed 0, loans 6
+ 41 | creek    |  0 | cloudy    |   445    31     0 |     319       7 |      206 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 42 | creek    |  0 | sunny     |   480    29     0 |     288     -46 |      211 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 43 | fahidi   |  0 | sandstorm |   148    25     0 |     284      90 |      590 1.00 0.44 |   4 |    0    0    0 | arrivals
+ 44 | creek    |  0 | sunny     |   475    23     0 |     260    -182 |      345 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 45 | creek    |  0 | breeze    |   698    30     0 |     380    -179 |      270 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 46 | creek    |  0 | sunny     |   502    32     0 |     347     -72 |      792 1.00 1.00 |   4 |    0    0    0 | 
+ 47 | creek    |  0 | cloudy    |   444    25     0 |     303    -129 |      646 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 48 | creek    |  0 | hot       |   473    28     0 |     207    -157 |      551 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 49 | creek    |  0 | sunny     |   474    29     0 |     320    -129 |      358 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 50 | creek    |  0 | sunny     |   483    28     0 |     326     -81 |      359 1.00 1.00 |   4 |    0    0    0 | arrivals
+    ... total profit -3626, 8 purchases, goals claimed 5, loans 6
+ 51 | creek    |  0 | cloudy    |   440    25     0 |     286    -132 |      211 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 52 | creek    |  0 | cloudy    |   462    28     0 |     302     -61 |      227 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 53 | creek    |  0 | sunny     |   518    26     0 |     284     -75 |      169 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 54 | creek    |  0 | cloudy    |   453    29     0 |     342      21 |      292 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 55 | creek    |  0 | sunny     |   479    27     0 |     280     -50 |      160 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 56 | creek    |  0 | hot       |   451    26     0 |     193     -70 |       98 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 57 | creek    |  0 | cloudy    |   424    27     0 |     298      30 |      192 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 58 | creek    |  0 | sunny     |   506    27     0 |     284     -12 |      176 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 59 | creek    |  0 | hot       |   450    24     0 |     160     -94 |       69 1.00 1.00 |   4 |    0    0    0 | arrivals
+ 60 | creek    |  0 | sunny     |   500    30     0 |     298      15 |      175 1.00 1.00 |   4 |    0    0    0 | arrivals
+    ... total profit -4056, 8 purchases, goals claimed 5, loans 6
+ 61 | creek    |  0 | sunny     |   517    26     0 |     248      -5 |      151 1.00 1.00 |   4 |    0    0    2 | arrivals
+ 62 | creek    |  0 | cloudy    |   432     3     0 |      12    -155 |      -76 0.94 0.90 |   4 |    0    0   34 | arrivals
+ 63 | creek    |  0 | hot       |   450    16     0 |      64    -113 |     -137 0.91 0.87 |   4 |    0    0   17 | arrivals
+ 64 | creek    |  0 | sunny     |   446     3     0 |      12    -141 |     -250 0.85 0.78 |   4 |    0    0   27 | arrivals
+ 65 | creek    |  0 | cloudy    |   427     5     0 |      20    -131 |     -355 0.79 0.69 |   4 |    0    0   28 | arrivals
+ 66 | creek    |  0 | hot       |   503    13     0 |      52    -106 |     -428 0.76 0.64 |   4 |    0    0   21 | arrivals
+ 67 | creek    |  0 | sunny     |   500     1     0 |       4    -134 |     -549 0.69 0.53 |   4 |    0    0   33 | arrivals
+ 68 | creek    |  0 | breeze    |   641     1     0 |       4    -132 |     -670 0.62 0.43 |   4 |    0    0   41 | arrivals
+ 69 | creek    |  0 | sunny     |   490     2     0 |       8    -128 |     -787 0.56 0.33 |   4 |    0    0   26 | arrivals
+ 70 | creek    |  0 | sunny     |   482     3     0 |      12    -123 |     -900 0.49 0.24 |   4 |    0    0   24 | arrivals
+    ... total profit -5224, 8 purchases, goals claimed 5, loans 6
+ 71 | creek    |  0 | breeze    |   629     0     0 |       0    -130 |    -1025 0.40 0.10 |   4 |    0    0   33 | arrivals
+ 72 | creek    |  0 | hot       |   485    11     0 |      44    -100 |    -1106 0.38 0.06 |   4 |    0    0   11 | arrivals
+ 73 | creek    |  0 | hot       |   504    15     0 |      60     -89 |    -1171 0.36 0.05 |   4 |    0    0   11 | arrivals
+ 74 | creek    |  0 | sunny     |   477     0     0 |       0    -128 |    -1296 0.27 0.05 |   4 |    0    0   26 | arrivals
+ 75 | creek    |  0 | hot       |   438     6     0 |      24    -112 |    -1397 0.22 0.05 |   4 |    0    0   16 | arrivals
+ 76 | creek    |  0 | breeze    |   613     0     0 |       0    -128 |    -1522 0.13 0.05 |   4 |    0    0   33 | arrivals
+ 77 | creek    |  0 | hot       |   476     0     0 |       0    -127 |    -1647 0.05 0.05 |   4 |    0    0   18 | arrivals
+ 78 | creek    |  0 | hot       |   464     0     0 |       0    -127 |    -1772 0.05 0.05 |   4 |    0    0   26 | arrivals
+ 79 | creek    |  0 | sunny     |   477     0     0 |       0    -127 |    -1897 0.05 0.05 |   4 |    0    0   22 | arrivals
+ 80 | creek    |  0 | sunny     |   501     0     0 |       0    -127 |    -2022 0.05 0.05 |   4 |    0    0   25 | arrivals
+    ... total profit -6420, 8 purchases, goals claimed 5, loans 6
+ 81 | creek    |  0 | breeze    |   651     0     0 |       0    -127 |    -2147 0.05 0.05 |   4 |    0    0   25 | arrivals
+ 82 | creek    |  0 | hot       |   474     0     0 |       0    -127 |    -2272 0.05 0.05 |   4 |    0    0   14 | arrivals
+ 83 | creek    |  0 | cloudy    |   455     0     0 |       0    -127 |    -2397 0.05 0.05 |   4 |    0    0   21 | arrivals
+ 84 | creek    |  0 | hot       |   464     0     0 |       0    -126 |    -2522 0.05 0.05 |   4 |    0    0   21 | arrivals
+ 85 | creek    |  0 | sunny     |   498     0     0 |       0    -126 |    -2647 0.05 0.05 |   4 |    0    0   16 | arrivals
+ 86 | creek    |  0 | sunny     |   484     0     0 |       0    -126 |    -2772 0.05 0.05 |   4 |    0    0   26 | arrivals
+ 87 | creek    |  0 | cloudy    |   436     0     0 |       0    -126 |    -2897 0.05 0.05 |   4 |    0    0   25 | arrivals
+ 88 | creek    |  0 | sunny     |   456     0     0 |       0    -126 |    -3022 0.05 0.05 |   4 |    0    0   26 | arrivals
+ 89 | creek    |  0 | sandstorm |    25     0     0 |       0    -126 |    -3147 0.05 0.05 |   4 |    0    0    0 | arrivals
+ 90 | creek    |  0 | sandstorm |    28     0     0 |       0    -126 |    -3272 0.05 0.05 |   4 |    0    0    1 | arrivals
+    ... total profit -7682, 8 purchases, goals claimed 5, loans 6
+ 91 | creek    |  0 | sandstorm |    18     0     0 |       0    -126 |    -3397 0.05 0.05 |   4 |    0    0    0 | arrivals
+ 92 | creek    |  0 | cloudy    |   442     0     0 |       0    -126 |    -3522 0.05 0.05 |   4 |    0    0   28 | arrivals
+ 93 | creek    |  0 | sandstorm |    27     0     0 |       0    -126 |    -3647 0.05 0.05 |   4 |    0    0    0 | arrivals
+ 94 | creek    |  0 | cloudy    |   473     0     0 |       0    -126 |    -3772 0.05 0.05 |   4 |    0    0   21 | arrivals
+ 95 | creek    |  0 | cloudy    |   435     0     0 |       0    -126 |    -3897 0.05 0.05 |   4 |    0    0   23 | arrivals
+ 96 | creek    |  0 | hot       |   486     0     0 |       0    -126 |    -4022 0.05 0.05 |   4 |    0    0   19 | arrivals
+ 97 | creek    |  0 | sunny     |   473     0     0 |       0    -126 |    -4147 0.05 0.05 |   4 |    0    0   19 | arrivals
+ 98 | creek    |  0 | sunny     |   452     0     0 |       0    -126 |    -4272 0.05 0.05 |   4 |    0    0   23 | arrivals
+ 99 | creek    |  0 | sunny     |   510     0     0 |       0    -126 |    -4397 0.05 0.05 |   4 |    0    0   26 | arrivals
+100 | creek    |  0 | sunny     |   487     0     0 |       0    -126 |    -4522 0.05 0.05 |   4 |    0    0   20 | arrivals
+    ... total profit -8939, 8 purchases, goals claimed 5, loans 6
+101 | creek    |  0 | hot       |   490     0     0 |       0    -126 |    -4647 0.05 0.05 |   4 |    0    0   25 | arrivals
+102 | creek    |  0 | sunny     |   472     0     0 |       0    -126 |    -4772 0.05 0.05 |   4 |    0    0   18 | arrivals
+103 | creek    |  0 | cloudy    |   445     0     0 |       0    -126 |    -4897 0.05 0.05 |   4 |    0    0   27 | arrivals
+104 | creek    |  0 | hot       |   439     0     0 |       0    -126 |    -5022 0.05 0.05 |   4 |    0    0   19 | arrivals
+105 | creek    |  0 | hot       |   452     0     0 |       0    -126 |    -5147 0.05 0.05 |   4 |    0    0   20 | arrivals
+106 | creek    |  0 | cloudy    |   432     0     0 |       0    -126 |    -5272 0.05 0.05 |   4 |    0    0   24 | arrivals
+107 | creek    |  0 | hot       |   443     0     0 |       0    -126 |    -5397 0.05 0.05 |   4 |    0    0   26 | arrivals
+108 | creek    |  0 | sunny     |   491     0     0 |       0    -125 |    -5522 0.05 0.05 |   4 |    0    0   25 | arrivals
+109 | creek    |  0 | cloudy    |   423     0     0 |       0    -125 |    -5647 0.05 0.05 |   4 |    0    0   20 | arrivals
+110 | creek    |  0 | cloudy    |   458     0     0 |       0    -125 |    -5772 0.05 0.05 |   4 |    0    0   22 | arrivals
+    ... total profit -10194, 8 purchases, goals claimed 5, loans 6
+111 | creek    |  0 | breeze    |   644     0     0 |       0    -125 |    -5897 0.05 0.05 |   4 |    0    0   30 | arrivals
+112 | creek    |  0 | hot       |   508     0     0 |       0    -125 |    -6022 0.05 0.05 |   4 |    0    0   22 | arrivals
+113 | creek    |  0 | hot       |   472     0     0 |       0    -125 |    -6147 0.05 0.05 |   4 |    0    0   20 | arrivals
+114 | creek    |  0 | sunny     |   480     0     0 |       0    -125 |    -6272 0.05 0.05 |   4 |    0    0   24 | arrivals
+115 | creek    |  0 | sunny     |   485     0     0 |       0    -125 |    -6397 0.05 0.05 |   4 |    0    0   20 | arrivals
+116 | creek    |  0 | cloudy    |   470     0     0 |       0    -125 |    -6522 0.05 0.05 |   4 |    0    0   27 | arrivals
+117 | creek    |  0 | sunny     |   482     0     0 |       0    -125 |    -6647 0.05 0.05 |   4 |    0    0   20 | arrivals
+118 | creek    |  0 | sunny     |   531     0     0 |       0    -125 |    -6772 0.05 0.05 |   4 |    0    0   18 | arrivals
+119 | creek    |  0 | cloudy    |   482     0     0 |       0    -125 |    -6897 0.05 0.05 |   4 |    0    0   28 | arrivals
+120 | creek    |  0 | sandstorm |    32     0     0 |       0    -125 |    -7022 0.05 0.05 |   4 |    0    0    2 | arrivals
+    ... total profit -11445, 8 purchases, goals claimed 5, loans 6
+121 | creek    |  0 | breeze    |   621     0     0 |       0    -125 |    -7147 0.05 0.05 |   4 |    0    0   31 | arrivals
+122 | creek    |  0 | hot       |   462     0     0 |       0    -125 |    -7272 0.05 0.05 |   4 |    0    0   18 | arrivals
+123 | creek    |  0 | sandstorm |    19     0     0 |       0    -125 |    -7397 0.05 0.05 |   4 |    0    0    0 | arrivals
+124 | creek    |  0 | sunny     |   478     0     0 |       0    -125 |    -7522 0.05 0.05 |   4 |    0    0   19 | arrivals
+125 | creek    |  0 | cloudy    |   442     0     0 |       0    -125 |    -7647 0.05 0.05 |   4 |    0    0   21 | arrivals
+126 | creek    |  0 | hot       |   453     0     0 |       0    -125 |    -7772 0.05 0.05 |   4 |    0    0   27 | arrivals
+127 | creek    |  0 | sunny     |   478     0     0 |       0    -125 |    -7897 0.05 0.05 |   4 |    0    0   21 | arrivals
+128 | creek    |  0 | sandstorm |    30     0     0 |       0    -125 |    -8022 0.05 0.05 |   4 |    0    0    0 | arrivals
+129 | creek    |  0 | hot       |   471     0     0 |       0    -125 |    -8147 0.05 0.05 |   4 |    0    0   19 | arrivals
+130 | creek    |  0 | hot       |   474     0     0 |       0    -125 |    -8272 0.05 0.05 |   4 |    0    0   27 | arrivals
+    ... total profit -12697, 8 purchases, goals claimed 5, loans 6
+131 | creek    |  0 | hot       |   485     0     0 |       0    -125 |    -8397 0.05 0.05 |   4 |    0    0   17 | arrivals
+132 | creek    |  0 | hot       |   452     0     0 |       0    -125 |    -8522 0.05 0.05 |   4 |    0    0   20 | arrivals
+133 | creek    |  0 | cloudy    |   488     0     0 |       0    -125 |    -8647 0.05 0.05 |   4 |    0    0   24 | arrivals
+134 | creek    |  0 | cloudy    |   415     0     0 |       0    -125 |    -8772 0.05 0.05 |   4 |    0    0   17 | arrivals
+135 | creek    |  0 | sunny     |   479     0     0 |       0    -125 |    -8897 0.05 0.05 |   4 |    0    0   17 | arrivals
+136 | creek    |  0 | sunny     |   470     0     0 |       0    -125 |    -9022 0.05 0.05 |   4 |    0    0   24 | arrivals
+137 | creek    |  0 | sunny     |   501     0     0 |       0    -125 |    -9147 0.05 0.05 |   4 |    0    0   23 | arrivals
+138 | creek    |  0 | sunny     |   499     0     0 |       0    -125 |    -9272 0.05 0.05 |   4 |    0    0   26 | arrivals
+139 | creek    |  0 | sunny     |   494     0     0 |       0    -125 |    -9397 0.05 0.05 |   4 |    0    0   20 | arrivals
+140 | creek    |  0 | sunny     |   503     0     0 |       0    -125 |    -9522 0.05 0.05 |   4 |    0    0   22 | arrivals
+    ... total profit -13949, 8 purchases, goals claimed 5, loans 6
+141 | creek    |  0 | cloudy    |   455     0     0 |       0    -125 |    -9647 0.05 0.05 |   4 |    0    0   18 | arrivals
+142 | creek    |  0 | sandstorm |    40     0     0 |       0    -125 |    -9772 0.05 0.05 |   4 |    0    0    0 | arrivals
+143 | creek    |  0 | sunny     |   517     0     0 |       0    -125 |    -9897 0.05 0.05 |   4 |    0    0   26 | arrivals
+144 | creek    |  0 | sunny     |   479     0     0 |       0    -125 |   -10022 0.05 0.05 |   4 |    0    0   26 | arrivals
+145 | creek    |  0 | sunny     |   475     0     0 |       0    -125 |   -10147 0.05 0.05 |   4 |    0    0   24 | arrivals
+146 | creek    |  0 | hot       |   426     0     0 |       0    -125 |   -10272 0.05 0.05 |   4 |    0    0   24 | arrivals
+147 | creek    |  0 | cloudy    |   456     0     0 |       0    -125 |   -10397 0.05 0.05 |   4 |    0    0   17 | arrivals
+148 | creek    |  0 | sunny     |   491     0     0 |       0    -125 |   -10522 0.05 0.05 |   4 |    0    0   25 | arrivals
+149 | creek    |  0 | breeze    |   634     0     0 |       0    -125 |   -10647 0.05 0.05 |   4 |    0    0   35 | arrivals
+150 | creek    |  0 | sunny     |   482     0     0 |       0    -125 |   -10772 0.05 0.05 |   4 |    0    0   26 | arrivals
+    ... total profit -15199, 8 purchases, goals claimed 5, loans 6
+autoplay: 150 days in 16.9 s, total profit -15199, 8 purchases, 5 goals, 6 loans
