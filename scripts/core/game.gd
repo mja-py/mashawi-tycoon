@@ -5,9 +5,14 @@ extends Node
 signal changed
 signal notify(text: String, kind: String)
 signal goal_claimed(goal: Dictionary)
+## A fame level (Data.FAME_LEVELS index) was reached for the first time: city-wide
+## (local = false) or at the place you stand (local = true).
+signal fame_level_up(level: int, local: bool)
 
 ## 5: the campaigns of Data.MARKETING (older saves get the days left of removed ones refunded).
-const SAVE_VERSION := 5
+## 6: fame levels: `fame_best` and each plot's "fame_best" (derived from the stored values
+## for older saves) floor popularity and local reputation; a level is never lost.
+const SAVE_VERSION := 6
 const HISTORY_LIMIT := 90
 ## Tests and headless runs point this elsewhere so the player's save is never touched.
 var save_path := "user://save.json"
@@ -21,6 +26,9 @@ const FIXED_FROM_TIER := 3
 var money: float = Data.START_MONEY
 var day: int = 1
 var popularity: float = Data.START_POPULARITY
+## The highest fame level reached (Data.FAME_LEVELS index): popularity never drops below its
+## threshold. Each plot keeps its own "fame_best" for its local reputation.
+var fame_best: int = 0
 var stage: String = "dubai"
 var location: String = "fahidi"
 var weather: String = "sunny"
@@ -54,6 +62,7 @@ func new_game() -> void:
 	money = Data.START_MONEY
 	day = 1
 	popularity = Data.START_POPULARITY
+	fame_best = Economy.fame_level(popularity)
 	stage = "dubai"
 	location = "fahidi"
 	inventory = {}
@@ -109,7 +118,8 @@ func prepare_day() -> void:
 			var p: Dictionary = plots[id]
 			var away := day - int(p.get("last_visit", day))
 			if away > 0 and plot_stage_tier(id) >= FIXED_FROM_TIER:
-				p["reputation"] = Economy.reputation_decay(float(p["reputation"]), 1)
+				# a local level once reached is never lost: the fading stops at its threshold
+				p["reputation"] = Economy.reputation_decay(float(p["reputation"]), 1, Economy.fame_floor(_plot_best(p)))
 		prepared_day = day
 	var here := plot()
 	here["last_visit"] = day
@@ -161,7 +171,8 @@ func weather_def() -> Dictionary:
 ## The plot record of a location (created on first use).
 func _plot_entry(id: String) -> Dictionary:
 	if not plots.has(id):
-		plots[id] = {"stage": "", "stations": {}, "reputation": popularity, "last_visit": day}
+		# a new place starts from your city-wide name
+		plots[id] = {"stage": "", "stations": {}, "reputation": popularity, "last_visit": day, "fame_best": Economy.fame_level(popularity)}
 	return plots[id]
 
 func plot() -> Dictionary:
@@ -255,10 +266,14 @@ func terrace_seats() -> int:
 
 ## Overnight loss rate for an ingredient given the cold storage level.
 func spoil_rate(ing: String) -> float:
+	return spoil_rate_at(ing, station_level("coldbox"))
+
+## Overnight loss rate for an ingredient with a cold box of `coldbox_level`.
+func spoil_rate_at(ing: String, coldbox_level: int) -> float:
 	var def: Dictionary = Data.INGREDIENTS[ing]
 	var rate := float(def["spoil"])
 	var cold: Dictionary = Data.STATIONS["coldbox"]
-	var level := clampi(station_level("coldbox"), 0, 3)
+	var level := clampi(coldbox_level, 0, int(cold["max"]))
 	if def["cold"] is bool and def["cold"]:
 		rate = minf(rate, float(cold["spoil_meat"][level]))
 	elif def["cold"] is String:
@@ -293,7 +308,7 @@ func offer(assume_stock: bool = false) -> Array:
 		var def: Dictionary = Data.MENU_ITEMS[id]
 		out.append({"id": id, "kind": def["kind"], "station_kind": def.get("station_kind", ""),
 			"value": Economy.item_value(id, quality(id), float(menu[id]["price"]), l, w),
-			"price": float(menu[id]["price"]), "unit_cost": unit_cost(id),
+			"price": float(menu[id]["price"]), "unit_cost": unit_cost(id), "quality": quality(id),
 			"stock": 999 if assume_stock else portions_possible(id)})
 	return out
 
@@ -373,10 +388,14 @@ func attract_bonus() -> float:
 		b += float(Data.STATIONS[id].get("attract_per_level", 0.0)) * station_level(id)
 	return b
 
-func satisfaction_bonus() -> float:
+## Satisfaction the stand's comforts add to every sale; on a hot day (`weather_id` "hot")
+## the shade's cooling counts as well.
+func satisfaction_bonus(weather_id: String = "") -> float:
 	var b := 0.0
 	for id in stage_def()["stations"]:
 		b += float(Data.STATIONS[id].get("satisfaction_per_level", 0.0)) * station_level(id)
+		if weather_id == "hot":
+			b += float(Data.STATIONS[id].get("hot_satisfaction_per_level", 0.0)) * station_level(id)
 	return b
 
 ## Extra stop chance from the campaigns running today (each scaled as Economy.campaign_boost).
@@ -414,8 +433,8 @@ func marketing_lock_reason(id: String) -> String:
 	if marketing.has(id):
 		return tr("ui.already_running")
 	var def: Dictionary = Data.MARKETING[id]
-	if popularity < float(def.get("min_popularity", 0.0)) - 0.0001:
-		return tr("ui.a_needs_stars") % (float(def["min_popularity"]) * 5.0)
+	if popularity < float(def.get("min_popularity", 0.0)) - Economy.FAME_EPS:
+		return tr("ui.a_needs_stars") % fame_name(Economy.fame_level_for(float(def["min_popularity"])))
 	return ""
 
 ## What a campaign would bring if started today, without starting it (no state change, no
@@ -474,6 +493,7 @@ func daily_wages() -> float:
 func opening_boost() -> float:
 	return Economy.opening_boost(day)
 
+## Legacy: popularity on the old five-star scale (the HUD's star row still reads it).
 func stars() -> float:
 	return popularity * 5.0
 
@@ -483,8 +503,60 @@ func local_reputation() -> float:
 func effective_popularity() -> float:
 	return Economy.effective_popularity(popularity, local_reputation())
 
+# ---------------------------------------------------------------- fame (Data.FAME_LEVELS)
+
+## The city-wide fame level reached (never lower than the best one ever reached).
+func fame_level() -> int:
+	return maxi(fame_best, Economy.fame_level(popularity))
+
+## 0..1 along the city-wide bar to the next level (1.0 at the top).
+func fame_progress() -> float:
+	return Economy.fame_progress(popularity)
+
+## Local fame at the place you stand: its level and the bar towards the next.
+func local_fame_level() -> int:
+	return _plot_best(plot())
+
+func local_fame_progress() -> float:
+	return Economy.fame_progress(local_reputation())
+
+## A fame level's translated name ("Local favourite").
+func fame_name(level: int) -> String:
+	return tr(String(Data.fame_def(level)["name"]))
+
+## The best local level a plot has reached (its stored best or what its value shows now).
+func _plot_best(p: Dictionary) -> int:
+	return maxi(int(p.get("fame_best", 0)), Economy.fame_level(float(p.get("reputation", popularity))))
+
+## Every write of city-wide fame goes through here: never below the level reached, a new
+## level is remembered and announced (fame_level_up). Returns true on a new level.
+func set_popularity(value: float) -> bool:
+	if is_nan(value) or is_inf(value):
+		return false
+	popularity = clampf(maxf(value, Economy.fame_floor(fame_best)), 0.05, 1.0)
+	var lvl := Economy.fame_level(popularity)
+	if lvl > fame_best:
+		fame_best = lvl
+		fame_level_up.emit(lvl, false)
+		return true
+	return false
+
+## The same for a plot's local reputation (`announce` = it is the place you stand).
+func set_local_fame(p: Dictionary, value: float, announce: bool = true) -> bool:
+	if is_nan(value) or is_inf(value):
+		return false
+	var best := _plot_best(p)
+	p["reputation"] = clampf(maxf(value, Economy.fame_floor(best)), 0.05, 1.0)
+	var lvl := Economy.fame_level(float(p["reputation"]))
+	p["fame_best"] = maxi(best, lvl)
+	if lvl > best:
+		if announce:
+			fame_level_up.emit(lvl, true)
+		return true
+	return false
+
 func location_unlocked(id: String) -> bool:
-	return popularity >= float(Data.LOCATIONS[id].get("unlock_pop", 0.0))
+	return popularity >= float(Data.LOCATIONS[id].get("unlock_pop", 0.0)) - Economy.FAME_EPS
 
 func stage_locations() -> Array:
 	return Data.STAGES[stage]["locations"]
@@ -536,12 +608,31 @@ func goal_snapshot() -> Dictionary:
 		best_stage = maxi(best_stage, plot_stage_tier(loc_id))
 		for id in plots[loc_id]["stations"]:
 			st[id] = maxi(int(st.get(id, 0)), int(plots[loc_id]["stations"][id]))
+	# the most improved dish (enhance levels bought)
+	var dish_level := 0
+	for id in menu:
+		if menu[id]["unlocked"]:
+			dish_level = maxi(dish_level, int(menu[id]["level"]))
 	return {
 		"day_served": int(last.get("served", 0)), "day_profit": float(last.get("profit", 0.0)), "day_dine_in": int(last.get("dine_in", 0)),
 		"day_portions": int(last.get("portions", last.get("served", 0))),
-		"total_served": total_served, "stars": stars(), "levels_owned": levels_owned(), "stage": best_stage,
+		"total_served": total_served, "stars": stars(), "fame": maxf(Economy.fame_value(popularity), float(fame_level())),
+		"levels_owned": levels_owned(), "stage": best_stage, "dish_level": dish_level,
 		"stations": st, "visited": stats["locations_visited"], "unlocked": unlocked,
 	}
+
+## Move past goals already claimed (a save from before new goals were added to the ladder
+## goes back to the first new one, then skips what it had claimed).
+func _skip_claimed_goals() -> void:
+	while goal_index < Data.GOALS.size() and String(Data.GOALS[goal_index]["id"]) in goals_claimed:
+		goal_index += 1
+
+## The first goal of the ladder not claimed yet.
+func _first_open_goal() -> int:
+	for i in range(Data.GOALS.size()):
+		if not String(Data.GOALS[i]["id"]) in goals_claimed:
+			return i
+	return Data.GOALS.size()
 
 func goal_progress() -> float:
 	var g := current_goal()
@@ -558,9 +649,11 @@ func claim_goal() -> bool:
 	var g := current_goal()
 	var reward: Dictionary = g["reward"]
 	money += float(reward.get("money", 0.0))
-	popularity = clampf(popularity + float(reward.get("popularity", 0.0)), 0.05, 1.0)
+	if reward.has("popularity"):
+		set_popularity(popularity + float(reward["popularity"]))
 	goals_claimed.append(g["id"])
 	goal_index += 1
+	_skip_claimed_goals()
 	notify.emit(tr("ui.g_claimed") % Loc.money(float(reward.get("money", 0.0))), "good")
 	goal_claimed.emit(g)
 	changed.emit()
@@ -592,11 +685,26 @@ func buy_pack(ingredient: String, pack_index: int) -> bool:
 
 ## One-tap daily top-up. Forecast, menu, recipes and existing stock all count;
 ## the quote is read-only and the whole purchase succeeds or nothing is bought.
+## With a cold box it buys ahead where that is cheaper over two days (supply_plan), never
+## past the cash left after today's rent and wages.
+## {cost, orders [[ingredient, pack index, count]], customers, portions, ahead, saving}.
 func daily_stock_plan() -> Dictionary:
 	var ctx := sim_context()
 	ctx["weather"] = forecast
 	var est := Economy.throughput_estimate(ctx)
-	var customers := int(round(float(est["served"])))
+	var plan := supply_plan(stock_needs(ctx, est), stock_budget())
+	plan["customers"] = int(round(float(est["served"])))
+	plan["portions"] = int(round(float(est["portions"])))
+	return plan
+
+## Cash Stock today may spend: what is left after today's rent and wages.
+func stock_budget() -> float:
+	return maxf(0.0, money - float(loc()["rent"]) - daily_wages())
+
+## Units of each ingredient a day needs (the plan's 10% buffer included), from a sim context
+## and its estimate: every dish's share of the estimated portions, add-ons as DaySim rolls them.
+func stock_needs(ctx: Dictionary, est: Dictionary) -> Dictionary:
+	var w_id := String(ctx["weather"])
 	# Parties order several portions each: stock follows portions, not buyers.
 	var portions_due := float(est["portions"])
 	var items: Array = ctx["offer"]
@@ -606,9 +714,9 @@ func daily_stock_plan() -> Dictionary:
 		if item_available(item["id"]):
 			sums[item["kind"]] += float(item["value"])
 			counts[item["kind"]] += 1
-	var ds := Economy.drink_share(forecast)
+	var ds := Economy.drink_share(w_id)
 	var bonus := Economy.ADDON_DINE_BONUS * float(ctx["dine_in_share"])
-	var drink_p := Economy.addon_drink_chance(forecast)
+	var drink_p := Economy.addon_drink_chance(w_id)
 	var needs := {}
 	for item in items:
 		if not item_available(item["id"]):
@@ -630,24 +738,126 @@ func daily_stock_plan() -> Dictionary:
 		var recipe := Economy.portion_ingredients(item["id"], menu[item["id"]])
 		for ing in recipe:
 			needs[ing] = int(needs.get(ing, 0)) + portions * int(recipe[ing])
-	var orders := []
-	var cost := 0.0
+	return needs
+
+## The whole packs that cover `needs` (units by ingredient) beyond the stock in hand. With a
+## cold box the plan buys ahead: each ingredient is judged over two days (today's need, then
+## the same again tomorrow), and bigger, cheaper packs win when what survives the night
+## (1 - spoil_rate) makes them cheaper (Economy.supply_packs_ahead). Without one it buys for
+## today only. When buying ahead would cost more than `budget` (>= 0) the plan buys for today.
+## {cost, orders [[ingredient, pack index, count]], ahead (buys past today's need),
+##  saving (AED the two days save against buying for today only)}.
+func supply_plan(needs: Dictionary, budget: float = -1.0) -> Dictionary:
+	var cold := station_level("coldbox") >= 1
+	var plain := {"cost": 0.0, "orders": [], "ahead": false, "saving": 0.0}
+	var ahead := {"cost": 0.0, "orders": [], "ahead": false, "saving": 0.0}
 	for ing in needs:
+		if not Data.INGREDIENTS.has(ing):
+			continue
 		var deficit := int(needs[ing]) - int(inventory.get(ing, 0))
 		if deficit <= 0:
 			continue
-		var quote := Economy.supply_packs(Data.INGREDIENTS[ing]["packs"], deficit)
-		cost += float(quote["cost"])
-		for i in range(quote["counts"].size()):
-			if int(quote["counts"][i]) > 0:
-				orders.append([ing, i, int(quote["counts"][i])])
-	return {"cost": cost, "orders": orders, "customers": customers, "portions": int(round(portions_due))}
+		var packs: Array = Data.INGREDIENTS[ing]["packs"]
+		_add_orders(plain, ing, Economy.supply_packs(packs, deficit))
+		if cold:
+			var q := Economy.supply_packs_ahead(packs, deficit, int(needs[ing]), 1.0 - spoil_rate(ing))
+			_add_orders(ahead, ing, q)
+			ahead["saving"] = float(ahead["saving"]) + float(q["plain_two_day"]) - float(q["two_day"])
+	if cold and float(ahead["saving"]) > 0.0 and (budget < 0.0 or float(ahead["cost"]) <= budget):
+		ahead["ahead"] = true
+		return ahead
+	return plain
+
+func _add_orders(plan: Dictionary, ing: String, quote: Dictionary) -> void:
+	plan["cost"] = float(plan["cost"]) + float(quote["cost"])
+	var counts: Array = quote["counts"]
+	for i in range(counts.size()):
+		if int(counts[i]) > 0:
+			plan["orders"].append([ing, i, int(counts[i])])
+
+## AED a day the next cold box level would save here (0 at the top level): the overnight
+## spoilage it would stop (the last week's books, at today's ingredient prices) plus half the
+## two-day saving of buying today's estimated needs ahead (supply_plan). `est` = an estimate
+## of today already made (the forecast's sim context), else one is run.
+func coldbox_saving(est: Dictionary = {}) -> float:
+	var level := station_level("coldbox")
+	if level >= int(Data.STATIONS["coldbox"]["max"]) or not station_available("coldbox"):
+		return 0.0
+	var spoil := 0.0
+	var n := mini(7, history.size())
+	for i in range(n):
+		var row: Dictionary = history[history.size() - 1 - i]
+		var sp = row.get("spoiled", {})
+		if not sp is Dictionary:
+			continue
+		for ing in sp:
+			if not Data.INGREDIENTS.has(ing):
+				continue
+			var now := spoil_rate_at(ing, level)
+			if now > 0.0:
+				spoil += float(sp[ing]) * (1.0 - spoil_rate_at(ing, level + 1) / now) * ingredient_cost(ing)
+	if n > 0:
+		spoil /= n
+	var ctx := sim_context()
+	ctx["weather"] = forecast
+	var e := est if not est.is_empty() else Economy.throughput_estimate(ctx)
+	var needs := stock_needs(ctx, e)
+	var bulk := 0.0
+	for ing in needs:
+		var need := int(needs[ing])
+		if need <= 0:
+			continue
+		var packs: Array = Data.INGREDIENTS[ing]["packs"]
+		var nxt := Economy.supply_packs_ahead(packs, need, need, 1.0 - spoil_rate_at(ing, level + 1))
+		var save := float(nxt["plain_two_day"]) - float(nxt["two_day"])
+		if level >= 1:
+			var cur := Economy.supply_packs_ahead(packs, need, need, 1.0 - spoil_rate_at(ing, level))
+			save -= float(cur["plain_two_day"]) - float(cur["two_day"])
+		bulk += maxf(0.0, save) * 0.5
+	return spoil + bulk
+
+## AED a day one unit of popularity is worth here: what the extra passers it draws would buy,
+## from the estimate at a little more fame (the price of fame in Economy.fame_worth).
+## `ctx` / `base_profit` = a context and its estimated profit already in hand.
+func fame_slope(ctx: Dictionary = {}, base_profit: float = INF) -> float:
+	var c := ctx if not ctx.is_empty() else sim_context()
+	var pop := float(c["popularity"])
+	var step := 0.05
+	var lo := c
+	var hi := c.duplicate()
+	var lo_profit := base_profit if is_finite(base_profit) else float(Economy.throughput_estimate(c)["profit"])
+	if pop + step > 1.0:
+		# at the very top: measure the step below instead
+		lo = c.duplicate()
+		lo["popularity"] = pop - step
+		var top := lo_profit
+		lo_profit = float(Economy.throughput_estimate(lo)["profit"])
+		return maxf(0.0, (top - lo_profit) / step)
+	hi["popularity"] = pop + step
+	return maxf(0.0, (float(Economy.throughput_estimate(hi)["profit"]) - lo_profit) / step)
+
+## What a purchase (Game.what_if overrides) does for fame, for the advisor ("about N more
+## happy guests a day"): {happy (more green faces a day), points (more fame points a day),
+## fame (popularity it adds over Data.FAME_HORIZON_DAYS), value (AED a day that fame is
+## worth, Economy.fame_worth)}. Three estimates.
+func quality_gain(overrides: Dictionary) -> Dictionary:
+	var ctx := sim_context()
+	var base := Economy.throughput_estimate(ctx)
+	return fame_gain_of(base, Economy.throughput_estimate(what_if(overrides)), fame_slope(ctx, float(base["profit"])))
+
+## The fame part of going from estimate `base` to estimate `after` (see quality_gain), with
+## `slope` from fame_slope.
+func fame_gain_of(base: Dictionary, after: Dictionary, slope: float) -> Dictionary:
+	var pts := float(after["fame_points"]) - float(base["fame_points"])
+	var pop := effective_popularity()
+	return {"happy": float(after["moods"]["great"]) - float(base["moods"]["great"]), "points": pts,
+		"fame": Economy.fame_reach(pts, pop, Data.FAME_HORIZON_DAYS), "value": Economy.fame_worth(pts, pop, slope)}
 
 func stock_for_today() -> bool:
 	var plan := daily_stock_plan()
 	var cost := float(plan["cost"])
 	# Leave the day's unavoidable bills in the till.
-	if cost <= 0.0 or cost > maxf(0.0, money - float(loc()["rent"]) - daily_wages()):
+	if cost <= 0.0 or cost > stock_budget():
 		return false
 	money -= cost
 	for order in plan["orders"]:
@@ -766,8 +976,8 @@ func stage_lock_reason() -> String:
 		return tr("ui.b_soon")
 	if nxt.has("requires_rig") and rig_tier() < int(nxt["requires_rig"]):
 		return tr("ui.b_needs_stage") % tr(Data.stage_def(int(nxt["requires_rig"]))["name"])
-	if nxt.has("requires_local_rep") and local_reputation() < float(nxt["requires_local_rep"]):
-		return tr("ui.b_needs_rep") % (float(nxt["requires_local_rep"]) * 5.0)
+	if nxt.has("requires_local_rep") and local_reputation() < float(nxt["requires_local_rep"]) - Economy.FAME_EPS:
+		return tr("ui.b_needs_rep") % fame_name(Economy.fame_level_for(float(nxt["requires_local_rep"])))
 	return ""
 
 ## Build the next stage: rig stages replace the rig; a plot stage is built at this location.
@@ -832,11 +1042,12 @@ func sim_context() -> Dictionary:
 	var tier := stage_tier()
 	var n_seats := terrace_seats()
 	var counter_level := station_level("counter")
+	# Today's weather exists only once the day has opened; prep plans on the forecast.
+	var w_id := weather if weather_day == day else forecast
 	return {
 		"day": day,
 		"location": location,
-		# Today's weather exists only once the day has opened; prep plans on the forecast.
-		"weather": weather if weather_day == day else forecast,
+		"weather": w_id,
 		"hours": Data.location_hours(location),
 		"stage": tier,
 		"stations": active_stations(),
@@ -860,7 +1071,7 @@ func sim_context() -> Dictionary:
 		"promo_power": promo_power(),
 		"shade_level": station_level("shade"),
 		"lights_level": station_level("lights") if station_available("lights") else 0,
-		"satisfaction_bonus": satisfaction_bonus(),
+		"satisfaction_bonus": satisfaction_bonus(w_id),
 		"popularity": effective_popularity(),
 		"local_rep": local_reputation(),
 		"offer": offer(true),
@@ -956,11 +1167,17 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 			inventory[ing] = qty - lost
 			spoiled[ing] = lost
 			spoil_cost += lost * ingredient_cost(ing)
-	var pop_delta := Economy.popularity_delta(day_stats, popularity)
-	popularity = clampf(popularity + pop_delta, 0.05, 1.0)
+	# fame, guest by guest (Economy.fame_change): the city's and this place's own
+	var pop_before := popularity
+	var fame := Economy.fame_change(day_stats, popularity, 1.0, Economy.fame_floor(fame_best))
+	var fame_up := set_popularity(float(fame["after"]))
+	var pop_delta := popularity - pop_before
 	var p := plot()
-	var local_delta := Economy.popularity_delta(day_stats, float(p["reputation"])) * 1.5
-	p["reputation"] = clampf(float(p["reputation"]) + local_delta, 0.05, 1.0)
+	var local_before := float(p["reputation"])
+	var local := Economy.fame_change(day_stats, local_before, Data.LOCAL_FAME_RATE, Economy.fame_floor(_plot_best(p)))
+	var local_up := set_local_fame(p, float(local["after"]))
+	var local_delta := float(p["reputation"]) - local_before
+	var guests: Dictionary = fame["points"]
 	p["last_visit"] = day
 	# what the day was sold at and under which campaigns (before today's campaigns tick down)
 	var prices_today := {}
@@ -977,7 +1194,8 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 			if Data.MARKETING.has(id):
 				review += Economy.campaign_review(Data.MARKETING[id], _campaign_satisfaction(id, day_stats))
 	if review != 0.0:
-		popularity = clampf(popularity + review, 0.05, 1.0)
+		if set_popularity(popularity + review):
+			fame_up = true
 		notify.emit(tr("mk.review_good") if review > 0.0 else tr("mk.review_bad"), "good" if review > 0.0 else "warn")
 	var revenue := float(day_stats.get("revenue", 0.0))
 	var cogs := float(day_stats.get("cogs", 0.0))
@@ -1020,6 +1238,22 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 		"popularity": popularity,
 		"local_rep": float(p["reputation"]),
 		"local_delta": local_delta,
+		# the fame the guests brought (gain) and took back (loss, positive), city-wide and here;
+		# pop_delta = fame_gain - fame_loss (the blogger's review is "review", on its own)
+		"fame_gain": float(fame["gain"]),
+		"fame_loss": float(fame["loss"]),
+		"local_gain": float(local["gain"]),
+		"local_loss": float(local["loss"]),
+		# the guests behind it: happy (green faces), content (amber), and those who took fame
+		# away (red faces plus guests lost to a slow line or a sold-out dish)
+		"fame_happy": int(guests["happy"]),
+		"fame_content": int(guests["content"]),
+		"fame_unhappy": int(guests["unhappy"]) + int(guests["lost"]),
+		# fame levels after the day (Data.FAME_LEVELS) and whether one was reached today
+		"fame_level": fame_level(),
+		"fame_up": fame_up,
+		"local_fame_level": _plot_best(p),
+		"local_fame_up": local_up,
 		"util": util,
 		"bottleneck": Economy.bottleneck(util),
 		"sold": day_stats.get("sold", {}),
@@ -1127,7 +1361,7 @@ func save() -> void:
 		return
 	var data := {
 		"version": SAVE_VERSION, "saved_at": Time.get_unix_time_from_system(),
-		"money": money, "day": day, "popularity": popularity,
+		"money": money, "day": day, "popularity": popularity, "fame_best": fame_best,
 		"stage": stage, "location": location, "weather": weather, "forecast": forecast, "prepared_day": prepared_day, "weather_day": weather_day, "day_seed": day_seed,
 		"inventory": inventory, "avg_cost": avg_cost, "menu": menu, "marketing": marketing,
 		"rig": rig, "plots": plots, "goal_index": goal_index, "goals_claimed": goals_claimed, "stats": stats,
@@ -1151,6 +1385,8 @@ func load_game() -> bool:
 	money = _number(parsed.get("money", money), money)
 	day = int(_number(parsed.get("day", day), day))
 	popularity = _number(parsed.get("popularity", popularity), popularity)
+	# version 6: the best fame level reached (older saves: _validate derives it)
+	fame_best = int(_number(parsed.get("fame_best", 0)))
 	# saves from older versions may name places or weather that no longer exist
 	if Data.STAGES.has(_identifier(parsed.get("stage"))):
 		stage = _identifier(parsed["stage"])
@@ -1200,7 +1436,8 @@ func load_game() -> bool:
 			var p = parsed["plots"][loc_id]
 			if Data.LOCATIONS.has(loc_id) and p is Dictionary:
 				plots[loc_id] = {"stage": _identifier(p.get("stage")), "stations": _int_dict(p.get("stations", {})),
-					"reputation": _number(p.get("reputation", popularity), popularity), "last_visit": int(_number(p.get("last_visit", day), day))}
+					"reputation": _number(p.get("reputation", popularity), popularity), "last_visit": int(_number(p.get("last_visit", day), day)),
+					"fame_best": int(_number(p.get("fame_best", 0)))}
 	goal_index = int(_number(parsed.get("goal_index", 0)))
 	goals_claimed = parsed.get("goals_claimed", []) if parsed.get("goals_claimed", null) is Array else []
 	stats = _new_stats()
@@ -1211,6 +1448,10 @@ func load_game() -> bool:
 	if save_version < 3:
 		_migrate_legacy(parsed)
 	_validate()
+	if save_version <= 5:
+		# release 4 added goals inside the ladder: an older save steps back to the first one it
+		# has not done (claimed ones are skipped again after it)
+		goal_index = mini(goal_index, _first_open_goal())
 	if refund > 0.0:
 		money += refund
 		notify.emit(tr("ui.promo_refund") % Loc.money(refund), "good")
@@ -1274,6 +1515,7 @@ func _migrate_legacy(parsed: Dictionary) -> void:
 	stats["days_played"] = maxi(int(stats["days_played"]), day - 1)
 	stats["locations_visited"] = [location]
 	_plot_entry(location)["reputation"] = popularity
+	plots[location]["fame_best"] = Economy.fame_level(popularity)
 	# skip the goals this player has already achieved (no retroactive cash)
 	while goal_index < Data.GOALS.size() and Economy.goal_progress(Data.GOALS[goal_index], goal_snapshot()) >= 1.0:
 		goals_claimed.append(Data.GOALS[goal_index]["id"])
@@ -1289,6 +1531,10 @@ func _validate() -> void:
 	if is_nan(popularity) or is_inf(popularity):
 		popularity = Data.START_POPULARITY
 	popularity = clampf(popularity, 0.05, 1.0)
+	# a fame level once reached is never lost: the stored best (version 6) or, for older
+	# saves, the level the stored popularity shows; popularity sits at or above its threshold
+	fame_best = clampi(maxi(fame_best, Economy.fame_level(popularity)), 0, Data.FAME_LEVELS.size() - 1)
+	popularity = maxf(popularity, Economy.fame_floor(fame_best))
 	day = maxi(day, 1)
 	prepared_day = clampi(prepared_day, 0, day)
 	weather_day = clampi(weather_day, 0, day)
@@ -1310,7 +1556,10 @@ func _validate() -> void:
 		p["stage"] = sid
 		p["stations"] = _clean_stations(p.get("stations", {}), Data.stage_def(Data.stage_tier_of(sid))) if sid != "" else {}
 		var rep := float(p.get("reputation", popularity))
-		p["reputation"] = Data.START_POPULARITY if is_nan(rep) else clampf(rep, 0.05, 1.0)
+		p["reputation"] = Data.START_POPULARITY if is_nan(rep) or is_inf(rep) else clampf(rep, 0.05, 1.0)
+		var best := clampi(maxi(int(_number(p.get("fame_best", 0))), Economy.fame_level(float(p["reputation"]))), 0, Data.FAME_LEVELS.size() - 1)
+		p["fame_best"] = best
+		p["reputation"] = maxf(float(p["reputation"]), Economy.fame_floor(best))
 		p["last_visit"] = clampi(int(p.get("last_visit", day)), 1, day)
 	if not location_stage_ok(location):
 		location = "fahidi"
@@ -1340,6 +1589,7 @@ func _validate() -> void:
 			if g is String and def["id"] == g and not known_goals.has(g):
 				known_goals.append(g)
 	goals_claimed = known_goals
+	_skip_claimed_goals()
 	stats["best_day_profit"] = maxf(_number(stats.get("best_day_profit", 0.0)), 0.0)
 	stats["total_profit"] = _number(stats.get("total_profit", 0.0))
 	for k in ["best_day_served", "days_played", "levels_bought", "stages_built"]:
@@ -1360,7 +1610,19 @@ func _validate() -> void:
 				row[k] = maxi(0, int(_number(row.get(k, 0))))
 			for k in ["profit", "money", "revenue", "cogs", "rent", "wages", "spoil_cost", "satisfaction", "pop_delta", "popularity", "local_rep", "local_delta", "review"]:
 				row[k] = _number(row.get(k, 0.0))
+			# version 6: the fame the day's guests brought and took (older rows: from the change)
+			var pd := float(row["pop_delta"])
+			var ld := float(row["local_delta"])
+			for pair in [["fame_gain", maxf(pd, 0.0)], ["fame_loss", maxf(-pd, 0.0)], ["local_gain", maxf(ld, 0.0)], ["local_loss", maxf(-ld, 0.0)]]:
+				row[pair[0]] = maxf(0.0, _number(row.get(pair[0], pair[1]), float(pair[1])))
+			for k in ["fame_happy", "fame_content", "fame_unhappy"]:
+				row[k] = maxi(0, int(_number(row.get(k, 0))))
 			row["wait"] = maxf(0.0, _number(row.get("wait", 0.0)))
+			# version 6: fame levels after the day (older rows: the level their value shows)
+			row["fame_level"] = clampi(int(_number(row.get("fame_level", Economy.fame_level(float(row["popularity"]))))), 0, Data.FAME_LEVELS.size() - 1)
+			row["local_fame_level"] = clampi(int(_number(row.get("local_fame_level", Economy.fame_level(float(row["local_rep"]))))), 0, Data.FAME_LEVELS.size() - 1)
+			for k in ["fame_up", "local_fame_up"]:
+				row[k] = _flag(row.get(k))
 			row["bottleneck"] = _identifier(row.get("bottleneck"))
 			row["sold"] = _int_dict(row.get("sold", {}))
 			row["spoiled"] = _int_dict(row.get("spoiled", {}))

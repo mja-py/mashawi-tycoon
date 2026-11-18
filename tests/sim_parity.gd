@@ -92,7 +92,7 @@ func _run() -> void:
 	var tiers := _arg("tiers", "0,1,2,3,4,5").split(",")
 	var only_loc := _arg("locations", "")
 	var only_levels := _arg("levels", "low,mid,high").split(",")
-	var played_seeds: Array = PLAYED_SEEDS.slice(0, int(_arg("seeds", "16")))
+	var played_seeds: Array = PLAYED_SEEDS.slice(0, int(_arg("seeds", "20")))
 	var rows := []
 	var failures := 0
 	var started := Time.get_ticks_msec()

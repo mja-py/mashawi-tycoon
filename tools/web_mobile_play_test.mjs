@@ -30,9 +30,10 @@ try {
   await tap(page, 44, 80); // Close
   await tap(page, 85, 360); // Open stand
   await waitPhase(page, 'day');
-  await page.waitForFunction(() => window.godotAudio?.sizzle === true, null, { timeout: 15000 }).catch(() => {});
+  // The grill is heard only while an order is cooking: wait for the first one.
+  await page.waitForFunction(() => window.godotAudio?.sizzle === true, null, { timeout: 45000 }).catch(() => {});
   const dayAudio = await page.evaluate(() => window.godotAudio);
-  check(dayAudio && dayAudio.music === '' && dayAudio.sizzle === true && dayAudio.ambience !== '', `ambience and grill sizzle play in the day, no music (${JSON.stringify(dayAudio)})`);
+  check(dayAudio && dayAudio.music === '' && dayAudio.sizzle === true && dayAudio.ambience !== '', `ambience plays in the day and the grill is heard once food is cooking, no music (${JSON.stringify(dayAudio)})`);
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${out}/2_day.png` });
 

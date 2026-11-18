@@ -61,6 +61,12 @@ static func count_no_item(stats: Dictionary, kind: String, n: int = 1) -> void:
 static func count_mood(stats: Dictionary, satisfaction: float) -> void:
 	var key := "mood_" + Economy.mood(satisfaction)
 	stats[key] = int(stats.get(key, 0)) + 1
+	if log_satisfaction:
+		satisfaction_log.append(satisfaction)
+
+## Tuning aid (tests and balance scripts): every sale's satisfaction, both sims, while on.
+static var log_satisfaction := false
+static var satisfaction_log: Array[float] = []
 
 func setup(context: Dictionary, r: RandomNumberGenerator) -> void:
 	ctx = context

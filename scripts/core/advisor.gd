@@ -15,11 +15,12 @@ const MIN_LOST := 2
 ## Order of the list: a reward waiting, then yesterday's losses, then what to buy, then the
 ## weather, then observations. Within a group the larger estimated gain comes first.
 const PRIORITY := {"goal_ready": 0,
-	"sold_out": 1, "line": 1, "crowd": 1, "pricey": 1, "no_item": 1, "spoil": 1, "rival": 1, "raise": 1,
+	"sold_out": 1, "line": 1, "pricey": 1, "no_item": 1, "spoil": 1, "rival": 1, "raise": 1,
 	"buy": 2, "save": 2, "move": 2, "promo": 2, "stage_at": 2,
+	"buy_2": 2, "save_2": 2, "move_2": 2, "promo_2": 2, "stage_at_2": 2,
 	"hot": 3, "sandstorm": 3, "breeze": 3}
 ## Insights whose `gain` is a one-off or only a sorting weight: no "about +AED n a day" line.
-const NO_DAILY := ["save", "stage_at", "goal_ready", "goal_near", "trend_down", "trend_up", "quiet", "opening", "dead_dish", "hot", "sandstorm", "breeze", "clean", "start"]
+const NO_DAILY := ["save", "save_2", "stage_at", "stage_at_2", "goal_ready", "goal_near", "trend_down", "trend_up", "quiet", "opening", "dead_dish", "hot", "sandstorm", "breeze", "clean", "start"]
 
 static func _t(key: String) -> String:
 	return TranslationServer.translate(key)
@@ -38,10 +39,17 @@ static func _margin(r: Dictionary) -> float:
 		return 5.0
 	return maxf(1.0, (float(r.get("revenue", 0.0)) - float(r.get("cogs", 0.0))) / served)
 
+## A cold box advised as a purchase already says why: drop the spoilage line that points at it.
+static func _one_coldbox_line(list: Array[Dictionary]) -> Array[Dictionary]:
+	if not list.any(func(it: Dictionary) -> bool: return int(it["prio"]) == 2 and String(it["detail"]) == "coldbox"):
+		return list
+	return list.filter(func(it: Dictionary) -> bool: return not (it["id"] == "spoil" and String(it["detail"]) == "coldbox"))
+
 ## The three things most worth doing after the day `r` (a history row).
 static func for_report(r: Dictionary) -> Array[Dictionary]:
 	var out := _day_insights(r)
 	out.append_array(_buy_insights(r))
+	out = _one_coldbox_line(out)
 	if out.is_empty():
 		out.append(_insight("clean", "great", _t("adv.clean")))
 	return _top(out, REPORT_TOP)
@@ -77,6 +85,7 @@ static func _for_prep() -> Array[Dictionary]:
 	if not last.is_empty():
 		out.append_array(_day_insights(last))
 	out.append_array(_buy_insights(last))
+	out = _one_coldbox_line(out)
 	out.append_array(_forecast_insights())
 	out.append_array(_goal_insights())
 	out.append_array(_opening_insights())
@@ -100,15 +109,20 @@ static func _top(list: Array[Dictionary], n: int) -> Array[Dictionary]:
 		if int(a["prio"]) != int(b["prio"]):
 			return int(a["prio"]) < int(b["prio"])
 		return float(a["gain"]) > float(b["gain"]))
-	# Losses never crowd out the purchase advice: keep a place for one thing to buy.
+	# Purchases and losses share the list: up to two things to buy (of different kinds), and
+	# the costliest loss always has a place when there is one.
 	var buys := unique.filter(func(it: Dictionary) -> bool: return int(it["prio"]) == 2)
+	var rest := unique.filter(func(it: Dictionary) -> bool: return int(it["prio"]) != 2)
+	var buy_slots := mini(buys.size(), 2 if n >= 3 else 1)
+	if rest.is_empty():
+		buy_slots = mini(buys.size(), n)
 	var out: Array[Dictionary] = []
-	for it in unique:
-		var room_for_buy := 1 if not buys.is_empty() and not out.any(func(o: Dictionary) -> bool: return int(o["prio"]) == 2) else 0
-		if int(it["prio"]) != 2 and out.size() >= n - room_for_buy:
-			continue
-		if out.size() < n:
-			out.append(it)
+	out.append_array(rest.slice(0, maxi(0, n - buy_slots)))
+	out.append_array(buys.slice(0, n - out.size()))
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a["prio"]) != int(b["prio"]):
+			return int(a["prio"]) < int(b["prio"])
+		return float(a["gain"]) > float(b["gain"]))
 	return out
 
 # ------------------------------------------------------------------ the day's losses
@@ -129,13 +143,15 @@ static func _day_insights(r: Dictionary) -> Array[Dictionary]:
 			else (_t("adv.busy") % _t(Data.STATIONS[station]["name"]))
 		out.append(_insight("line", "slow", text, maxf(line, 2) * margin, "build", station))
 	var crowd := int(r.get("crowd", 0))
-	if crowd >= 3:
+	# A full stand is normal on a good day. It is worth a line only when the stand turned
+	# away more people than it served, and then as an observation after the purchases:
+	# testers read "get a bigger stand" every single day as the game's only idea.
+	if crowd >= 8 and crowd >= served:
 		var bigger := Game.next_stage_def()
 		if bigger.is_empty() or bigger.get("later", false):
-			# the largest stand already: the counter's tier is what makes room for more buyers
-			out.append(_insight("crowd", "full", _t("adv.crowd_counter") % crowd, crowd * margin * 0.6, "build", "counter"))
+			out.append(_insight("crowd", "full", _t("adv.crowd_counter") % crowd, crowd * margin * 0.3, "build", "counter"))
 		else:
-			out.append(_insight("crowd", "full", _t("adv.crowd") % crowd, crowd * margin * 0.6, "build", "stage"))
+			out.append(_insight("crowd", "full", _t("adv.crowd") % crowd, crowd * margin * 0.3, "build", "stage"))
 	var pricey := int(r.get("too_pricey", 0))
 	if pricey >= MIN_LOST:
 		var dish := _priciest_dish()
@@ -333,26 +349,62 @@ static func trends(days: int = 14) -> Dictionary:
 
 # ------------------------------------------------------------------ what to buy, weather, goals
 
-## The purchase that pays back fastest, priced by the same scoring the balance bot uses
-## (`Autoplayer.rank` is side-effect free). One thing to buy now, and one worth saving for
-## when it beats everything affordable.
+## What an upgrade is for. The bot's ranking names a category on each candidate; this is the
+## same table for a ranking that does not.
+const CATEGORY := {"counter": "capacity", "grill": "capacity", "doner": "capacity", "fryer": "capacity", "karak": "capacity",
+	"juice": "capacity", "sweets": "capacity", "seating": "capacity", "valet": "capacity", "staffroom": "capacity",
+	"music": "quality", "shade": "quality", "majlis": "quality", "washroom": "quality", "lights": "quality",
+	"coldbox": "freshness", "signage": "reach"}
+
+static func category(c: Dictionary) -> String:
+	if c.has("category"):
+		return String(c["category"])
+	match String(c["kind"]):
+		"stage": return "capacity"
+		"item", "enhance": return "quality"
+		"move", "promo": return "reach"
+	return String(CATEGORY.get(String(c["id"]), "capacity"))
+
+## What to buy, priced by the same scoring the balance bot uses (`Autoplayer.rank` is
+## side-effect free). Two lines at most, and never two of the same kind: the best buy overall,
+## then the best of ANOTHER kind of upgrade (capacity, quality, freshness, reach), turning
+## through the kinds day by day, so the advice is not "a bigger stand" every morning.
+## A purchase out of reach is offered as something to save for.
 static func _buy_insights(_r: Dictionary) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var ranked := _ranked()
-	var buy := {}
-	var save := {}
+	var best := {} # category -> its best candidate (affordable ones win over ones to save for)
 	for c in ranked["cands"]:
 		if not bool(c["ok"]) or float(c["gain"]) <= 0.5 or float(c["net"]) <= 0.0:
 			continue
-		if bool(c["affordable"]):
-			if buy.is_empty() or float(c["score"]) > float(buy["score"]):
-				buy = c
-		elif save.is_empty() or float(c["score"]) > float(save["score"]):
-			save = c
-	if not buy.is_empty():
-		out.append(_purchase(buy, true, float(ranked["buffer"])))
-	if not save.is_empty() and (buy.is_empty() or float(save["score"]) > float(buy["score"])):
-		out.append(_purchase(save, false, float(ranked["buffer"])))
+		var kind := category(c)
+		var have: Dictionary = best.get(kind, {})
+		var better := have.is_empty() or (bool(c["affordable"]) and not bool(have["affordable"])) \
+			or (bool(c["affordable"]) == bool(have["affordable"]) and float(c["score"]) > float(have["score"]))
+		if better:
+			best[kind] = c
+	if best.is_empty():
+		return out
+	var kinds: Array = best.keys()
+	kinds.sort_custom(func(a: String, b: String) -> bool:
+		var ca: Dictionary = best[a]
+		var cb: Dictionary = best[b]
+		if bool(ca["affordable"]) != bool(cb["affordable"]):
+			return bool(ca["affordable"])
+		return float(ca["score"]) > float(cb["score"]))
+	var first: Dictionary = best[kinds[0]]
+	var lead := _purchase(first, bool(first["affordable"]), float(ranked["buffer"]))
+	lead["category"] = String(kinds[0])
+	out.append(lead)
+	if kinds.size() > 1:
+		var others := kinds.slice(1)
+		var second: Dictionary = best[others[Game.day % others.size()]]
+		var line := _purchase(second, bool(second["affordable"]), float(ranked["buffer"]))
+		line["id"] = String(line["id"]) + "_2"
+		line["category"] = category(second)
+		line["prio"] = 2
+		line["gain"] = float(line["gain"]) * 0.5 # sorts after the best buy
+		out.append(line)
 	return out
 
 static func _purchase(c: Dictionary, now: bool, buffer: float) -> Dictionary:
@@ -388,6 +440,20 @@ static func _purchase(c: Dictionary, now: bool, buffer: float) -> Dictionary:
 			var preview := Game.promo_preview(id)
 			return _insight("promo", "great", _t("adv.promo") % [_t(Data.MARKETING[id]["name"]), maxi(1, roundi(float(preview["extra_buyers_per_day"]))), _money(float(preview["net"]))],
 				float(preview["net"]) / maxf(1.0, float(preview["days"])), "promote", id)
+	var why := category(c)
+	if now and why == "quality":
+		# what it does for the guests' faces, from the estimate (three extra estimates, for this one line)
+		var change := {}
+		match kind:
+			"enhance": change = {"enhance": id}
+			"item": change = {"unlock": id}
+			"station": change = {"stations": {id: Game.station_level(id) + 1}}
+		var happy := roundi(float(Game.quality_gain(change)["happy"])) if not change.is_empty() else 0
+		if happy >= 1:
+			return _insight("buy", "great", _t("adv.buy_quality_n") % [name, happy, _money(gain)], gain, panel, detail, dish)
+		return _insight("buy", "great", _t("adv.buy_quality") % [name, _money(gain)], gain, panel, detail, dish)
+	if now and why == "freshness":
+		return _insight("buy", "great", _t("adv.buy_fresh") % [name, _money(gain)], gain, panel, detail, dish)
 	if now:
 		return _insight("buy", "great", _t("adv.buy") % [name, _money(gain), maxi(1, ceili(float(c["payback"])))], gain, panel, detail, dish)
 	# a stage's candidate price includes a few tables; the card shows the stage's own price

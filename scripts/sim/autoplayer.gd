@@ -65,16 +65,14 @@ static func supplies() -> void:
 		var per := Economy.portion_ingredients(o["id"], Game.menu[o["id"]])
 		for ing in per:
 			need[ing] = float(need.get(ing, 0.0)) + count * float(per[ing])
+	# the cheapest whole packs (bought ahead with a cold box, when that is cheaper over two days)
+	var want := {}
 	for ing in need:
-		while int(Game.inventory[ing]) < int(need[ing]):
-			var packs: Array = Data.INGREDIENTS[ing]["packs"]
-			var gap: int = int(need[ing]) - int(Game.inventory[ing])
-			var idx := packs.size() - 1
-			for i in range(packs.size()):
-				if int(packs[i][0]) >= gap:
-					idx = i
-					break
-			if not Game.buy_pack(ing, idx):
+		want[ing] = ceili(float(need[ing]))
+	var plan := Game.supply_plan(want, Game.stock_budget())
+	for order in plan["orders"]:
+		for i in range(int(order[2])):
+			if not Game.buy_pack(String(order[0]), int(order[1])):
 				break
 	if DevTools.has("pricemult"):
 		for id in Data.MENU_ITEMS:
@@ -158,7 +156,11 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 	if as_priced:
 		cache["_as_priced"] = true
 	var dbg := DevTools.has("dbg")
-	var base_profit := float(_priced({}, cache)["profit"])
+	var base: Dictionary = _priced({}, cache)
+	var base_profit := float(base["profit"])
+	var base_est: Dictionary = base["est"]
+	# the price of fame here (Game.fame_slope), measured once, the first time a candidate needs it
+	var fame := {"slope": -1.0}
 	# tomorrow's stock and rent, kept above the line where the family steps in with a loan
 	var buffer := Data.BAILOUT_BELOW + 1.5 * (float(Game.loc()["rent"]) + Game.daily_wages() + float(Game.history.back().get("cogs", 150.0)) if not Game.history.is_empty() else 300.0)
 	# cash piling up means a longer horizon is fine
@@ -178,8 +180,20 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 		var short := cost + buffer - Game.money
 		if short > 0.0 and short > SAVE_DAYS * maxf(earning, 1.0):
 			return
-		# an empty ctx = the caller already knows the gain (a campaign's preview, passed as bonus)
-		var gain := (float(Economy.throughput_estimate(ctx)["profit"]) - base_profit) if not ctx.is_empty() else 0.0
+		# an empty ctx = the caller already knows the gain (a campaign's preview, a cold box's
+		# saving: passed as bonus)
+		var est: Dictionary = Economy.throughput_estimate(ctx) if not ctx.is_empty() else {}
+		var gain := (float(est["profit"]) - base_profit) if not est.is_empty() else 0.0
+		# a purchase that makes guests happier also earns fame, and fame brings passers
+		var happy := 0.0
+		var fame_value := 0.0
+		if not est.is_empty() and raises_satisfaction(kind, id):
+			if float(fame["slope"]) < 0.0:
+				fame["slope"] = Game.fame_slope(base["ctx"], base_profit)
+			var f := Game.fame_gain_of(base_est, est, float(fame["slope"]))
+			happy = float(f["happy"])
+			fame_value = maxf(0.0, float(f["value"]))
+			gain += fame_value
 		var net := cost
 		if reward > 0.0:
 			gain = maxf(gain, 0.0) + reward / 30.0
@@ -196,7 +210,8 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 			ok = gain > 0.0 and payback * PROMO_RETURN <= max_payback
 			score = (gain - cost / max_payback) / net
 		pick["cands"].append({"kind": kind, "id": id, "where": where, "cost": cost, "net": net, "gain": gain,
-			"payback": payback, "score": score, "affordable": short <= 0.0, "ok": ok})
+			"payback": payback, "score": score, "affordable": short <= 0.0, "ok": ok, "category": category(kind, id),
+			"happy": happy, "fame_value": fame_value, "saving": bonus if kind == "station" and id == "coldbox" else 0.0})
 		if not ok:
 			return
 		if short > 0.0:
@@ -211,6 +226,16 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 	# The current goal is worth chasing when a purchase or a trip completes it: its reward,
 	# spread over a month, counts as daily gain (a goal already met waits for its claim).
 	var goal := Game.current_goal()
+	# a cold box earns nothing in the day's estimate: its gain is what it saves (spoilage, bulk)
+	var cold := {"saving": -1.0}
+	var station_ctx := func(sid: String) -> Dictionary:
+		return {} if sid == "coldbox" else Game.what_if({"stations": {sid: Game.station_level(sid) + 1}})
+	var station_bonus := func(sid: String) -> float:
+		if sid != "coldbox":
+			return 0.0
+		if float(cold["saving"]) < 0.0:
+			cold["saving"] = Game.coldbox_saving(base_est)
+		return float(cold["saving"])
 	# A day that opens here completes a pending "trade a day at ..." goal: leaving forfeits it.
 	var reward_here := 0.0
 	if not goal.is_empty() and not Game.goal_ready():
@@ -222,7 +247,19 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 				var sid := String(req["station"])
 				var missing := int(req["n"]) - Game.station_level(sid)
 				if Game.station_lock_reason(sid) == "" and missing > 0:
-					consider.call("station", sid, Game.station_cost(sid), Game.what_if({"stations": {sid: Game.station_level(sid) + 1}}), 400.0, "", 0.0, reward / missing)
+					consider.call("station", sid, Game.station_cost(sid), station_ctx.call(sid), 400.0, "", station_bonus.call(sid), reward / missing)
+			"dish_level":
+				# the cheapest next upgrade of a dish on sale
+				var cheapest := ""
+				var low := INF
+				for iid in Data.MENU_ITEMS:
+					if Game.is_on_sale(iid) and int(Game.menu[iid]["level"]) < int(req["n"]) and int(Game.menu[iid]["level"]) < Data.MENU_ITEMS[iid]["enhance"].size():
+						var c := float(Data.MENU_ITEMS[iid]["enhance"][int(Game.menu[iid]["level"])]["cost"])
+						if c < low:
+							low = c
+							cheapest = iid
+				if cheapest != "":
+					consider.call("enhance", cheapest, low, Game.what_if({"enhance": cheapest}), 400.0, "", 0.0, reward)
 			"stage":
 				if Game.stage_lock_reason() == "" and Game.stage_tier() < int(req["n"]):
 					var nd := Game.next_stage_def()
@@ -251,7 +288,7 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 	for id in Game.active_stations():
 		if Game.station_lock_reason(id) != "":
 			continue
-		consider.call("station", id, Game.station_cost(id), Game.what_if({"stations": {id: Game.station_level(id) + 1}}), 30.0)
+		consider.call("station", id, Game.station_cost(id), station_ctx.call(id), 30.0, "", station_bonus.call(id))
 	var sites := _stage_sites()
 	if not sites.is_empty():
 		# a stage is worth what the best place it opens is worth (with a few seats if it has a terrace)
@@ -356,16 +393,18 @@ static func _recent_profit(estimate: float) -> float:
 static func _priced(overrides: Dictionary, cache: Dictionary) -> Dictionary:
 	if cache.get("_as_priced", false):
 		var same := Game.what_if(overrides)
-		return {"mult": 1.0, "profit": float(Economy.throughput_estimate(same)["profit"]), "ctx": same}
+		var e := Economy.throughput_estimate(same)
+		return {"mult": 1.0, "profit": float(e["profit"]), "ctx": same, "est": e}
 	var key := str(overrides)
 	if cache.has(key):
 		# later rounds of the same prep reuse the multiplier the first one found
 		var o := overrides.duplicate()
 		o["price_mult"] = cache[key]
 		var c := Game.what_if(o)
-		return {"mult": cache[key], "profit": float(Economy.throughput_estimate(c)["profit"]), "ctx": c}
+		var e := Economy.throughput_estimate(c)
+		return {"mult": cache[key], "profit": float(e["profit"]), "ctx": c, "est": e}
 	var loc: Dictionary = Data.LOCATIONS[String(overrides.get("location", Game.location))]
-	var best := {"mult": 1.0, "profit": -INF, "ctx": {}}
+	var best := {"mult": 1.0, "profit": -INF, "ctx": {}, "est": {}}
 	for mult in PRICE_MULTS:
 		var sat := Economy.satisfaction(Game.quality("chicken_tikka"), float(mult), 0.15, loc, Game.satisfaction_bonus())
 		if sat < 0.62 and float(mult) > 1.0:
@@ -373,11 +412,31 @@ static func _priced(overrides: Dictionary, cache: Dictionary) -> Dictionary:
 		var o := overrides.duplicate()
 		o["price_mult"] = mult
 		var ctx := Game.what_if(o)
-		var pr := float(Economy.throughput_estimate(ctx)["profit"])
+		var e := Economy.throughput_estimate(ctx)
+		var pr := float(e["profit"])
 		if pr > float(best["profit"]):
-			best = {"mult": mult, "profit": pr, "ctx": ctx}
+			best = {"mult": mult, "profit": pr, "ctx": ctx, "est": e}
 	cache[key] = best["mult"]
 	return best
+
+## What a candidate is for (Data.STATION_CATEGORY for stations; stages add capacity, dishes
+## quality, campaigns and moves reach).
+static func category(kind: String, id: String) -> String:
+	match kind:
+		"station": return String(Data.STATION_CATEGORY.get(id, "capacity"))
+		"stage": return "capacity"
+		"item", "enhance": return "quality"
+	return "reach"
+
+## True for purchases that make every guest happier (a dish upgrade, a station with a
+## satisfaction effect): rank also counts the fame they earn.
+static func raises_satisfaction(kind: String, id: String) -> bool:
+	if kind == "enhance":
+		return true
+	if kind == "station" and Data.STATIONS.has(id):
+		var def: Dictionary = Data.STATIONS[id]
+		return def.has("satisfaction_per_level") or def.has("hot_satisfaction_per_level")
+	return false
 
 ## Try a few price multipliers on the whole menu and keep the one the estimate likes best.
 static func prices() -> void:

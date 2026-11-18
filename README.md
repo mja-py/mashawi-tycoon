@@ -11,7 +11,7 @@ The in-game **Credits** button contains the attribution notice.
 New games include a hands-on mentor who stays beside the real game. She responds to
 recipe and price edits, ingredient purchases, a customer's order and handoff, and
 the first day's report. Then she helps you review an upgrade, decide whether to
-promote, and work toward stars and rewards. Purchases remain your choice.
+promote, and work toward fame and rewards. Purchases remain your choice.
 Progress saves automatically. Pause the guidance whenever you like, then resume
 from **Settings → How to play → Play with me**. The eight reference chapters are
 also available in Arabic and English; reading them pauses the street.
@@ -54,16 +54,20 @@ Progression: cart → stall (AED 1,400) → truck (AED 5,000), followed by locat
 kiosks (7,000), restaurants (18,000) and flagships (50,000). A new stand gets an opening fortnight
 of extra passers-by; wages start with the truck's helper and grow with the crew. One visible buyer can order
 for a whole party, so bigger stands earn through bigger orders; every sale is a customer
-you can see. The Hospitality upgrade adds dates and gahwa from the dallah. The Metro and JBR require a stall plus reputation;
-Downtown, the Mall and Global Village require a truck plus reputation. Promotions (a free
+you can see. The Hospitality upgrade adds dates and gahwa from the dallah. The Metro needs a stall; JBR a stall and the
+fame level Known on the street; Downtown and the Mall a truck and Local favourite; Global
+Village a truck and Talk of the town. Promotions (a free
 tasting tray, a short video post, offers to regulars, a delivery and maps listing, a food
 blogger's visit) show what they should bring before you pay, and have a stronger effect
 against Mall and Global Village competition (x1.8 and x2.0).
 
 Guests show a drawn face when they buy or leave, and the day bar counts the day's moods.
-The report names every guest you lost and why, then gives three next steps from the
-built-in advisor (it reads your own sales history and works offline). Tap the stars for
-what reputation does and what it unlocks next.
+Every happy guest adds to your fame, shown as a level with a bar (New in town, Known on the
+street, Local favourite, Talk of the town, Dubai legend); a level once earned is never lost,
+and places and bigger stands ask for a level. The report names every guest you lost and why,
+then gives three next steps from the built-in advisor (it reads your own sales history and
+works offline): the best buy, plus one of a different kind, so the cold box (which lets
+Stock today buy cheaper big packs ahead), dish upgrades and comfort get their turn.
 The truck can fit a sweets counter; buy it, unlock the dishes, then stock ingredients
 for saffron milk cake, sago halwa and Omani halwa.
 
@@ -147,10 +151,11 @@ artwork, and models requires separate permission where copyright applies.
 
 The game includes CC0 assets from [Kenney](https://kenney.nl) and [KayKit](https://kaylousberg.com).
 The game has no music. Its street ambience is CC0 / public-domain recordings cut by
-`tools/build_audio.py`: "AMB Outside 1" by Kresiek The Furry and "High traffic road sounds"
-by IgnasD (OpenGameArt); "1 minute at the alexa mall in berlin" by thore, "On a pebble beach" by
-earthcalling, "Sunday in the city street noise1" by cori, "Restaurant ambience" by stephan
-and "Frying fries going in and out of oil" by ezwa (Wikimedia Commons, PDSounds).
+`tools/build_audio.py`, mixed as sparse events over quiet rather than a noise bed:
+"Ambient Bird Sounds" by FacadeGaikan, "Crickets Ambient Noise" by 2DPIXX, "Fire Crackling" by
+Stoner Games and "Fireplace Sound loop" by StarNinjas (OpenGameArt, CC0); "Birds singing in
+garden" by ezwa, "Birdsong mild sunny day" and "Restaurant ambience" by stephan, "Gull 1" and
+"Gull 2" by avphillips and "Waves" (Wikimedia Commons, public domain, most via PDSounds).
 Custom food models are made with Blender (`tools/make_*.py`). Meshy-assisted models
 are adapted for the game. The game uses [Baloo Bhaijaan 2](assets/fonts/OFL-BalooBhaijaan2.txt)
 under the SIL Open Font License 1.1.

@@ -544,7 +544,7 @@ func _autoplay(days: int) -> void:
 		runner = DaySim.new()
 		add_child(runner)
 	print("sim %s | seed %s" % ["day (played)" if played else "fast", DevTools.get_flag("seed", "random")])
-	print("day | loc      | st | weather   | passers served  port  dine crowd | revenue   profit | money     pop  rep | lvl | lost: wait full out | bottleneck")
+	print("day | loc      | st | weather   | passers served  port  dine crowd | revenue   profit | money     pop  rep fame | lvl | lost: wait full out | green | bottleneck")
 	var total_profit := 0.0
 	var buys := 0
 	var started := Time.get_ticks_msec()
@@ -561,9 +561,13 @@ func _autoplay(days: int) -> void:
 			print("    ctx pop %.2f appeal %.2f counter %.2f kitchen %s qcap %d prices %s" % [ctx["popularity"], ctx["appeal"], ctx["counter_cap"], str(ctx["kitchen"]), ctx["queue_cap"], str(Game.menu["chicken_tikka"]["price"])])
 			print("    stats served %d portions %d crowd %d buyers %d sat_avg %.2f wait_avg %.1f sold_out %d queue_full %d left_wait %d max_queue %d util %s" % [stats["served"], int(stats.get("portions", 0)), int(stats.get("crowd", 0)), int(ctx["buyers"]), float(stats["satisfaction_sum"]) / maxi(1, int(stats["served"])), float(stats.get("wait_sum", 0.0)) / maxi(1, int(stats["served"])), stats["sold_out"], stats["queue_full"], stats["left_wait"], stats.get("max_queue", 0), str(stats.get("util", {}))])
 		total_profit += float(r["profit"])
-		print("%3d | %-8s | %2d | %-9s | %5d %5d %5d %5d %5d | %7.0f %7.0f | %8.0f %.2f %.2f | %3d | %4d %4d %4d | %s" % [r["day"], r["location"], r["stage"], r["weather"],
-			r["passers"], r["served"], int(r.get("portions", r["served"])), r["dine_in"], int(r.get("crowd", 0)), r["revenue"], r["profit"], r["money"], r["popularity"], r["local_rep"], Game.levels_owned(),
-			int(stats.get("left_wait", 0)), int(stats.get("queue_full", 0)), int(stats.get("sold_out", 0)), r["bottleneck"]])
+		# fame = city-wide / local level (Data.FAME_LEVELS, "+" on the day one is reached);
+		# green = the share of sales that left with a great face
+		var fame_cell := "%d%s/%d%s" % [int(r.get("fame_level", 0)), "+" if r.get("fame_up", false) else " ", int(r.get("local_fame_level", 0)), "+" if r.get("local_fame_up", false) else " "]
+		var faces := int(r.get("mood_great", 0)) + int(r.get("mood_ok", 0)) + int(r.get("mood_bad", 0))
+		print("%3d | %-8s | %2d | %-9s | %5d %5d %5d %5d %5d | %7.0f %7.0f | %8.0f %.2f %.2f %s | %3d | %4d %4d %4d | %4d%% | %s" % [r["day"], r["location"], r["stage"], r["weather"],
+			r["passers"], r["served"], int(r.get("portions", r["served"])), r["dine_in"], int(r.get("crowd", 0)), r["revenue"], r["profit"], r["money"], r["popularity"], r["local_rep"], fame_cell, Game.levels_owned(),
+			int(stats.get("left_wait", 0)), int(stats.get("queue_full", 0)), int(stats.get("sold_out", 0)), roundi(100.0 * int(r.get("mood_great", 0)) / maxf(1.0, faces)), r["bottleneck"]])
 		if DevTools.has("buys") and (not Autoplayer.last_buys.is_empty() or float(r.get("wages", 0.0)) > 0.0):
 			# `--buys`: the morning's purchases, the wage bill and the campaigns that ran
 			print("    buys %s | wages %.0f | promos %s" % [", ".join(Autoplayer.last_buys), float(r.get("wages", 0.0)), ",".join(r.get("promos", []))])

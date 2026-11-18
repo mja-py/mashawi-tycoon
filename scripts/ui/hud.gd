@@ -16,9 +16,9 @@ var day_label: Label
 var loc_label: Label
 var weather_icon: TextureRect
 var weather_label: Label
-var star_box: HBoxContainer
+var fame_name_label: Label
+var fame_bar: ProgressBar
 var rep_button: Button
-var rep_label: Label
 var mood_counts := {}
 var mood_trend: Label
 ## The advisor's tip of the day, above the planning screen once the tutorial is over.
@@ -106,6 +106,7 @@ var _panel_top_tween: Tween
 var _sheet_tween: Tween
 var _panel_area := Vector2.ZERO
 var _last_tap := ""
+var _grill_until := 0.0
 var _tight := false
 var _report_tween: Tween
 var _money_tween: Tween
@@ -144,6 +145,7 @@ func _ready() -> void:
 	Game.changed.connect(_refresh)
 	Game.notify.connect(_toast)
 	Game.goal_claimed.connect(_on_goal_claimed)
+	Game.fame_level_up.connect(_on_fame_level_up)
 	Loc.language_changed.connect(_on_language_changed)
 	if main and main.sim:
 		main.sim.clock_changed.connect(_on_clock)
@@ -503,7 +505,8 @@ func _build_top_bar() -> void:
 	costs_chip.visible = false
 	h.add_child(costs_chip)
 	h.add_child(_spacer())
-	# Reputation: the stars with their number, and a tap explains what they mean.
+	# Fame: a named level with a bar towards the next one. Five stars read as a rating
+	# ("one star = a bad restaurant"); a level that only climbs does not. A tap explains it.
 	rep_button = _menu_target(Button.new(), "reputation")
 	rep_button.focus_mode = Control.FOCUS_NONE
 	rep_button.tooltip_text = tr("rep.title")
@@ -513,27 +516,25 @@ func _build_top_bar() -> void:
 		rep_button.add_theme_stylebox_override(state, chip_style)
 	rep_button.button_down.connect(_pulse.bind(rep_button))
 	rep_button.pressed.connect(show_reputation)
-	rep_button.custom_minimum_size = Vector2(5 * 24 + 4 * 2 + 6 + 40 + 20, 48)
-	var rep_row := HBoxContainer.new()
-	rep_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rep_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	rep_row.add_theme_constant_override("separation", 6)
-	rep_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	rep_button.add_child(rep_row)
-	star_box = HBoxContainer.new()
-	star_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	star_box.add_theme_constant_override("separation", 2)
-	for i in range(5):
-		var star := _icon(Icons.star_icon(0.0), 24)
-		star.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		star_box.add_child(star)
-	rep_row.add_child(star_box)
-	rep_label = _label("", "Light")
-	rep_label.size_flags_horizontal = 0
-	rep_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rep_label.add_theme_font_size_override("font_size", 22)
-	rep_label.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
-	rep_row.add_child(rep_label)
+	rep_button.custom_minimum_size = Vector2(212, 48)
+	var rep_col := VBoxContainer.new()
+	rep_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rep_col.alignment = BoxContainer.ALIGNMENT_CENTER
+	rep_col.add_theme_constant_override("separation", -3)
+	rep_col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rep_col.offset_left = 12
+	rep_col.offset_right = -12
+	rep_col.offset_bottom = -5
+	rep_button.add_child(rep_col)
+	fame_name_label = _label("", "Light", HORIZONTAL_ALIGNMENT_CENTER)
+	fame_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fame_name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	fame_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	fame_name_label.add_theme_font_size_override("font_size", 16)
+	fame_name_label.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+	rep_col.add_child(fame_name_label)
+	fame_bar = _fame_bar(8.0)
+	rep_col.add_child(fame_bar)
 	h.add_child(rep_button)
 	clock_chip = _chip("10:00")
 	clock_label = clock_chip.get_child(0).get_child(0)
@@ -904,7 +905,15 @@ func _refresh_advisor_strip() -> void:
 	if appearing and advisor_strip.visible:
 		_fade_in(advisor_strip, 0.25)
 		if toast != null and toast.visible:
-			toast.position.y = _below_guide(TOAST_Y) # a toast already up moves clear of the strip
+			# a toast already up moves clear of the strip (its rise tween would pull it back)
+			if _toast_tween:
+				_toast_tween.kill()
+			toast.position.y = _below_guide(TOAST_Y)
+			toast.modulate.a = 1.0
+			_toast_tween = create_tween()
+			_toast_tween.tween_interval(2.0)
+			_toast_tween.tween_property(toast, "modulate:a", 0.0, 0.4)
+			_toast_tween.tween_callback(func(): toast.visible = false)
 
 func _build_toast() -> void:
 	toast = PanelContainer.new()
@@ -1045,7 +1054,7 @@ func show_day() -> void:
 	_banner("%s  ·  %s" % [tr("ui.day") % Game.day, tr(Game.loc()["name"])])
 	Sfx.stinger("day_open")
 	Sfx.play_music("day")
-	Sfx.set_loop("sizzle", true)
+	_grill_until = 0.0 # the grill is heard only while an order is cooking (see _on_stats)
 	ticker_label.text = ""
 	ticker_label.modulate.a = 1.0
 	closing_progress.hide()
@@ -1149,17 +1158,35 @@ func show_report(r: Dictionary) -> void:
 		ml.add_theme_font_override("font", UiTheme.bold())
 		moods.add_child(ml)
 	vrow.add_child(moods)
-	var rep := HBoxContainer.new()
-	rep.add_theme_constant_override("separation", 4)
-	rep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	rep.add_child(_icon(Icons.star_icon(1.0, 30), 28))
+	# Fame after the day: the level, its bar, and which way the day moved it.
 	var review := float(r.get("review", 0.0))
-	var repl := _label(Loc.ltr("%+.2f" % ((pd + review) * 5.0)), "")
-	repl.size_flags_horizontal = 0
+	var moved := pd + review
+	var rep := VBoxContainer.new()
+	rep.add_theme_constant_override("separation", 0)
+	rep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rep.custom_minimum_size.x = 176
+	var fame_now := int(r.get("fame_level", Game.fame_level()))
+	var repl := _label("%s  %s" % [Game.fame_name(fame_now), "▲" if moved > 0.0005 else ("▼" if moved < -0.0005 else "=")], "", HORIZONTAL_ALIGNMENT_CENTER)
+	repl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	repl.add_theme_font_size_override("font_size", 17)
 	repl.add_theme_font_override("font", UiTheme.bold())
-	repl.add_theme_color_override("font_color", UiTheme.GOOD if pd + review >= 0 else UiTheme.BAD)
+	repl.add_theme_color_override("font_color", UiTheme.GOOD if moved >= -0.0005 else UiTheme.BAD)
 	rep.add_child(repl)
+	var day_bar_fame := _fame_bar(10.0, true)
+	day_bar_fame.value = Game.fame_progress()
+	rep.add_child(day_bar_fame)
 	vrow.add_child(rep)
+	var level_chip: PanelContainer
+	if bool(r.get("fame_up", false)) or bool(r.get("local_fame_up", false)):
+		var city := bool(r.get("fame_up", false))
+		level_chip = PanelContainer.new()
+		level_chip.add_theme_stylebox_override("panel", UiTheme.flat(UiTheme.PALM_DARK, 8, UiTheme.GOLD_LIGHT, 2))
+		var ll := _label("◆  " + (tr("fame.ui.levelup") % Game.fame_name(fame_now) if city
+			else tr("fame.ui.local_up") % Game.fame_name(int(r.get("local_fame_level", 0)))), "Light", HORIZONTAL_ALIGNMENT_CENTER)
+		ll.add_theme_font_size_override("font_size", 20)
+		ll.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+		level_chip.add_child(ll)
+		report_body.add_child(level_chip)
 	var cols_scroll: ScrollContainer = TouchScroll.new()
 	cols_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -1217,9 +1244,10 @@ func show_report(r: Dictionary) -> void:
 		_row(g1, tr("ui.r_dine_in"), str(r["dine_in"]), UiTheme.GOOD)
 	_row(g1, tr("ui.r_satisfaction"), "%d%%" % int(round(sat * 100.0)))
 	if review != 0.0:
-		_row(g1, tr("rpt.review"), (tr("ui.r_stars") % Loc.ltr("%+.2f" % (review * 5.0))), UiTheme.GOOD if review > 0.0 else UiTheme.BAD)
+		_row(g1, tr("rpt.review"), "▲" if review > 0.0 else "▼", UiTheme.GOOD if review > 0.0 else UiTheme.BAD)
 	var ld := float(r.get("local_delta", 0.0))
-	_row(g1, tr("ui.r_local"), (tr("ui.r_stars") % Loc.ltr("%+.2f" % (ld * 5.0))), UiTheme.GOOD if ld >= 0 else UiTheme.BAD)
+	_row(g1, tr("rpt.local_fame"), "%s  %s" % [Game.fame_name(int(r.get("local_fame_level", Game.local_fame_level()))), "▲" if ld > 0.0005 else ("▼" if ld < -0.0005 else "=")],
+		UiTheme.GOOD if ld >= -0.0005 else UiTheme.BAD)
 	# the sold list can get long, so it gets its own wrapped line under the table
 	var sold_lines := []
 	for id in r["sold"]:
@@ -1292,6 +1320,11 @@ func show_report(r: Dictionary) -> void:
 			best_chip.modulate.a = 1.0
 			_pop_in(best_chip, 0.45)
 			Sfx.stinger("best_day"))
+	if level_chip:
+		level_chip.modulate.a = 0.0
+		counting.tween_callback(func():
+			_fade_in(level_chip, 0.4)
+			Sfx.stinger("tier_up"))
 
 func _heading(text: String) -> Label:
 	var l := _label(text, "Heading")
@@ -1544,11 +1577,8 @@ func _refresh() -> void:
 	var daily := float(Game.loc()["rent"]) + Game.daily_wages()
 	costs_chip.visible = daily > 0.0 and not in_day
 	costs_label.text = tr("ui.costs_today") % Loc.money(daily)
-	var stars := Game.stars()
-	for i in range(5):
-		var t: TextureRect = star_box.get_child(i)
-		t.texture = Icons.star_icon(clampf(stars - i, 0.0, 1.0))
-	rep_label.text = Loc.ltr("%.1f" % stars)
+	fame_name_label.text = Game.fame_name(Game.fame_level())
+	fame_bar.value = Game.fame_progress()
 	# A small phone with rent or wages to show has no room for every chip at full length:
 	# shorten the forecast first, then the costs, so Settings never leaves the screen.
 	# (48 px spare: the cash figure counts up after this and may gain digits)
@@ -1596,6 +1626,11 @@ func _on_stats(stats: Dictionary) -> void:
 		_shown_money = Game.money
 	live_label.text = tr("ui.live") % [stats.get("served", 0), Loc.money(stats.get("revenue", 0.0)), stats.get("queue", 0), stats.get("kitchen", 0), stats.get("seated", 0)]
 	_show_mood(stats)
+	# The grill crackles while there is food on it and a moment after, never as a constant bed.
+	var now := Time.get_ticks_msec() / 1000.0
+	if int(stats.get("kitchen", 0)) > 0:
+		_grill_until = now + 1.5
+	Sfx.set_loop("sizzle", main != null and main.phase == main.Phase.DAY and now < _grill_until)
 
 func _show_mood(stats: Dictionary) -> void:
 	for kind in mood_counts:
@@ -1932,76 +1967,83 @@ func show_reputation() -> void:
 	_detach_coach_card()
 	for c in report_body.get_children():
 		c.queue_free()
+	var level := Game.fame_level()
+	var top := Data.FAME_LEVELS.size() - 1
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 10)
-	head.add_child(_label(tr("rep.title"), "Title"))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 2)
-	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	for i in range(5):
-		row.add_child(_icon(Icons.star_icon(clampf(Game.stars() - i, 0.0, 1.0), 34), 34))
-	head.add_child(row)
-	var number := _label(Loc.ltr("%.1f / 5" % Game.stars()), "Heading")
-	number.size_flags_horizontal = 0
-	head.add_child(number)
-	report_body.add_child(head)
-	var stop := roundi((0.05 + 0.20 * Game.effective_popularity()) * 100.0)
-	report_body.add_child(_rep_line(tr("rep.what") % stop))
-	if not Game.history.is_empty():
-		var r: Dictionary = Game.history.back()
-		var sat := float(r.get("satisfaction", 0.0))
-		var text := tr("rep.last") % [Loc.ltr("%+.2f" % (float(r.get("pop_delta", 0.0)) * 5.0)), roundi(sat * 100.0)]
-		var lost := int(r.get("left_wait", 0)) + int(r.get("sold_out", 0))
-		if lost > 0:
-			text += " " + tr("rep.last_lost") % lost
-		report_body.add_child(_rep_line(text, _mood_of(sat)))
-	report_body.add_child(_rep_line(tr("rep.how")))
-	var next_id := ""
-	var needs_stage := ""
-	for id in Game.stage_locations():
-		if not Game.location_unlocked(id):
-			if next_id == "" or float(Data.LOCATIONS[id]["unlock_pop"]) < float(Data.LOCATIONS[next_id]["unlock_pop"]):
-				next_id = id
-		elif not Game.location_stage_ok(id) and needs_stage == "":
-			needs_stage = id
-	if next_id != "":
-		var def: Dictionary = Data.LOCATIONS[next_id]
-		var needs := float(def["unlock_pop"])
-		var text := tr("rep.next") % [tr(def["name"]), Loc.ltr("%.1f" % (needs * 5.0))]
-		if not Game.location_stage_ok(next_id):
-			text += " " + tr("rep.next_stage") % tr(Data.stage_def(int(def.get("min_stage", 0)))["name"])
-		report_body.add_child(_rep_line(text))
-		var bar := ProgressBar.new()
-		bar.max_value = 1.0
-		bar.value = clampf(Game.popularity / maxf(needs, 0.01), 0.0, 1.0)
-		bar.show_percentage = false
-		bar.custom_minimum_size = Vector2(0, 12)
-		report_body.add_child(bar)
-	elif needs_stage != "":
-		# enough stars everywhere, but a place still waits for a bigger stand
-		var waiting: Dictionary = Data.LOCATIONS[needs_stage]
-		report_body.add_child(_rep_line(tr("rep.next_needs") % [tr(waiting["name"]), tr(Data.stage_def(int(waiting.get("min_stage", 0)))["name"])]))
-	else:
-		report_body.add_child(_rep_line(tr("rep.all_open")))
-	var here := Loc.ltr("%.1f" % (Game.local_reputation() * 5.0))
-	var upgrade := Game.next_stage_def()
-	if upgrade.has("requires_local_rep"):
-		report_body.add_child(_rep_line(tr("rep.local_needs") % [here, tr(upgrade["name"]), Loc.ltr("%.1f" % (float(upgrade["requires_local_rep"]) * 5.0))]))
-	else:
-		report_body.add_child(_rep_line(tr("rep.local") % here))
-	report_body.add_child(_rep_line(tr("rep.spend")))
-	report_body.add_child(_spacer(false))
-	var foot := HBoxContainer.new()
-	foot.add_child(_spacer())
-	var ok := _menu_target(_button(tr("rep.ok"), "Primary", Vector2(220, 60)), "dialog_ok")
+	head.add_theme_constant_override("separation", 12)
+	var title := _label(tr("rep.title"), "Heading")
+	title.add_theme_font_size_override("font_size", 28)
+	title.size_flags_horizontal = 0
+	head.add_child(title)
+	head.add_child(_spacer())
+	var ok := _menu_target(_button(tr("rep.ok"), "Primary", Vector2(160, HEAD_BUTTON)), "dialog_ok")
 	ok.pressed.connect(func():
 		Sfx.play("confirm")
 		report_dim.visible = false)
-	foot.add_child(ok)
-	report_body.add_child(foot)
+	head.add_child(ok)
+	report_body.add_child(head)
+	# The ladder: levels reached, the one you hold, and the ones ahead.
+	var ladder := HBoxContainer.new()
+	ladder.add_theme_constant_override("separation", 6)
+	for i in range(Data.FAME_LEVELS.size()):
+		var step := PanelContainer.new()
+		step.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var held := i == level
+		var style := UiTheme.flat(UiTheme.PALM_DARK if i < level else (UiTheme.CARD if held else Color(UiTheme.CARD, 0.45)), 8,
+			UiTheme.GOLD if held else Color("c9b18b"), 3 if held else 1)
+		style.set_content_margin_all(6)
+		step.add_theme_stylebox_override("panel", style)
+		var name := _label(("√ " if i < level else "") + Game.fame_name(i), "", HORIZONTAL_ALIGNMENT_CENTER)
+		name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		name.add_theme_font_size_override("font_size", 16)
+		name.add_theme_constant_override("line_spacing", -7)
+		name.add_theme_font_override("font", UiTheme.bold())
+		name.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT if i < level else (UiTheme.INK if held else UiTheme.MUTED))
+		name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		step.add_child(name)
+		ladder.add_child(step)
+	report_body.add_child(ladder)
+	var bar := _fame_bar(14.0, true)
+	bar.value = Game.fame_progress()
+	report_body.add_child(bar)
+	report_body.add_child(_rep_line(tr(String(Data.FAME_LEVELS[level]["desc"]))))
+	if level < top:
+		report_body.add_child(_rep_line(tr("fame.ui.next") % [Game.fame_name(level + 1), tr(String(Data.FAME_LEVELS[level + 1]["desc"]))]))
+	if not Game.history.is_empty():
+		var r: Dictionary = Game.history.back()
+		var happy := int(r.get("fame_happy", r.get("mood_great", 0)))
+		var content := int(r.get("fame_content", r.get("mood_ok", 0)))
+		var unhappy := int(r.get("fame_unhappy", int(r.get("mood_bad", 0)) + int(r.get("left_wait", 0)) + int(r.get("sold_out", 0))))
+		report_body.add_child(_rep_line(tr("fame.ui.yesterday") % [happy, content, unhappy], "bad" if unhappy > happy else ("great" if happy >= content else "ok")))
+	var here := Game.fame_name(Game.local_fame_level())
+	var upgrade := Game.next_stage_def()
+	if upgrade.has("requires_local_rep"):
+		report_body.add_child(_rep_line(tr("rep.local_needs") % [here, tr(upgrade["name"]), Game.fame_name(Economy.fame_level_for(float(upgrade["requires_local_rep"])))]))
+	else:
+		report_body.add_child(_rep_line(tr("rep.local") % here))
+	report_body.add_child(_rep_line(tr("rep.spend")))
 	_apply_safe_area()
-	report_panel.custom_minimum_size = Vector2(minf(900.0, report_panel.custom_minimum_size.x), 0.0)
+	report_panel.custom_minimum_size = Vector2(minf(960.0, report_panel.custom_minimum_size.x), 0.0)
 	_show_report_overlay()
+
+## The fame bar: gold on a dark (top bar) or paper (sheets) track. It fills from the
+## leading edge, so it runs right-to-left in Arabic like the rest of the layout.
+func _fame_bar(height: float, on_paper: bool = false) -> ProgressBar:
+	var bar := ProgressBar.new()
+	bar.max_value = 1.0
+	bar.show_percentage = false
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.custom_minimum_size = Vector2(0, height)
+	bar.add_theme_stylebox_override("background", UiTheme.flat(Color("d8c6a4") if on_paper else Color("5b5043"), int(height / 2.0)))
+	bar.add_theme_stylebox_override("fill", UiTheme.flat(UiTheme.PALM if on_paper else UiTheme.GOLD_LIGHT, int(height / 2.0)))
+	return bar
+
+## A fame level reached outside a day's report (a goal's reward): say so at once.
+func _on_fame_level_up(level: int, local: bool) -> void:
+	if main == null or main.phase != main.Phase.PREP:
+		return
+	_toast((tr("fame.ui.local_up") if local else tr("fame.ui.levelup")) % Game.fame_name(level), "good")
+	Sfx.stinger("tier_up")
 
 ## The face for a satisfaction score, on the thresholds the sale chips use.
 func _mood_of(satisfaction: float) -> String:
@@ -2513,7 +2555,7 @@ func _place_roll_card(index: int) -> PanelContainer:
 	elif not (Game.location_unlocked(id) and Game.location_stage_ok(id)):
 		var needs: Array[String] = []
 		if not Game.location_unlocked(id):
-			needs.append(tr("ui.p_needs") % (float(def.get("unlock_pop", 0.0)) * 5.0))
+			needs.append(tr("ui.p_needs") % Game.fame_name(Economy.fame_level_for(float(def.get("unlock_pop", 0.0)))))
 		if not Game.location_stage_ok(id):
 			needs.append(tr("ui.p_needs_stage") % tr(Data.stage_def(int(def.get("min_stage", 0)))["name"]))
 		action = _locked_button(" · ".join(needs))
@@ -2694,7 +2736,7 @@ func _fill_goals() -> void:
 		var reward: Dictionary = g["reward"]
 		var rw := tr("ui.g_reward") % Loc.money(float(reward.get("money", 0.0)))
 		if reward.has("popularity"):
-			rw += "  " + (tr("rep.reward") % Loc.ltr("%.1f" % (float(reward["popularity"]) * 5.0)))
+			rw += "  " + tr("fame.ui.reward")
 		v.add_child(_label(rw, "Small"))
 		if Game.goal_ready():
 			var b := _menu_target(_button(tr("ui.g_claim"), "Primary", Vector2(230, 52)), "claim_goal")

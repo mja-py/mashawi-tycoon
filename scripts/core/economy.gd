@@ -80,13 +80,30 @@ static func stop_probability(popularity: float, best_value: float, boost: float,
 		competition: float = 0.0, promo_power: float = 1.0) -> float:
 	if queue_len >= queue_cap:
 		return 0.0
-	var p := 0.05 + 0.20 * popularity
+	var p := base_stop_chance(popularity)
 	# No floor: an overpriced or awful menu really does empty the street.
 	p *= clampf(best_value / 0.8, 0.0, 1.6)
 	p *= 1.0 + boost * promo_power
 	p *= 1.0 - competition_loss(competition, boost, promo_power)
 	p *= 1.0 - 0.55 * float(queue_len) / float(queue_cap)
 	return clampf(p, 0.0, 0.9)
+
+## How hard a popularity pulls passers-by in, 0..1 (Data.FAME_DRAW, linear between points).
+static func fame_draw(popularity: float) -> float:
+	var pts: Array = Data.FAME_DRAW
+	var pop := clampf(popularity, 0.0, 1.0)
+	for i in range(1, pts.size()):
+		var a: Array = pts[i - 1]
+		var b: Array = pts[i]
+		if pop <= float(b[0]):
+			var span := maxf(float(b[0]) - float(a[0]), 0.000001)
+			return lerpf(float(a[1]), float(b[1]), (pop - float(a[0])) / span)
+	return float(pts.back()[1])
+
+## The chance a passer-by stops at the best value on offer, before value/promotion/line:
+## the HUD's "x in 100 passers stop" line.
+static func base_stop_chance(popularity: float) -> float:
+	return 0.05 + 0.20 * fame_draw(popularity)
 
 ## Share of would-be customers that rival stalls take. Promotion wins them back: at
 ## 0.45 effective boost the rivals are fully drowned out.
@@ -178,11 +195,11 @@ static func bubble_for_satisfaction(s: float) -> String:
 	var m := mood(s)
 	return "bad_quality" if m == "bad" else m
 
-## How a guest leaves: "great" (>= 0.7), "ok" (>= 0.4) or "bad".
+## How a guest leaves: "great" (>= Data.MOOD_GREAT), "ok" (>= Data.MOOD_OK) or "bad".
 static func mood(s: float) -> String:
-	if s >= 0.7:
+	if s >= Data.MOOD_GREAT:
 		return "great"
-	if s >= 0.4:
+	if s >= Data.MOOD_OK:
 		return "ok"
 	return "bad"
 
@@ -213,24 +230,116 @@ static func pick_weighted(cands: Array, rng: RandomNumberGenerator) -> String:
 			return cand["id"]
 	return cands[0]["id"]
 
+## The fame change of a day's stats so far (the HUD's live trend; Game.end_day settles with
+## fame_change): never below the level `popularity` has reached.
 static func popularity_delta(stats: Dictionary, popularity: float) -> float:
-	var served := int(stats.get("served", 0))
-	var delta := -0.01
-	if served > 0:
-		var avg: float = float(stats.get("satisfaction_sum", 0.0)) / served
-		delta = (avg - 0.5) * 0.35 * clampf(served / Data.WORD_OF_MOUTH_BUYERS, 0.3, 1.0)
-	# people who left the line or found you sold out talk too (as a share of everyone who tried)
-	var lost := int(stats.get("left_wait", 0)) + int(stats.get("sold_out", 0))
-	if lost > 0:
-		delta -= 0.08 * float(lost) / float(lost + served)
-	# Popularity is harder to raise near the top.
-	if delta > 0.0:
-		delta *= 1.0 - 0.6 * popularity
-	return delta
+	return float(fame_change(stats, popularity)["delta"])
 
-## A plot you have not visited loses a little local reputation per day, never below 0.1.
-static func reputation_decay(current: float, days_away: int) -> float:
-	return maxf(0.1, current - REPUTATION_DECAY_PER_DAY * maxi(days_away, 0))
+## A day's guests in fame points (Data.FAME_POINTS): {up (from great and ok faces), down (from
+## bad faces and lost guests, as a positive number), happy (great), content (ok), unhappy
+## (bad), lost (left a slow line or met a sold-out dish)}. Books without the faces (older
+## rows, hand-made stats) count every buyer by the day's average satisfaction.
+static func fame_points(stats: Dictionary) -> Dictionary:
+	var great := int(stats.get("mood_great", 0))
+	var ok := int(stats.get("mood_ok", 0))
+	var bad := int(stats.get("mood_bad", 0))
+	var served := int(stats.get("served", 0))
+	if great + ok + bad == 0 and served > 0:
+		match mood(float(stats.get("satisfaction_sum", 0.0)) / served):
+			"great": great = served
+			"ok": ok = served
+			_: bad = served
+	var lost := maxi(0, int(stats.get("left_wait", 0))) + maxi(0, int(stats.get("sold_out", 0)))
+	var pts: Dictionary = Data.FAME_POINTS
+	return {"up": great * float(pts["great"]) + ok * float(pts["ok"]),
+		"down": bad * -float(pts["bad"]) + lost * -float(pts["lost"]),
+		"happy": great, "content": ok, "unhappy": bad, "lost": lost}
+
+## Popularity one fame point is worth at a level: the level's bar over its "guests".
+static func fame_step(level: int) -> float:
+	var lvl := clampi(level, 0, Data.FAME_LEVELS.size() - 1)
+	var top := 1.0 if lvl >= Data.FAME_LEVELS.size() - 1 else float(Data.FAME_LEVELS[lvl + 1]["from"])
+	return (top - float(Data.FAME_LEVELS[lvl]["from"])) / float(Data.FAME_LEVELS[lvl]["guests"])
+
+## Popularity after `points` fame points from `pop`, climbing through the levels: each level
+## spends the points at its own (slower and slower) rate.
+static func fame_after(pop: float, points: float) -> float:
+	var p := clampf(pop, 0.0, 1.0)
+	var left := points
+	var guard := 0
+	while left > 0.0 and p < 1.0 and guard < 16:
+		guard += 1
+		var lvl := fame_level(p)
+		var top := 1.0 if lvl >= Data.FAME_LEVELS.size() - 1 else float(Data.FAME_LEVELS[lvl + 1]["from"])
+		var step := fame_step(lvl)
+		var room := maxf(0.0, top - p) / step
+		if left <= room:
+			p += left * step
+			left = 0.0
+		else:
+			p = top
+			left -= room
+	return minf(p, 1.0)
+
+## A day's fame from `pop`, guest by guest: the happy and content guests' points climb first
+## (gain), then the unhappy faces and lost guests take theirs back at the level reached
+## (loss), at most Data.FAME_DAY_LOSS_MAX and never below that level's threshold nor
+## `floor_pop`. `rate` scales every point (local fame: Data.LOCAL_FAME_RATE).
+## {gain, loss (positive), delta (= gain - loss), after, points: fame_points(stats)}.
+static func fame_change(stats: Dictionary, pop: float, rate: float = 1.0, floor_pop: float = 0.0) -> Dictionary:
+	var pts := fame_points(stats)
+	var climbed := fame_after(pop, float(pts["up"]) * rate)
+	var lvl := fame_level(climbed)
+	var drop := minf(float(pts["down"]) * rate * fame_step(lvl), Data.FAME_DAY_LOSS_MAX)
+	var after := maxf(climbed - drop, maxf(fame_floor(lvl), floor_pop))
+	return {"gain": climbed - pop, "loss": climbed - after, "delta": after - pop, "after": after, "points": pts}
+
+## A plot you have not visited loses a little local fame per day, never below 0.1 nor below
+## `floor_pop` (the threshold of the best local level reached there: a level is never lost).
+static func reputation_decay(current: float, days_away: int, floor_pop: float = 0.0) -> float:
+	return maxf(maxf(0.1, floor_pop), current - REPUTATION_DECAY_PER_DAY * maxi(days_away, 0))
+
+# ---------------------------------------------------------------- fame levels (Data.FAME_LEVELS)
+
+## Popularity a hair under a threshold still counts as reaching it (float sums).
+const FAME_EPS := 0.000001
+
+## Index of the fame level a popularity value has reached.
+static func fame_level(pop: float) -> int:
+	var lvl := 0
+	for i in range(Data.FAME_LEVELS.size()):
+		if pop >= float(Data.FAME_LEVELS[i]["from"]) - FAME_EPS:
+			lvl = i
+	return lvl
+
+## 0..1 along the bar from this level's threshold to the next; 1.0 at the top level.
+static func fame_progress(pop: float) -> float:
+	var lvl := fame_level(pop)
+	if lvl >= Data.FAME_LEVELS.size() - 1:
+		return 1.0
+	var lo := float(Data.FAME_LEVELS[lvl]["from"])
+	var hi := float(Data.FAME_LEVELS[lvl + 1]["from"])
+	return clampf((pop - lo) / (hi - lo), 0.0, 1.0)
+
+## Level plus the bar's progress (2.4 = level 2, 40% of the way to level 3); the top level
+## counts as its index. Fame goals measure the climb with it.
+static func fame_value(pop: float) -> float:
+	var lvl := fame_level(pop)
+	if lvl >= Data.FAME_LEVELS.size() - 1:
+		return float(lvl)
+	return float(lvl) + fame_progress(pop)
+
+## The level a requirement (an unlock_pop, a requires_local_rep, a min_popularity) asks
+## for: the lowest level whose threshold is at or above it, so the UI can name it.
+static func fame_level_for(threshold: float) -> int:
+	for i in range(Data.FAME_LEVELS.size()):
+		if float(Data.FAME_LEVELS[i]["from"]) >= threshold - FAME_EPS:
+			return i
+	return Data.FAME_LEVELS.size() - 1
+
+## The popularity a level starts at (the floor once it is reached).
+static func fame_floor(level: int) -> float:
+	return float(Data.fame_def(level)["from"])
 
 ## What the street thinks of you here: mostly your name, partly this corner's own reputation.
 static func effective_popularity(global_pop: float, local_rep: float) -> float:
@@ -463,6 +572,9 @@ static func _queue_wait(service: float, rho: float) -> float:
 		wait += service * (rho - 0.97) * 400.0
 	return wait
 
+## Estimates run so far (a cost meter for tests: the advisor's rank must stay cheap).
+static var estimate_calls := 0
+
 ## The played day, analytically, on the same service clock as DaySim (Data.SERVICE). Per
 ## game hour the street's buyer places form a closed loop (_estimate_hour): a free place
 ## waits for the next passer who would stop, then is held for the walk in, the line, the
@@ -470,8 +582,11 @@ static func _queue_wait(service: float, rho: float) -> float:
 ## the kitchen stations and the hatch; chairs and servers are a loss system beside it.
 ## Tests/sim_parity.gd holds it within 20% of the played day.
 ## Returns {want, served (buyers), portions, left, crowd, dine_in, revenue, cogs, profit,
-## util{station: 0..}, bottleneck}.
+## util{station: 0..}, bottleneck, wait (mean seconds a buyer waits in line and for the
+## food), moods{great, ok, bad} (buyers a day by face), fame_points (the day's fame points:
+## Data.FAME_POINTS over the faces and the buyers lost to the line)}.
 static func throughput_estimate(ctx: Dictionary) -> Dictionary:
+	estimate_calls += 1
 	var loc_id := String(ctx["location"])
 	var loc: Dictionary = Data.LOCATIONS[loc_id]
 	var weather: String = ctx["weather"]
@@ -513,6 +628,7 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 	var avg_cost := 0.0
 	var food_share := float(kind_frac["food"])
 	var food_price := 0.0
+	var plates := [] # [share of buyers, quality, price ratio] per dish, for the faces
 	for o in offer:
 		var kind := String(o["kind"])
 		if int(o.get("stock", 1)) <= 0 or not sums.has(kind) or float(sums[kind]) <= 0.0:
@@ -520,6 +636,7 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 		var share := float(kind_frac[kind]) * float(o["value"]) / float(sums[kind])
 		if share <= 0.0:
 			continue
+		plates.append([share, float(o.get("quality", 0.72)), float(o["price"]) / float(Data.MENU_ITEMS[o["id"]]["base_price"])])
 		var station := String(station_of_kind.get(String(o.get("station_kind", "")), ""))
 		if station != "" and float(kitchen.get(station, 0.0)) <= 0.0:
 			station = ""
@@ -576,6 +693,7 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 	if seats > 0:
 		util["seating"] = 0.0
 	var closing_gain := 0.0
+	var wait_sum := 0.0 # buyer-weighted wait in line and for the food (beyond their own cooking)
 	var h := float(hours[0])
 	while h < float(hours[1]):
 		var arrivals := arrival_rate(loc, weather, h + 0.5, ctx) / hour_s
@@ -609,6 +727,7 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 		totals["left"] += left * hour_s
 		totals["crowd"] += maxf(0.0, pot - accepted) * hour_s
 		totals["diners"] += buyers * float(r["dine"]) * hour_s
+		wait_sum += (buyers - left) * (wq + float(r["post_wait"])) * hour_s
 		# The day's edges: the first buyers meet empty queues, and orders taken before closing
 		# are still served afterwards, while buyers walking up or waiting to order go home.
 		closing_gain = (buyers - left) * (float(r["post_wait"]) - float(r["pre_order"]))
@@ -634,12 +753,69 @@ static func throughput_estimate(ctx: Dictionary) -> Dictionary:
 		+ food_portions * addon_rev + dine_portions * addon_dine_rev
 	var cogs := portions * avg_cost + food_portions * addon_cost + dine_portions * addon_dine_cost
 	var fixed := float(loc.get("rent", 0.0)) + float(ctx.get("wages", 0.0))
+	# The faces: each dish's satisfaction at the day's mean wait, and what they do to fame.
+	var wait_mean := wait_sum / maxf(served, 0.001)
+	var faces := mood_shares(plates, loc, float(ctx.get("satisfaction_bonus", 0.0)), wait_mean, patience, dine_in / maxf(served, 0.001))
+	var moods := {"great": served * float(faces["great"]), "ok": served * float(faces["ok"]), "bad": served * float(faces["bad"])}
+	var fp: Dictionary = Data.FAME_POINTS
+	var points := float(moods["great"]) * float(fp["great"]) + float(moods["ok"]) * float(fp["ok"]) \
+		+ float(moods["bad"]) * float(fp["bad"]) + float(totals["left"]) * float(fp["lost"])
 	return {
 		"want": float(totals["want"]), "served": served, "portions": portions, "left": float(totals["left"]),
 		"crowd": float(totals["crowd"]), "dine_in": dine_in,
 		"revenue": revenue, "cogs": cogs, "profit": revenue - cogs - fixed,
 		"util": util, "bottleneck": bottleneck(util),
+		"wait": wait_mean, "moods": moods, "fame_points": points,
 	}
+
+## Share of buyers leaving with each face ({great, ok, bad}, summing to 1) for dishes
+## `plates` = [[share of buyers, quality, price ratio]], a day whose waits average
+## `wait_mean` seconds (spread like a queue's: exponential) against `patience`, and
+## `dine_frac` of buyers eating in (+0.05, as in the played day).
+static func mood_shares(plates: Array, loc: Dictionary, bonus: float, wait_mean: float, patience: float, dine_frac: float) -> Dictionary:
+	var total := 0.0
+	var great := 0.0
+	var fine := 0.0
+	var d := clampf(dine_frac, 0.0, 1.0)
+	for pl in plates:
+		var share := float(pl[0])
+		total += share
+		for sit in [[1.0 - d, 0.0], [d, 0.05]]:
+			if float(sit[0]) <= 0.0:
+				continue
+			var s0 := satisfaction(float(pl[1]), float(pl[2]), 0.0, loc, bonus + float(sit[1]))
+			great += share * float(sit[0]) * _wait_within(s0 - Data.MOOD_GREAT, wait_mean, patience)
+			fine += share * float(sit[0]) * _wait_within(s0 - Data.MOOD_OK, wait_mean, patience)
+	if total <= 0.0:
+		return {"great": 0.0, "ok": 0.0, "bad": 0.0}
+	great /= total
+	fine /= total
+	return {"great": great, "ok": maxf(0.0, fine - great), "bad": maxf(0.0, 1.0 - fine)}
+
+## Chance that a wait (exponential, mean `wait_mean`) costs less than `margin` satisfaction
+## (a full patience of waiting costs 0.25).
+static func _wait_within(margin: float, wait_mean: float, patience: float) -> float:
+	if margin < 0.0:
+		return 0.0
+	var x := margin / 0.25
+	if x >= 1.0 or wait_mean <= 0.001:
+		return 1.0
+	return 1.0 - exp(-x * patience / wait_mean)
+
+## What `points` more fame points a day are worth in AED a day: the fame they add over
+## `horizon` days (Data.FAME_HORIZON_DAYS) from `pop`, climbing through the levels, times
+## `slope` (AED a day per unit of popularity: what the extra passers bring, from the
+## estimate), averaged over the horizon (the fame comes in day by day).
+static func fame_worth(points: float, pop: float, slope: float, horizon: float = -1.0) -> float:
+	var days := Data.FAME_HORIZON_DAYS if horizon < 0.0 else horizon
+	return slope * fame_reach(points, pop, days) * 0.5
+
+## Popularity `points` fame points a day add (or take, never below the level) in `days` days.
+static func fame_reach(points: float, pop: float, days: float) -> float:
+	if points >= 0.0:
+		return fame_after(pop, points * days) - pop
+	var lvl := fame_level(pop)
+	return -minf(minf(-points * fame_step(lvl), Data.FAME_DAY_LOSS_MAX) * days, pop - fame_floor(lvl))
 
 ## One game hour of the estimate. The street is a closed loop of `budget` buyer places
 ## (exact mean value analysis): a free place waits for the next passer who would stop
@@ -856,9 +1032,12 @@ static func goal_progress(goal: Dictionary, snap: Dictionary) -> float:
 		"day_dine_in": return clampf(float(snap.get("day_dine_in", 0)) / n, 0.0, 1.0)
 		"total_served": return clampf(float(snap.get("total_served", 0)) / n, 0.0, 1.0)
 		"stars": return clampf(float(snap.get("stars", 0.0)) / n, 0.0, 1.0)
+		# the climb to a fame level: level plus the bar's progress (fame_value)
+		"fame": return clampf(float(snap.get("fame", 0.0)) / maxf(n, 1.0), 0.0, 1.0)
 		"levels_owned": return clampf(float(snap.get("levels_owned", 0)) / n, 0.0, 1.0)
 		"stage": return clampf(float(snap.get("stage", 0)) / n, 0.0, 1.0)
 		"station_level": return clampf(float(snap.get("stations", {}).get(String(req["station"]), 0)) / n, 0.0, 1.0)
+		"dish_level": return clampf(float(snap.get("dish_level", 0)) / n, 0.0, 1.0)
 		"location": return 1.0 if String(req["id"]) in snap.get("visited", []) else 0.0
 		"location_any":
 			for id in req.get("ids", []):
@@ -877,10 +1056,60 @@ static func expected_customers(ctx: Dictionary) -> int:
 static func supply_packs(packs: Array, deficit: int) -> Dictionary:
 	if deficit <= 0:
 		return {"cost": 0.0, "counts": []}
+	var table := _pack_table(packs, deficit + _largest_pack(packs))
+	var costs: PackedFloat64Array = table[0]
+	var best := _cheapest_cover(costs, deficit)
+	return {"cost": costs[best], "counts": _pack_counts(packs, table[1], best)}
+
+## Stock bought ahead (what a cold box makes worth it): the cheapest whole packs for today's
+## `deficit`, judged over two days. What is left tonight keeps `keep` of itself (1 - the
+## spoil rate) and covers part of `tomorrow` (tomorrow's need, in units); tomorrow's gap is
+## bought again at the cheapest whole-pack price. Buys past today's need only when that is
+## cheaper over the two days than buying for today alone. {cost (today's bill), counts,
+## qty (units bought), carry (units kept for tomorrow), two_day (today's bill + tomorrow's
+## rebuy), plain_two_day (the same for the cheapest buy for today alone)}.
+static func supply_packs_ahead(packs: Array, deficit: int, tomorrow: int, keep: float) -> Dictionary:
+	if deficit <= 0:
+		return {"cost": 0.0, "counts": [], "qty": 0, "carry": 0, "two_day": 0.0, "plain_two_day": 0.0}
+	var largest := _largest_pack(packs)
+	var need_next := maxi(0, tomorrow)
+	var limit := deficit + need_next + largest
+	var table := _pack_table(packs, limit)
+	var costs: PackedFloat64Array = table[0]
+	# cover[x] = the cheapest whole packs holding at least x units (tomorrow's rebuy)
+	var cover := PackedFloat64Array()
+	cover.resize(limit + 1)
+	cover[limit] = INF
+	for x in range(limit - 1, -1, -1):
+		cover[x] = minf(costs[x], cover[x + 1])
+	var two_day := func(q: int) -> Array:
+		var left := q - deficit
+		var kept := left - roundi(left * (1.0 - clampf(keep, 0.0, 1.0)))
+		var gap := need_next - kept
+		return [costs[q] + (cover[gap] if gap > 0 else 0.0), mini(kept, need_next)]
+	var plain := _cheapest_cover(costs, deficit, deficit + largest)
+	var plain_two: Array = two_day.call(plain)
+	var best := plain
+	var best_two: Array = plain_two
+	for q in range(deficit, limit):
+		if costs[q] == INF:
+			continue
+		var t: Array = two_day.call(q)
+		if float(t[0]) < float(best_two[0]) - 0.005:
+			best = q
+			best_two = t
+	return {"cost": costs[best], "counts": _pack_counts(packs, table[1], best), "qty": best, "carry": int(best_two[1]),
+		"two_day": float(best_two[0]), "plain_two_day": float(plain_two[0])}
+
+static func _largest_pack(packs: Array) -> int:
 	var largest := 0
 	for p in packs:
 		largest = maxi(largest, int(p[0]))
-	var limit := deficit + largest
+	return largest
+
+## [costs, choices]: the cheapest exact whole-pack cost of every quantity below `limit` (INF
+## when no combination makes it) and the last pack of that combination.
+static func _pack_table(packs: Array, limit: int) -> Array:
 	var costs := PackedFloat64Array()
 	var choices := PackedInt32Array()
 	costs.resize(limit)
@@ -894,16 +1123,23 @@ static func supply_packs(packs: Array, deficit: int) -> Dictionary:
 			if prev >= 0 and costs[prev] + float(packs[i][1]) < costs[qty]:
 				costs[qty] = costs[prev] + float(packs[i][1])
 				choices[qty] = i
+	return [costs, choices]
+
+## The smallest quantity >= deficit (and below `below`, -1 = the table's end) with the lowest cost.
+static func _cheapest_cover(costs: PackedFloat64Array, deficit: int, below: int = -1) -> int:
 	var best := deficit
-	for qty in range(deficit, limit):
+	for qty in range(deficit, costs.size() if below < 0 else mini(below, costs.size())):
 		if costs[qty] < costs[best]:
 			best = qty
+	return best
+
+static func _pack_counts(packs: Array, choices: PackedInt32Array, qty: int) -> Array:
 	var counts := []
 	counts.resize(packs.size())
 	counts.fill(0)
-	var total := costs[best]
-	while best > 0 and choices[best] >= 0:
-		var idx := choices[best]
+	var q := qty
+	while q > 0 and choices[q] >= 0:
+		var idx := choices[q]
 		counts[idx] += 1
-		best -= int(packs[idx][0])
-	return {"cost": total, "counts": counts}
+		q -= int(packs[idx][0])
+	return counts

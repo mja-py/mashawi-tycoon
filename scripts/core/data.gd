@@ -7,9 +7,45 @@ const BAILOUT_BELOW := 200.0
 const BAILOUT_AMOUNT := 600.0
 const BAILOUT_MAX := 6
 const START_POPULARITY := 0.22
-## Buyers in a day whose word of mouth moves popularity by the full amount; a smaller day
-## counts in proportion (never below 30%). A cart serves 8-15, a stall 20-30.
-const WORD_OF_MOUTH_BUYERS := 15.0
+## How a guest leaves, by the satisfaction of their purchase (Economy.mood): "great" (a green
+## face) from MOOD_GREAT, "ok" (amber) from MOOD_OK, else "bad". At an un-upgraded cart with
+## base prices and short waits about half the faces are green; a long wait or a high price
+## turns them amber, a dish upgrade, hospitality or a seat turns them green.
+const MOOD_GREAT := 0.57
+const MOOD_OK := 0.40
+
+## Fame: how well the city knows and likes the stand. Stored as Game.popularity (0..1) and
+## each plot's own "reputation" (local fame), shown as a named level with a progress bar,
+## never as a rating. "from" = the popularity where the level starts (places, stages and
+## the blogger ask for one of these thresholds; Economy.fame_level_for names them).
+## "guests" = happy guests (great faces) it takes to fill the level's bar: later levels need
+## far more (Economy.fame_after). A level once reached is never lost (Game.fame_best and each
+## plot's "fame_best" floor the stored value). The top level's bar shows full; the value
+## still creeps on towards 1.0 at its "guests" rate.
+const FAME_LEVELS := [
+	{"id": "new", "name": "fame.new", "desc": "fame.new.desc", "from": 0.0, "guests": 120.0},
+	{"id": "known", "name": "fame.known", "desc": "fame.known.desc", "from": 0.30, "guests": 180.0},
+	{"id": "favourite", "name": "fame.favourite", "desc": "fame.favourite.desc", "from": 0.45, "guests": 330.0},
+	{"id": "talk", "name": "fame.talk", "desc": "fame.talk.desc", "from": 0.60, "guests": 1300.0},
+	{"id": "legend", "name": "fame.legend", "desc": "fame.legend.desc", "from": 0.80, "guests": 3000.0},
+]
+## How hard fame pulls passers-by in (Economy.fame_draw): [popularity, draw] points, linear in
+## between; a passer stops with chance 0.05 + 0.20 x draw (times value, promotion, line).
+## A new name pulls only its own weight; from Local favourite on the whole city talks about
+## the stand, and by Dubai legend it draws the full street.
+const FAME_DRAW := [[0.0, 0.0], [0.30, 0.30], [0.45, 0.55], [0.60, 0.85], [0.80, 1.0], [1.0, 1.0]]
+## Fame points per guest by how they left (Economy.fame_points): a great face fills the bar by
+## one guest's worth, a content one by a quarter of that; an unhappy face, or a guest lost to
+## a slow line or a sold-out dish, takes one back. Guests turned away by a full line, a full
+## street or a price never got as far as tasting the food: they cost nothing.
+const FAME_POINTS := {"great": 1.0, "ok": 0.25, "bad": -1.0, "lost": -1.0}
+## The most fame one bad day can take (popularity units), and never below the level reached.
+const FAME_DAY_LOSS_MAX := 0.01
+## Local fame (each place's own) climbs at this multiple of the city-wide rate.
+const LOCAL_FAME_RATE := 1.0
+## How far ahead a purchase's fame is counted (Economy.fame_worth): the extra fame points a
+## better day earns over this many days, priced by the extra passers that fame brings.
+const FAME_HORIZON_DAYS := 30.0
 const DAY_START_HOUR := 10
 const DAY_END_HOUR := 22
 const REAL_SECONDS_PER_GAME_HOUR := 10.0
@@ -137,16 +173,16 @@ const PLOT_STAGES := [
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets"]},
 	{"id": "kiosk", "name": "plot.kiosk", "desc": "plot.kiosk.desc", "cost": 7000.0, "scope": "plot", "max_staff": 4,
 		"appeal": 1.20, "price_cap_bonus": 0.35, "queue_bonus": 3, "dine_in": 0.35, "level_cap_bonus": 0, "icon": "icons/kiosk",
-		"requires_rig": 2, "requires_local_rep": 0.4,
+		"requires_rig": 2, "requires_local_rep": 0.30,
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice"]},
 	{"id": "restaurant", "name": "plot.restaurant", "desc": "plot.restaurant.desc", "cost": 18000.0, "scope": "plot", "max_staff": 7,
 		"appeal": 1.35, "price_cap_bonus": 0.60, "queue_bonus": 4, "dine_in": 0.70, "level_cap_bonus": 0, "icon": "icons/restaurant",
-		"requires_rig": 2, "requires_local_rep": 0.55, "branchable": true,
+		"requires_rig": 2, "requires_local_rep": 0.45, "branchable": true,
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice",
 			"majlis", "washroom", "staffroom", "office"]},
 	{"id": "flagship", "name": "plot.flagship", "desc": "plot.flagship.desc", "cost": 50000.0, "scope": "plot", "max_staff": 10,
 		"appeal": 1.50, "price_cap_bonus": 0.90, "queue_bonus": 5, "dine_in": 0.80, "level_cap_bonus": 5, "icon": "icons/flagship",
-		"requires_rig": 2, "requires_local_rep": 0.7, "branchable": true, "unlocks_city": "sharjah",
+		"requires_rig": 2, "requires_local_rep": 0.60, "branchable": true, "unlocks_city": "sharjah",
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice",
 			"majlis", "washroom", "staffroom", "office"]},
 ]
@@ -277,7 +313,7 @@ const STATIONS := {
 		"satisfaction_per_level": 0.02, "attract_per_level": 0.03},
 	"shade": {"name": "station.shade", "desc": "station.shade.desc", "effect": "station.shade.effect", "group": "extras",
 		"base": 550.0, "growth": 1.25, "max": 8, "min_stage": 0, "scope": "any", "icon": "icons/shade-sail",
-		"hot_traffic_per_level": 0.04, "storm_cut": 0.5},
+		"hot_traffic_per_level": 0.04, "hot_satisfaction_per_level": 0.02, "storm_cut": 0.5},
 	"seating": {"name": "station.seating", "desc": "station.seating.desc", "effect": "station.seating.effect", "group": "dining",
 		"base": 800.0, "growth": 1.22, "max": 25, "min_stage": 3, "scope": "plot", "icon": "icons/table-set", "owned_from": 1,
 		"seats_per_level": 2, "roles": ["server", "cleaner"]},
@@ -296,6 +332,19 @@ const STATIONS := {
 	"office": {"name": "station.office", "desc": "station.office.desc", "effect": "station.office.effect", "group": "extras",
 		"base": 0.0, "growth": 1.0, "max": 1, "min_stage": 4, "scope": "plot", "icon": "icons/helper", "later": true,
 		"roles": ["manager"], "virtual": true},
+}
+
+## What each station is for (the advisor groups its advice by it; Autoplayer.rank tags every
+## candidate): "capacity" serves more people, "quality" makes them happier (fame), "freshness"
+## keeps stock (buy ahead, less spoilage), "reach" brings more people past or in.
+## Stages are capacity, dishes quality, campaigns and moves reach.
+const STATION_CATEGORY := {
+	"counter": "capacity", "grill": "capacity", "doner": "capacity", "fryer": "capacity", "karak": "capacity",
+	"sweets": "capacity", "juice": "capacity", "seating": "capacity", "valet": "capacity", "staffroom": "capacity",
+	"office": "capacity",
+	"music": "quality", "shade": "quality", "majlis": "quality", "washroom": "quality", "lights": "quality",
+	"coldbox": "freshness",
+	"signage": "reach",
 }
 
 ## Older saves bought these one-off upgrades and vehicles; load_game() turns them into
@@ -336,16 +385,16 @@ const LOCATIONS := {
 	"creek": {"name": "loc.creek", "desc": "loc.creek.desc", "groups": 1.15, "rent": 70.0, "traffic": 0.55, "price_tol": 1.0, "quality_care": 0.9,
 		"patience": 1.2, "exposure": 1.6, "hot_bonus": 0.2, "peaks": [13.0, 17.0], "layout": "creek", "unlock_pop": 0.0, "min_stage": 0, "car_access": 0.6},
 	"metro": {"name": "loc.metro", "desc": "loc.metro.desc", "groups": 1.3, "rent": 175.0, "traffic": 0.7, "price_tol": 1.1, "quality_care": 0.85,
-		"patience": 0.6, "exposure": 0.7, "peaks": [9.0, 18.0], "layout": "metro", "unlock_pop": 0.2, "min_stage": 1, "car_access": 0.4},
+		"patience": 0.6, "exposure": 0.7, "peaks": [9.0, 18.0], "layout": "metro", "unlock_pop": 0.0, "min_stage": 1, "car_access": 0.4},
 	"jbr": {"name": "loc.jbr", "desc": "loc.jbr.desc", "groups": 1.3, "rent": 250.0, "traffic": 0.65, "price_tol": 1.15, "quality_care": 0.9,
-		"patience": 1.1, "exposure": 1.8, "hot_bonus": 0.8, "peaks": [14.0, 18.0], "layout": "jbr", "unlock_pop": 0.3, "min_stage": 1, "car_access": 0.8},
+		"patience": 1.1, "exposure": 1.8, "hot_bonus": 0.8, "peaks": [14.0, 18.0], "layout": "jbr", "unlock_pop": 0.30, "min_stage": 1, "car_access": 0.8},
 	"downtown": {"name": "loc.downtown", "desc": "loc.downtown.desc", "groups": 1.5, "rent": 700.0, "traffic": 0.95, "price_tol": 1.3, "quality_care": 1.3,
 		"patience": 0.9, "exposure": 0.9, "peaks": [12.5, 19.5], "layout": "downtown", "unlock_pop": 0.45, "min_stage": 2, "car_access": 1.0},
 	"mall": {"name": "loc.mall", "desc": "loc.mall.desc", "groups": 1.5, "rent": 850.0, "traffic": 1.15, "price_tol": 1.25, "quality_care": 1.2,
-		"patience": 1.0, "exposure": 0.0, "peaks": [13.0, 20.0], "layout": "mall", "unlock_pop": 0.5, "min_stage": 2, "car_access": 1.2,
+		"patience": 1.0, "exposure": 0.0, "peaks": [13.0, 20.0], "layout": "mall", "unlock_pop": 0.45, "min_stage": 2, "car_access": 1.2,
 		"competition": 0.55, "promo_power": 1.8},
 	"gv": {"name": "loc.gv", "desc": "loc.gv.desc", "groups": 1.6, "rent": 550.0, "traffic": 1.6, "price_tol": 1.35, "quality_care": 1.1,
-		"patience": 1.0, "exposure": 0.8, "peaks": [20.0, 23.0], "layout": "gv", "unlock_pop": 0.6, "min_stage": 2, "hours": [16, 24], "car_access": 1.0,
+		"patience": 1.0, "exposure": 0.8, "peaks": [20.0, 23.0], "layout": "gv", "unlock_pop": 0.60, "min_stage": 2, "hours": [16, 24], "car_access": 1.0,
 		"competition": 0.7, "promo_power": 2.0},
 }
 
@@ -369,7 +418,7 @@ const OPENING := {"days": 14, "traffic": 3.5}
 ## the stand has room for more guests. "days" counts the day it starts.
 ## chat: the boost grows with the guests served so far (Game.total_served), full at
 ##   "regulars_full".
-## blogger: needs "min_popularity" (stars / 5); the boost follows the recent guests'
+## blogger: needs "min_popularity" (a fame level's "from", Data.FAME_LEVELS); the boost follows the recent guests'
 ##   satisfaction (Game.recent_satisfaction) from none at "sat_floor" to full at "sat_full";
 ##   when it ends, the review moves popularity by "review" (up when the campaign days averaged
 ##   "review_good" or better, down below "review_bad").
@@ -383,7 +432,7 @@ const MARKETING := {
 	"chat": {"name": "mk.chat", "desc": "mk.chat.desc", "cost": 60.0, "days": 5, "boost": 0.35, "regulars_full": 3000, "icon": "icons/promo-chat"},
 	"maps": {"name": "mk.maps", "desc": "mk.maps.desc", "cost": 70.0, "days": 14, "boost": 0.12, "icon": "icons/promo-maps"},
 	"blogger": {"name": "mk.blogger", "desc": "mk.blogger.desc", "cost": 60.0, "days": 3, "boost": 0.6, "icon": "icons/promo-blogger",
-		"min_popularity": 0.4, "sat_floor": 0.3, "sat_full": 0.8, "review": 0.02, "review_good": 0.7, "review_bad": 0.5},
+		"min_popularity": 0.45, "sat_floor": 0.3, "sat_full": 0.8, "review": 0.02, "review_good": 0.7, "review_bad": 0.5},
 }
 ## The campaign the play guide shows first (a day-1 option).
 const STARTER_PROMO := "samples"
@@ -400,18 +449,21 @@ const LEGACY_MARKETING := {
 ## by Economy.goal_progress() against Game.goal_snapshot(). "say" = the mentor's line on claim.
 ## Thresholds follow the played day: a cart serves 10-25 buyers, a restaurant 25-45 buyers
 ## carrying 200-420 portions ("plates"), a kiosk terrace seats 5-12 diners a day.
+## "fame" n = a level index of FAME_LEVELS (the ids stars15/25/45 are kept: saves hold them).
 const MENTOR := "mentor.saeed"
 const GOALS := [
 	{"id": "first_30", "req": {"type": "day_served", "n": 8}, "reward": {"money": 250.0}, "say": "goal.first_30.say"},
 	{"id": "counter1", "req": {"type": "station_level", "station": "counter", "n": 1}, "reward": {"money": 300.0}, "say": "goal.counter1.say"},
-	{"id": "stars15", "req": {"type": "stars", "n": 1.5}, "reward": {"money": 300.0, "popularity": 0.02}, "say": "goal.stars15.say"},
+	{"id": "stars15", "req": {"type": "fame", "n": 1}, "reward": {"money": 300.0, "popularity": 0.02}, "say": "goal.stars15.say"},
+	{"id": "dish1", "req": {"type": "dish_level", "n": 1}, "reward": {"money": 300.0}, "say": "goal.dish1.say"},
 	{"id": "served200", "req": {"type": "total_served", "n": 150}, "reward": {"money": 400.0}, "say": "goal.served200.say"},
 	{"id": "creek", "req": {"type": "location", "id": "creek"}, "reward": {"money": 300.0}, "say": "goal.creek.say"},
 	{"id": "grill3", "req": {"type": "station_level", "station": "grill", "n": 2}, "reward": {"money": 300.0}, "say": "goal.grill3.say"},
 	{"id": "stall", "req": {"type": "stage", "n": 1}, "reward": {"money": 600.0}, "say": "goal.stall.say"},
 	{"id": "shawarma", "req": {"type": "item_unlocked", "id": "shawarma"}, "reward": {"money": 500.0}, "say": "goal.shawarma.say"},
 	{"id": "profit400", "req": {"type": "day_profit", "n": 300.0}, "reward": {"money": 600.0}, "say": "goal.profit400.say"},
-	{"id": "stars25", "req": {"type": "stars", "n": 2.5}, "reward": {"money": 800.0}, "say": "goal.stars25.say"},
+	{"id": "coldbox1", "req": {"type": "station_level", "station": "coldbox", "n": 1}, "reward": {"money": 600.0}, "say": "goal.coldbox1.say"},
+	{"id": "stars25", "req": {"type": "fame", "n": 3}, "reward": {"money": 800.0}, "say": "goal.stars25.say"},
 	{"id": "truck", "req": {"type": "stage", "n": 2}, "reward": {"money": 1500.0}, "say": "goal.truck.say"},
 	{"id": "downtown", "req": {"type": "location_any", "ids": ["downtown", "mall", "gv"]}, "reward": {"money": 1500.0}, "say": "goal.downtown.say"},
 	{"id": "levels20", "req": {"type": "levels_owned", "n": 20}, "reward": {"money": 2000.0}, "say": "goal.levels20.say"},
@@ -419,8 +471,12 @@ const GOALS := [
 	{"id": "diners50", "req": {"type": "day_dine_in", "n": 8}, "reward": {"money": 3000.0}, "say": "goal.diners50.say"},
 	{"id": "served300", "req": {"type": "day_portions", "n": 300}, "reward": {"money": 6000.0}, "say": "goal.served300.say"},
 	{"id": "levels60", "req": {"type": "levels_owned", "n": 60}, "reward": {"money": 10000.0}, "say": "goal.levels60.say"},
-	{"id": "stars45", "req": {"type": "stars", "n": 4.5}, "reward": {"money": 12000.0}, "say": "goal.stars45.say"},
+	{"id": "stars45", "req": {"type": "fame", "n": 4}, "reward": {"money": 12000.0}, "say": "goal.stars45.say"},
 ]
+
+## One level of FAME_LEVELS (clamped).
+static func fame_def(level: int) -> Dictionary:
+	return FAME_LEVELS[clampi(level, 0, FAME_LEVELS.size() - 1)]
 
 ## Thought-bubble keys per mood; the number of lines per mood is in BUBBLE_COUNT.
 const BUBBLE_COUNT := {"great": 5, "ok": 4, "bad_quality": 4, "too_pricey": 3, "too_slow": 3, "queue_full": 2,

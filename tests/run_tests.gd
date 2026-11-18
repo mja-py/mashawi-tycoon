@@ -48,8 +48,12 @@ func _ready() -> void:
 	_test_wages(game)
 	_test_promotions(game)
 	_test_advisor(game)
+	_test_advisor_variety(game)
 	_test_feedback_ui()
 	_test_release3_strings()
+	_test_fame_levels(game)
+	_test_fame_guests(game)
+	_test_upgrade_jobs(game)
 	game.delete_save() # the suite must not leave user://save_test.json behind
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
@@ -240,6 +244,11 @@ func _test_played_day_reputation(game) -> void:
 			stats = FastSim.run(game.sim_context(), day_rng)
 		averages[mode] = float(stats["satisfaction_sum"]) / maxi(1, int(stats["served"]))
 		deltas[mode] = Economy.popularity_delta(stats, game.popularity)
+		# an un-upgraded cart at base prices: some faces green, some amber, almost none red
+		var faces := int(stats["mood_great"]) + int(stats["mood_ok"]) + int(stats["mood_bad"])
+		var green := float(stats["mood_great"]) / maxf(1.0, faces)
+		check(faces > 0 and green >= 0.3 and green <= 0.9 and float(stats["mood_bad"]) <= 0.1 * faces,
+			"a default %s first day leaves a mix of green and amber faces (%d green, %d amber, %d red)" % [mode, stats["mood_great"], stats["mood_ok"], stats["mood_bad"]])
 	check(absf(averages["played"] - averages["fast"]) < 0.06,
 		"an uncrowded played day satisfies like the statistical day (%.2f vs %.2f)" % [averages["played"], averages["fast"]])
 	check(deltas["played"] > 0.0 and deltas["fast"] > 0.0,
@@ -417,7 +426,7 @@ func _test_station_copy() -> void:
 		"signage": [st["signage"]["attract_per_level"]],
 		"lights": [st["lights"]["evening_traffic_per_level"]],
 		"music": [st["music"]["satisfaction_per_level"], st["music"]["attract_per_level"]],
-		"shade": [st["shade"]["hot_traffic_per_level"]],
+		"shade": [st["shade"]["hot_traffic_per_level"], st["shade"]["hot_satisfaction_per_level"]],
 		"majlis": [st["majlis"]["satisfaction_per_level"], st["majlis"]["spend_per_level"]],
 	}
 	var previous := TranslationServer.get_locale()
@@ -1099,7 +1108,8 @@ func _test_stages(game) -> void:
 	game.buy_station_level("grill")
 	game.buy_station_level("counter")
 	check(game.stage_lock_reason() != "", "kiosk needs local reputation")
-	game.plot()["reputation"] = 0.5
+	check(game.stage_lock_reason().contains(game.fame_name(1)), "the kiosk lock names the local fame level (%s)" % game.stage_lock_reason())
+	game.plot()["reputation"] = 0.35 # Known on the street here, not yet a Local favourite
 	check(game.stage_lock_reason() == "", "kiosk unlocks with local reputation (%s)" % game.stage_lock_reason())
 	check(game.buy_stage() and game.is_fixed() and game.plot()["stage"] == "kiosk", "build a kiosk at fahidi")
 	check(game.station_level("grill") == 2 and game.station_level("counter") == 1 and game.rig["stations"].is_empty(), "rig station levels move into the kiosk")
@@ -1156,7 +1166,7 @@ func _test_goals(game) -> void:
 ## Every rung of the ladder is a goal type the game measures, met by a played-day-sized day
 ## (Release 2b thresholds: portions where "plates" are meant, diners a kiosk terrace seats).
 func _test_goal_ladder(game) -> void:
-	var known := ["day_served", "day_portions", "day_profit", "day_dine_in", "total_served", "stars", "levels_owned",
+	var known := ["day_served", "day_portions", "day_profit", "day_dine_in", "total_served", "fame", "dish_level", "levels_owned",
 		"stage", "station_level", "location", "location_any", "item_unlocked"]
 	var ids := {}
 	for goal in Data.GOALS:
@@ -1165,8 +1175,8 @@ func _test_goal_ladder(game) -> void:
 		check(not ids.has(goal["id"]) and float(goal["reward"].get("money", 0.0)) > 0.0, "goal %s is unique and pays" % goal["id"])
 		ids[goal["id"]] = true
 		check(Economy.goal_progress(goal, {}) < 1.0, "goal %s is not met by an empty snapshot" % goal["id"])
-	var played := {"day_served": 25, "day_portions": 320, "day_profit": 450.0, "day_dine_in": 9, "total_served": 250, "stars": 4.6,
-		"levels_owned": 60, "stage": 5, "stations": {"counter": 1, "grill": 3}, "visited": ["creek", "downtown"], "unlocked": ["shawarma"]}
+	var played := {"day_served": 25, "day_portions": 320, "day_profit": 450.0, "day_dine_in": 9, "total_served": 250, "fame": 4.0, "dish_level": 1,
+		"levels_owned": 60, "stage": 5, "stations": {"counter": 1, "grill": 3, "coldbox": 1}, "visited": ["creek", "downtown"], "unlocked": ["shawarma"]}
 	for goal in Data.GOALS:
 		check(is_equal_approx(Economy.goal_progress(goal, played), 1.0), "goal %s is reachable by a strong played day" % goal["id"])
 	var plates := {}
@@ -1314,7 +1324,7 @@ func _test_save_validation(game) -> void:
 	check(game.inventory["bread"] == 0, "negative stock zeroed")
 	check(game.history.size() == 1, "junk history rows dropped (%d)" % game.history.size())
 	check(not game.marketing.has("fliers"), "expired marketing dropped")
-	check(game.goal_index == Data.GOALS.size() and game.goals_claimed == ["first_30"], "goal index clamped, unknown goals dropped")
+	check(game.goal_index == 1 and game.goals_claimed == ["first_30"], "an older save's goal index follows its claimed goals, unknown goals dropped (%d)" % game.goal_index)
 	check(game.stats["days_played"] == 0 and game.stats["best_day_profit"] == 0.0, "stats sanitised")
 	check(game.money == 1234.0 and game.day == 7, "money and day kept")
 	game.delete_save()
@@ -1335,7 +1345,8 @@ func _test_migration(game) -> void:
 	check(game.station_level("fryer") == 1 and game.menu["fries"]["unlocked"], "unlocked fries bring a fryer")
 	check(game.money == 1000.0 + 300.0 + 800.0, "helper and seating refunded (%s)" % game.money)
 	check(game.location == "metro", "metro stays reachable with the truck")
-	check(game.goal_index >= 4 and game.goals_claimed.has("served200"), "already-achieved goals are skipped (%d)" % game.goal_index)
+	check(game.goal_index == 3 and game.goals_claimed == ["first_30", "counter1", "stars15"],
+		"already-achieved goals are skipped up to the first one not done (%d, %s)" % [game.goal_index, str(game.goals_claimed)])
 	game.delete_save()
 	# a cart player with the neon sign gets signage instead of lights
 	_write_save(game, {"version": 2, "money": 100.0, "day": 3, "popularity": 0.3, "location": "fahidi", "vehicle": "cart", "upgrades": {"neon": true, "sweets": true}})
@@ -1613,11 +1624,13 @@ func _test_promotions(game) -> void:
 	game.money = 10000.0
 	game.popularity = float(blog["min_popularity"]) - 0.05
 	var why: String = game.marketing_lock_reason("blogger")
-	check(why != "" and why.contains("2.0"), "the blogger needs 2.0 stars (%s)" % why)
+	var blog_level := Economy.fame_level_for(float(blog["min_popularity"]))
+	check(why != "" and why.contains(tr(String(Data.FAME_LEVELS[blog_level]["name"]))) and not why.contains("2.0") and not why.contains("%"),
+		"the blogger names the fame level she needs (%s)" % why)
 	check(not game.start_marketing("blogger") and game.money == 10000.0 and game.marketing.is_empty(), "a locked campaign cannot start")
 	check(game.marketing_lock_reason("ghost") != "" and not game.start_marketing("ghost"), "an unknown campaign is refused")
 	game.popularity = float(blog["min_popularity"])
-	check(game.marketing_lock_reason("blogger") == "", "with 2.0 stars the blogger can come")
+	check(game.marketing_lock_reason("blogger") == "", "at that level the blogger can come")
 	check(game.start_marketing("samples") and is_equal_approx(game.money, 10000.0 - float(samples["cost"])) and int(game.marketing["samples"]) == 1,
 		"starting a campaign at the cart charges the cart's price")
 	check(game.marketing_lock_reason("samples") != "" and not game.start_marketing("samples"), "a running campaign cannot start twice")
@@ -1677,14 +1690,20 @@ func _test_promotions(game) -> void:
 	var expect := clampf(0.6 + Economy.popularity_delta(happy, 0.6) + float(blog["review"]), 0.05, 1.0)
 	var r: Dictionary = game.end_day(happy)
 	check(is_equal_approx(game.popularity, expect) and is_equal_approx(float(r["review"]), float(blog["review"])) and game.marketing.is_empty(),
-		"a visit whose days averaged happy guests lifts the stars")
-	game.popularity = 0.6
+		"a visit whose days averaged happy guests lifts fame")
+	# inside a level (Local favourite, 0.45-0.60): an unhappy visit takes a little, never the level
+	game.popularity = 0.55
+	game.fame_best = 2
 	game.marketing = {"blogger": 1}
 	game.history = []
 	var sad := {"_day": game.day, "served": 10, "satisfaction_sum": 3.0}
-	expect = clampf(0.6 + Economy.popularity_delta(sad, 0.6) - float(blog["review"]), 0.05, 1.0)
+	expect = maxf(0.55 + Economy.popularity_delta(sad, 0.55) - float(blog["review"]), Economy.fame_floor(2))
 	r = game.end_day(sad)
-	check(is_equal_approx(game.popularity, expect) and float(r["review"]) < 0.0, "an unhappy visit lowers them")
+	check(is_equal_approx(game.popularity, expect) and float(r["review"]) < 0.0 and game.popularity < 0.55, "an unhappy visit lowers it (%.3f)" % game.popularity)
+	game.popularity = 0.46
+	game.marketing = {"blogger": 1}
+	r = game.end_day({"_day": game.day, "served": 10, "satisfaction_sum": 3.0})
+	check(is_equal_approx(game.popularity, Economy.fame_floor(2)) and game.fame_level() == 2, "the review never takes a level away (%.3f)" % game.popularity)
 	# a version-4 save: removed campaigns refunded once for their days left, the video carries on
 	game.persist = true
 	game.new_game()
@@ -1705,7 +1724,7 @@ func _test_promotions(game) -> void:
 	check(notes.size() == 1, "the player is told once (%s)" % str(notes))
 	check(game.load_game() and is_equal_approx(game.money, 1000.0 + refund), "the refund is paid only once")
 	raw = JSON.parse_string(FileAccess.get_file_as_string(game.save_path))
-	check(int(raw["version"]) == 5, "the refunded save is rewritten as version 5")
+	check(int(raw["version"]) == game.SAVE_VERSION, "the refunded save is rewritten in the current version")
 	raw["marketing"] = {"fliers": 1}
 	_write_save(game, raw)
 	check(game.load_game() and is_equal_approx(game.money, 1000.0 + refund) and game.marketing.is_empty(), "a version-5 save never refunds an unknown campaign")
@@ -1785,8 +1804,10 @@ func _test_advisor(game) -> void:
 		"asking the advisor spends nothing, buys nothing and rolls no dice")
 	check(prep.size() >= 1 and prep.size() <= Advisor.SHEET_TOP, "the planning sheet lists one to six things (%d)" % prep.size())
 	var ids := {}
+	# a filled-in "35%" is fine; a placeholder left over is not
+	var placeholder := RegEx.create_from_string("%[+]?[.0-9]*[dsf]")
 	for it in prep:
-		check(not String(it["text"]).begins_with("adv.") and not String(it["text"]).contains("%"), "advice '%s' is a finished sentence" % it["id"])
+		check(not String(it["text"]).begins_with("adv.") and placeholder.search(String(it["text"])) == null, "advice '%s' is a finished sentence (%s)" % [it["id"], it["text"]])
 		check(panels.has(String(it["panel"])), "advice '%s' points at a real menu (%s)" % [it["id"], it["panel"]])
 		check(not ids.has(it["id"]), "advice '%s' appears once" % it["id"])
 		ids[it["id"]] = true
@@ -1915,6 +1936,49 @@ func _test_advisor_review(game) -> void:
 	check(GuideJourney.clean({"station": "shade"})["station"] == "shade" and GuideJourney.clean({"station": "seating"})["station"] == "seating"
 		and GuideJourney.clean({"station": "nonsense"})["station"] == "counter", "the guide remembers any real station across a reload")
 
+## The advice is not "a bigger stand" every morning: two purchases of different kinds, a
+## full stand is an observation, and the cold box gets one line, not two.
+func _test_advisor_variety(game) -> void:
+	game.new_game()
+	for day in range(8):
+		Autoplayer.play_day(false, null, null)
+	game.money = 6000.0
+	var buys := Advisor._buy_insights({})
+	check(buys.size() >= 1 and buys.size() <= 2, "one or two purchases are advised (%d)" % buys.size())
+	if buys.size() == 2:
+		check(buys[0]["category"] != buys[1]["category"], "the two purchases are different kinds of upgrade (%s, %s)" % [buys[0]["category"], buys[1]["category"]])
+		check(int(buys[1]["prio"]) == 2 and float(buys[1]["gain"]) <= float(buys[0]["gain"]) + 0.001, "the second purchase sorts after the best one")
+	for c in Autoplayer.rank([], null, true)["cands"]:
+		check(Advisor.category(c) in ["capacity", "quality", "freshness", "reach"], "candidate %s:%s has a category" % [c["kind"], c["id"]])
+	# The second suggestion turns through the other kinds day by day.
+	var seen := {}
+	var day0: int = game.day
+	for d in range(6):
+		game.day = day0 + d
+		var pair := Advisor._buy_insights({})
+		if pair.size() == 2:
+			seen[pair[1]["category"]] = true
+	game.day = day0
+	var kinds := {}
+	for c in Autoplayer.rank([], null, true)["cands"]:
+		if bool(c["ok"]) and float(c["gain"]) > 0.5 and float(c["net"]) > 0.0:
+			kinds[Advisor.category(c)] = true
+	check(seen.size() >= mini(2, kinds.size() - 1), "the second suggestion rotates through the kinds on offer (%s of %s)" % [seen.keys(), kinds.keys()])
+	# A full stand: not a line on an ordinary day, an observation on a swamped one, never first.
+	var row: Dictionary = (game.history.back() as Dictionary).duplicate(true)
+	row.merge({"served": 16, "crowd": 9, "left_wait": 0, "queue_full": 0, "sold_out": 0, "too_pricey": 0, "no_item_kinds": {}, "spoil_cost": 0.0, "bottleneck": ""}, true)
+	check(not Advisor._day_insights(row).any(func(it: Dictionary) -> bool: return it["id"] == "crowd"), "a stand that turned a few away is not told to grow")
+	row["crowd"] = 30
+	var busy := Advisor._day_insights(row).filter(func(it: Dictionary) -> bool: return it["id"] == "crowd")
+	check(busy.size() == 1 and int(busy[0]["prio"]) > 2, "a swamped stand gets the line as an observation, after the purchases")
+	var report := Advisor.for_report(row)
+	check(report.is_empty() or report[0]["id"] != "crowd", "the report never opens with 'the stand was full' (%s)" % [report.map(func(it: Dictionary) -> String: return it["id"])])
+	# One line about the cold box.
+	var spoil := Advisor._insight("spoil", "bad", "x", 20.0, "build", "coldbox")
+	var fridge := Advisor._insight("buy", "great", "y", 30.0, "build", "coldbox")
+	check(Advisor._one_coldbox_line([spoil, fridge]).size() == 1 and Advisor._one_coldbox_line([spoil]).size() == 1, "the cold box is advised once, not as a loss and a purchase")
+	game.new_game()
+
 ## Mood faces, the two day speeds and the reason faces the sim uses.
 func _test_feedback_ui() -> void:
 	var seen := {}
@@ -1983,7 +2047,7 @@ func _test_release3_strings() -> void:
 		if row.size() < 3:
 			continue
 		var key := row[0]
-		if not (key.begins_with("adv.") or key.begins_with("rep.") or key.begins_with("rpt.") or key.begins_with("ui.mood_") or key.begins_with("mk.")
+		if not (key.begins_with("adv.") or key.begins_with("rep.") or key.begins_with("rpt.") or key.begins_with("ui.mood_") or key.begins_with("mk.") or key.begins_with("fame.")
 				or key in ["ui.a_gain", "ui.a_loss", "ui.a_capped", "ui.p_needs_stage", "coach.finish.say", "guide.day.say"]):
 			continue
 		rows += 1
@@ -1994,3 +2058,390 @@ func _test_release3_strings() -> void:
 		for bad in ["✓", "✕", "●", "○", "★", "☺", "☹", "Skip", "radio", "Radio", "WhatsApp", "Instagram"]:
 			check(not row[1].contains(bad) and not row[2].contains(bad), "%s avoids '%s'" % [key, bad])
 	check(rows >= 60, "the release 3 strings are present (%d)" % rows)
+
+## Fame levels (Data.FAME_LEVELS): five named levels with a bar between thresholds; every
+## requirement is a level's threshold; a level once reached is never lost (city-wide, local,
+## the away-decay, an old save) and is announced once.
+func _test_fame_levels(game) -> void:
+	var was_persistent: bool = game.persist
+	var lv: Array = Data.FAME_LEVELS
+	var ids := lv.map(func(l: Dictionary) -> String: return String(l["id"]))
+	check(ids == ["new", "known", "favourite", "talk", "legend"], "five fame levels in order (%s)" % str(ids))
+	var froms := lv.map(func(l: Dictionary) -> float: return float(l["from"]))
+	check(froms == [0.0, 0.30, 0.45, 0.60, 0.80], "fame thresholds 0 / 0.30 / 0.45 / 0.60 / 0.80 (%s)" % str(froms))
+	var previous := TranslationServer.get_locale()
+	for locale in ["en", "ar"]:
+		TranslationServer.set_locale(locale)
+		for l in lv:
+			check(tr(String(l["name"])) != String(l["name"]) and tr(String(l["desc"])) != String(l["desc"]) and String(l["name"]) == "fame." + String(l["id"]),
+				"fame level %s has a name and a line in %s" % [l["id"], locale])
+	TranslationServer.set_locale("en")
+	check(tr("fame.new") == "New in town" and tr("fame.legend") == "Dubai legend", "the English level names")
+	TranslationServer.set_locale(previous)
+	# level, bar and climb at the thresholds
+	var levels := [[0.0, 0], [0.299, 0], [0.30, 1], [0.449, 1], [0.45, 2], [0.599, 2], [0.60, 3], [0.799, 3], [0.80, 4], [1.0, 4]]
+	for pair in levels:
+		check(Economy.fame_level(float(pair[0])) == int(pair[1]), "popularity %.3f is fame level %d (%d)" % [pair[0], pair[1], Economy.fame_level(float(pair[0]))])
+	check(is_zero_approx(Economy.fame_progress(0.0)) and is_equal_approx(Economy.fame_progress(0.15), 0.5) and is_zero_approx(Economy.fame_progress(0.30))
+		and is_equal_approx(Economy.fame_progress(0.375), 0.5) and is_equal_approx(Economy.fame_progress(0.70), 0.5), "the bar runs from a level's threshold to the next")
+	check(Economy.fame_progress(0.80) == 1.0 and Economy.fame_progress(0.95) == 1.0, "the top level's bar is full")
+	check(is_equal_approx(Economy.fame_value(0.375), 1.5) and Economy.fame_value(0.95) == 4.0, "fame value = level + bar")
+	check(Economy.fame_level_for(0.0) == 0 and Economy.fame_level_for(0.30) == 1 and Economy.fame_level_for(0.45) == 2 and Economy.fame_level_for(0.60) == 3
+		and Economy.fame_level_for(0.80) == 4 and Economy.fame_level_for(0.2) == 1, "a requirement names the lowest level that meets it")
+	# every requirement is exactly a level's threshold
+	var reqs := {}
+	for id in Data.LOCATIONS:
+		reqs["place " + id] = float(Data.LOCATIONS[id].get("unlock_pop", 0.0))
+	for def in Data.PLOT_STAGES:
+		if def.has("requires_local_rep"):
+			reqs["stage " + String(def["id"])] = float(def["requires_local_rep"])
+	reqs["blogger"] = float(Data.MARKETING["blogger"]["min_popularity"])
+	for k in reqs:
+		check(is_equal_approx(Economy.fame_floor(Economy.fame_level_for(float(reqs[k]))), float(reqs[k])), "%s asks for a fame level's threshold (%.2f)" % [k, reqs[k]])
+	var want := {"place metro": 0.0, "place jbr": 0.30, "place downtown": 0.45, "place mall": 0.45, "place gv": 0.60,
+		"stage kiosk": 0.30, "stage restaurant": 0.45, "stage flagship": 0.60, "blogger": 0.45}
+	for k in want:
+		check(is_equal_approx(float(reqs[k]), float(want[k])), "%s needs %.2f (%.2f)" % [k, want[k], reqs[k]])
+	# the game's view
+	game.persist = false
+	game.new_game()
+	check(game.fame_level() == 0 and is_equal_approx(game.fame_progress(), Data.START_POPULARITY / 0.30) and game.local_fame_level() == 0
+		and is_equal_approx(game.local_fame_progress(), game.fame_progress()), "a new stand is New in town, its bar partly filled")
+	check(game.fame_name(2) == tr("fame.favourite"), "level names are translated")
+	game.popularity = 0.2999
+	check(not game.location_unlocked("jbr") and game.location_unlocked("metro"), "JBR waits for Known on the street, the Metro does not")
+	game.popularity = 0.30
+	check(game.location_unlocked("jbr"), "Known on the street opens JBR")
+	game.new_game()
+	var events := []
+	var grab := func(level: int, local: bool) -> void: events.append([level, local])
+	game.fame_level_up.connect(grab)
+	check(game.set_popularity(0.62) and game.fame_best == 3 and events == [[3, false]], "reaching a level is remembered and announced once (%s)" % str(events))
+	check(not game.set_popularity(0.65) and events.size() == 1, "climbing inside a level announces nothing")
+	game.set_popularity(0.2)
+	check(is_equal_approx(game.popularity, 0.60) and game.fame_level() == 3, "city-wide fame never falls below a reached level (%.3f)" % game.popularity)
+	var p: Dictionary = game.plot()
+	check(game.set_local_fame(p, 0.47) and int(p["fame_best"]) == 2 and events.back() == [2, true], "a local level is remembered and announced as local")
+	game.set_local_fame(p, 0.1)
+	check(is_equal_approx(float(p["reputation"]), 0.45) and game.local_fame_level() == 2, "local fame never falls below its level")
+	# a terrible day keeps the level
+	game.popularity = 0.605
+	var r: Dictionary = game.end_day({"_day": game.day, "served": 30, "mood_bad": 30, "satisfaction_sum": 3.0, "left_wait": 20, "sold_out": 40, "sold": {}})
+	check(game.popularity >= 0.60 - 0.000001 and float(r["pop_delta"]) <= 0.0 and int(r["fame_level"]) == 3 and not r["fame_up"],
+		"a terrible day keeps the level (%.3f)" % game.popularity)
+	game.fame_level_up.disconnect(grab)
+	# the away-decay of a fixed plot stops at its local level
+	game.new_game()
+	game.plots["creek"] = {"stage": "kiosk", "stations": {}, "reputation": 0.458, "last_visit": 1, "fame_best": 2}
+	for i in range(6):
+		game.day += 1
+		game.prepare_day()
+	check(is_equal_approx(float(game.plots["creek"]["reputation"]), 0.45), "a place you are away from fades no lower than its level (%.3f)" % float(game.plots["creek"]["reputation"]))
+	game.plots["jbr"] = {"stage": "kiosk", "stations": {}, "reputation": 0.13, "last_visit": 1}
+	for i in range(10):
+		game.day += 1
+		game.prepare_day()
+	check(is_equal_approx(float(game.plots["jbr"]["reputation"]), 0.1), "below the first level the fading still stops at 0.1")
+	# saves: version 6 keeps the best levels; an older save derives them; a stored best floors the value
+	game.persist = true
+	game.new_game()
+	game.save()
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(game.save_path))
+	check(int(raw["version"]) == 6 and int(raw["fame_best"]) == 0 and raw["plots"]["fahidi"].has("fame_best"), "a version-6 save stores the fame levels")
+	raw["version"] = 5
+	raw.erase("fame_best")
+	raw["popularity"] = 0.62
+	raw["plots"] = {"fahidi": {"stage": "", "stations": {}, "reputation": 0.47, "last_visit": 1}}
+	raw["history"] = [{"location": "fahidi", "weather": "sunny", "served": 12, "popularity": 0.62, "local_rep": 0.47}]
+	_write_save(game, raw)
+	check(game.load_game() and game.fame_best == 3 and int(game.plots["fahidi"]["fame_best"]) == 2, "a version-5 save gets its levels from its values")
+	check(int(game.history[0]["fame_level"]) == 3 and int(game.history[0]["local_fame_level"]) == 2 and not game.history[0]["fame_up"], "an older day's row gains its levels")
+	game.set_popularity(0.3)
+	check(is_equal_approx(game.popularity, 0.60), "a loaded old save keeps the level it had reached")
+	raw["version"] = 6
+	raw["fame_best"] = 4
+	raw["popularity"] = 0.5
+	raw["plots"] = {"fahidi": {"stage": "", "stations": {}, "reputation": 0.2, "last_visit": 1, "fame_best": 3}}
+	_write_save(game, raw)
+	check(game.load_game() and is_equal_approx(game.popularity, 0.80) and is_equal_approx(float(game.plots["fahidi"]["reputation"]), 0.60),
+		"a stored best level lifts a lower stored value to its threshold")
+	raw["fame_best"] = 99
+	raw["plots"] = {"fahidi": {"stage": "", "stations": {}, "reputation": 0.2, "last_visit": 1, "fame_best": -4}}
+	_write_save(game, raw)
+	check(game.load_game() and game.fame_best == 4 and int(game.plots["fahidi"]["fame_best"]) == 0, "malformed best levels are clamped")
+	game.delete_save()
+	# fame goals measure the climb, not a jump
+	game.persist = false
+	game.new_game()
+	game.popularity = 0.375
+	var climb := {}
+	for g in Data.GOALS:
+		if String(g["req"]["type"]) == "fame":
+			climb[g["id"]] = Economy.goal_progress(g, game.goal_snapshot())
+	check(climb.keys() == ["stars15", "stars25", "stars45"], "the three fame goals keep their ids (%s)" % str(climb.keys()))
+	check(climb.get("stars15", 0.0) == 1.0 and is_equal_approx(float(climb.get("stars25", 0.0)), 1.5 / 3.0) and is_equal_approx(float(climb.get("stars45", 0.0)), 1.5 / 4.0),
+		"fame goals fill with the climb (%s)" % str(climb))
+	game.persist = was_persistent
+	game.new_game()
+
+## Fame is earned guest by guest: a green face fills the bar by one guest, an amber one by a
+## quarter; a red face or a guest lost to the line or a sold-out dish takes one back. A day
+## without red faces or lost guests never lowers fame, a bad day takes at most
+## FAME_DAY_LOSS_MAX and never a level, and every level needs more guests than the one before.
+func _test_fame_guests(game) -> void:
+	check(Economy.mood(Data.MOOD_GREAT) == "great" and Economy.mood(Data.MOOD_GREAT - 0.001) == "ok"
+		and Economy.mood(Data.MOOD_OK) == "ok" and Economy.mood(Data.MOOD_OK - 0.001) == "bad", "mood thresholds")
+	for s in [0.1, 0.45, 0.6, 0.9]:
+		var b := Economy.bubble_for_satisfaction(s)
+		var m := Economy.mood(s)
+		check(b == m or (m == "bad" and b == "bad_quality"), "the face over a guest matches the mood counted (%.2f: %s / %s)" % [s, b, m])
+	var pts := Economy.fame_points({"served": 10, "mood_great": 4, "mood_ok": 4, "mood_bad": 2, "left_wait": 3, "sold_out": 1})
+	check(is_equal_approx(float(pts["up"]), 5.0) and is_equal_approx(float(pts["down"]), 6.0) and int(pts["happy"]) == 4 and int(pts["content"]) == 4
+		and int(pts["unhappy"]) == 2 and int(pts["lost"]) == 4, "fame points: green 1, amber 1/4, red and lost -1 (%s)" % str(pts))
+	var old := Economy.fame_points({"served": 5, "satisfaction_sum": 5 * (Data.MOOD_GREAT + 0.01)})
+	check(int(old["happy"]) == 5 and float(old["down"]) == 0.0, "a book without faces counts its buyers by the average satisfaction")
+	# every level needs more guests than the one before
+	var need := []
+	for i in range(Data.FAME_LEVELS.size() - 1):
+		var a := float(Data.FAME_LEVELS[i]["from"])
+		var b := float(Data.FAME_LEVELS[i + 1]["from"])
+		need.append((b - a) / Economy.fame_step(i))
+	for i in range(1, need.size()):
+		check(need[i] > need[i - 1], "level %d needs more guests than level %d (%.0f vs %.0f)" % [i + 1, i, need[i], need[i - 1]])
+	check(Economy.fame_step(4) < Economy.fame_step(3) and Economy.fame_after(0.95, 1e6) == 1.0, "Dubai legend still creeps on, slowly, to 1.0")
+	var cross := Economy.fame_after(0.44, (0.01 / Economy.fame_step(1)) + 10.0)
+	check(is_equal_approx(cross, 0.45 + 10.0 * Economy.fame_step(2)), "points left after a level are spent at the next level's rate (%.4f)" % cross)
+	# a clean day never lowers fame, at any level
+	for pop in [0.22, 0.31, 0.5, 0.61, 0.85]:
+		for st in [{"served": 0}, {"served": 6, "mood_ok": 6}, {"served": 20, "mood_great": 3, "mood_ok": 17, "left_full": 40, "crowd": 30}]:
+			var c := Economy.fame_change(st, pop)
+			check(float(c["delta"]) >= 0.0 and float(c["loss"]) == 0.0, "a day without red faces or lost guests never lowers fame (%.2f, %s)" % [pop, str(st)])
+	# a terrible day is capped and keeps the level
+	for pop in [0.25, 0.47, 0.62, 0.83]:
+		var c := Economy.fame_change({"served": 40, "mood_bad": 40, "left_wait": 30, "sold_out": 30}, pop)
+		check(float(c["loss"]) <= Data.FAME_DAY_LOSS_MAX + 1e-9 and float(c["after"]) >= Economy.fame_floor(Economy.fame_level(pop)) - 1e-9,
+			"a terrible day takes at most %.2f and never the level (%.3f -> %.3f)" % [Data.FAME_DAY_LOSS_MAX, pop, c["after"]])
+	var mixed := Economy.fame_change({"served": 20, "mood_great": 12, "mood_ok": 6, "mood_bad": 2, "left_wait": 1}, 0.5)
+	check(is_equal_approx(float(mixed["delta"]), float(mixed["gain"]) - float(mixed["loss"])) and float(mixed["gain"]) > 0.0 and float(mixed["loss"]) > 0.0,
+		"a mixed day shows its gain and its loss apart")
+	# the day's row and the level-up signal
+	var was_persistent: bool = game.persist
+	game.persist = false
+	game.new_game()
+	var events := []
+	var grab := func(level: int, local: bool) -> void: events.append([level, local])
+	game.fame_level_up.connect(grab)
+	game.popularity = 0.299
+	game.plot()["reputation"] = 0.299
+	var r: Dictionary = game.end_day({"_day": game.day, "served": 30, "mood_great": 30, "satisfaction_sum": 21.0, "sold": {}})
+	check(r["fame_up"] and int(r["fame_level"]) == 1 and float(r["fame_gain"]) > 0.0 and float(r["fame_loss"]) == 0.0
+		and r["local_fame_up"] and int(r["local_fame_level"]) == 1 and int(r["fame_happy"]) == 30,
+		"a good day's row carries the gain, the new level and the level-up (%s)" % str([r["fame_gain"], r["fame_loss"], r["fame_level"], r["fame_up"]]))
+	check(events.has([1, false]) and events.has([1, true]), "reaching a level emits fame_level_up for the city and the place (%s)" % str(events))
+	events.clear()
+	game.day += 1
+	var r2: Dictionary = game.end_day({"_day": game.day, "served": 10, "mood_great": 2, "mood_bad": 8, "left_wait": 6, "satisfaction_sum": 3.0, "sold": {}})
+	check(not r2["fame_up"] and float(r2["fame_loss"]) > 0.0 and float(r2["fame_gain"]) > 0.0 and int(r2["fame_unhappy"]) == 14 and events.is_empty()
+		and is_equal_approx(float(r2["pop_delta"]), float(r2["fame_gain"]) - float(r2["fame_loss"])), "a bad day's row shows the loss (%s)" % str([r2["fame_gain"], r2["fame_loss"]]))
+	game.fame_level_up.disconnect(grab)
+	# a dish upgrade turns faces green, a high price turns them amber (the statistical day)
+	var shares := {}
+	for setup in ["base", "dish", "price"]:
+		game.new_game()
+		for id in Data.INGREDIENTS:
+			game.inventory[id] = 200
+		game.weather = "sunny"
+		game.forecast = "sunny"
+		for id in game.menu:
+			if setup == "dish" and game.menu[id]["unlocked"]:
+				game.menu[id]["level"] = 1
+			if setup == "price":
+				game.menu[id]["price"] = float(Data.MENU_ITEMS[id]["base_price"]) * 1.25
+		var great := 0
+		var faces_n := 0
+		for s in range(6):
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 900 + s
+			var st := FastSim.run(game.sim_context(), rng)
+			great += int(st["mood_great"])
+			faces_n += int(st["mood_great"]) + int(st["mood_ok"]) + int(st["mood_bad"])
+		shares[setup] = float(great) / maxf(1.0, faces_n)
+	check(shares["dish"] > shares["base"] + 0.15 and shares["price"] < shares["base"] - 0.15,
+		"an upgrade turns faces green, a high price turns them amber (%s)" % str(shares))
+	game.persist = was_persistent
+	game.new_game()
+
+## Every upgrade has a job the scoring sees: a cold box buys ahead and saves spoilage, quality
+## earns fame, every candidate says what it is for, and two goals walk the player through them.
+func _test_upgrade_jobs(game) -> void:
+	var was_persistent: bool = game.persist
+	game.persist = false
+	# categories
+	var cats := ["capacity", "quality", "freshness", "reach"]
+	for id in Data.STATIONS.keys() + ["seating"]:
+		check(cats.has(String(Data.STATION_CATEGORY.get(id, ""))), "station %s has a category (%s)" % [id, Data.STATION_CATEGORY.get(id, "none")])
+	var want := {"counter": "capacity", "grill": "capacity", "seating": "capacity", "valet": "capacity", "music": "quality", "shade": "quality",
+		"majlis": "quality", "washroom": "quality", "lights": "quality", "coldbox": "freshness", "signage": "reach"}
+	for id in want:
+		check(Data.STATION_CATEGORY[id] == want[id], "%s is %s" % [id, want[id]])
+	check(Autoplayer.category("stage", "stall") == "capacity" and Autoplayer.category("enhance", "chicken_tikka") == "quality"
+		and Autoplayer.category("item", "shawarma") == "quality" and Autoplayer.category("promo", "fliers") == "reach" and Autoplayer.category("move", "creek") == "reach",
+		"stages are capacity, dishes quality, campaigns and moves reach")
+	# packs bought ahead: cheaper bulk only when the night keeps it
+	var chicken: Array = Data.INGREDIENTS["chicken"]["packs"]
+	var warm := Economy.supply_packs_ahead(chicken, 60, 60, 0.65)
+	var cold := Economy.supply_packs_ahead(chicken, 60, 60, 0.9)
+	check(int(warm["qty"]) == 60 and float(warm["cost"]) == float(Economy.supply_packs(chicken, 60)["cost"]) and float(warm["two_day"]) == float(warm["plain_two_day"]),
+		"without a cold box a day's chicken is bought for the day (%d)" % int(warm["qty"]))
+	check(int(cold["qty"]) > 60 and float(cold["two_day"]) < float(cold["plain_two_day"]) and int(cold["carry"]) > 0,
+		"with a cold box the bigger pack wins over two days (%d units, %.0f vs %.0f)" % [cold["qty"], cold["two_day"], cold["plain_two_day"]])
+	check(Economy.supply_packs_ahead(chicken, 0, 60, 1.0)["counts"].is_empty() and float(Economy.supply_packs(chicken, 30)["cost"]) == 54.0,
+		"nothing to buy buys nothing; today's cheapest whole packs stay as they were")
+	# the stock plan at a busy stand
+	var busy := func() -> void:
+		game.new_game()
+		game.weather = "sunny"
+		game.forecast = "sunny"
+		game.plot()["stage"] = "restaurant"
+		for id in ["counter", "grill", "doner", "fryer", "karak", "seating"]:
+			game.plot()["stations"][id] = 6
+		for id in game.menu:
+			if game.item_available(id):
+				game.menu[id]["unlocked"] = true
+				game.menu[id]["enabled"] = true
+		game.money = 1000000.0
+	busy.call()
+	var plain: Dictionary = game.daily_stock_plan()
+	check(not plain["ahead"] and float(plain["saving"]) == 0.0, "without a cold box Stock today buys for today")
+	game.plot()["stations"]["coldbox"] = 3
+	var ahead: Dictionary = game.daily_stock_plan()
+	check(ahead["ahead"] and float(ahead["saving"]) > 0.0 and float(ahead["cost"]) > float(plain["cost"]),
+		"with a cold box Stock today buys ahead when two days cost less (%.0f now, saves %.0f)" % [ahead["cost"], ahead["saving"]])
+	game.money = float(plain["cost"]) + float(game.loc()["rent"]) + game.daily_wages() + 1.0
+	var tight: Dictionary = game.daily_stock_plan()
+	check(not tight["ahead"] and is_equal_approx(float(tight["cost"]), float(plain["cost"])), "short of cash, the plan falls back to today's packs")
+	var before: Dictionary = game.inventory.duplicate()
+	check(game.stock_for_today() and game.money >= float(game.loc()["rent"]) + game.daily_wages(), "Stock today never touches the rent and wages")
+	var left: float = game.money
+	check(not game.stock_for_today() and game.money == left, "a repeat tap buys nothing")
+	game.money = 1000000.0
+	game.inventory = before
+	check(game.stock_for_today() and not game.stock_for_today(), "a repeat tap after buying ahead buys nothing either")
+	# the cold box's saving
+	busy.call()
+	check(game.coldbox_saving() > 0.0, "at a busy stand the first cold box saves money (%.0f a day)" % game.coldbox_saving())
+	game.history = [{"spoiled": {"chicken": 30}}, {"spoiled": {"chicken": 30}}]
+	var with_spoil: float = game.coldbox_saving()
+	game.history = []
+	var without: float = game.coldbox_saving()
+	var meat: float = 30.0 * (1.0 - float(Data.STATIONS["coldbox"]["spoil_meat"][1]) / float(Data.STATIONS["coldbox"]["spoil_meat"][0])) * game.ingredient_cost("chicken")
+	check(is_equal_approx(with_spoil - without, meat), "the spoilage a cold box stops counts from the books (%.1f vs %.1f)" % [with_spoil - without, meat])
+	game.plot()["stations"]["coldbox"] = 3
+	check(game.coldbox_saving() == 0.0, "a full cold box saves nothing more")
+	# quality earns fame: the estimate's faces, the helpers and the scoring
+	game.new_game()
+	game.weather = "sunny"
+	game.forecast = "sunny"
+	game.money = 5000.0
+	for day in range(4):
+		Autoplayer.play_day(false, null, null)
+	game.money = 5000.0
+	var base := Economy.throughput_estimate(game.sim_context())
+	var faces: Dictionary = base["moods"]
+	check(is_equal_approx(float(faces["great"]) + float(faces["ok"]) + float(faces["bad"]), float(base["served"])) and float(base["wait"]) >= 0.0,
+		"the estimate gives every buyer a face (%s of %.1f)" % [str(faces), float(base["served"])])
+	var better := Economy.throughput_estimate(game.what_if({"enhance": "chicken_tikka"}))
+	check(float(better["moods"]["great"]) > float(faces["great"]) and float(better["fame_points"]) > float(base["fame_points"]), "a dish upgrade shows as more green faces in the estimate")
+	var q: Dictionary = game.quality_gain({"enhance": "chicken_tikka"})
+	check(float(q["happy"]) > 0.0 and float(q["points"]) > 0.0 and float(q["fame"]) > 0.0 and float(q["value"]) >= 0.0,
+		"quality_gain quotes the happy guests and the fame (%s)" % str(q))
+	check(Economy.fame_worth(10.0, 0.4, 100.0) > Economy.fame_worth(5.0, 0.4, 100.0) and Economy.fame_worth(10.0, 0.4, 0.0) == 0.0
+		and Economy.fame_worth(-10.0, 0.45, 100.0) == 0.0, "fame is worth more points times its price, and nothing below a level")
+	var snapshot := JSON.stringify([game.money, game.inventory, game.rig, game.plots, game.menu, game.marketing, game.popularity, game.location, game.goal_index])
+	Economy.estimate_calls = 0
+	var ranked: Dictionary = Autoplayer.rank([], null, true)
+	var calls := Economy.estimate_calls
+	check(JSON.stringify([game.money, game.inventory, game.rig, game.plots, game.menu, game.marketing, game.popularity, game.location, game.goal_index]) == snapshot,
+		"rank changes nothing")
+	check(calls <= 60, "the advisor's ranking stays cheap (%d estimates)" % calls)
+	var by := {}
+	for c in ranked["cands"]:
+		check(cats.has(String(c.get("category", ""))) and c.has("happy") and c.has("fame_value") and c.has("saving"), "candidate %s:%s says what it is for" % [c["kind"], c["id"]])
+		by["%s:%s" % [c["kind"], c["id"]]] = c
+	var e: Dictionary = by.get("enhance:chicken_tikka", {})
+	check(not e.is_empty() and float(e["fame_value"]) > 0.0 and float(e["happy"]) > 0.0 and String(e["category"]) == "quality",
+		"a dish upgrade is worth the fame it earns (%s)" % str(e))
+	var ctr: Dictionary = by.get("station:counter", {})
+	check(not ctr.is_empty() and float(ctr["fame_value"]) == 0.0 and String(ctr["category"]) == "capacity", "a counter level is scored on the day alone")
+	# the advisor's budget at a large restaurant
+	busy.call()
+	game.plot()["stations"]["music"] = 1
+	game.plot()["stations"]["majlis"] = 1
+	Economy.estimate_calls = 0
+	Autoplayer.rank([], null, true)
+	check(Economy.estimate_calls <= 60, "ranking a large restaurant stays cheap (%d estimates)" % Economy.estimate_calls)
+	# shade cools a hot day
+	game.new_game()
+	game.rig["stations"]["shade"] = 2
+	check(is_equal_approx(game.satisfaction_bonus("hot") - game.satisfaction_bonus(), 2.0 * float(Data.STATIONS["shade"]["hot_satisfaction_per_level"])),
+		"shade adds satisfaction on a hot day")
+	game.forecast = "hot"
+	check(is_equal_approx(float(game.sim_context()["satisfaction_bonus"]), game.satisfaction_bonus("hot")), "a hot forecast plans with the shade's cooling")
+	# the two new goals
+	check(Data.GOALS.size() == 20, "the goal ladder has 20 goals (%d)" % Data.GOALS.size())
+	var idx := {}
+	for i in range(Data.GOALS.size()):
+		idx[Data.GOALS[i]["id"]] = i
+	check(idx.has("dish1") and idx.has("coldbox1") and Data.GOALS[idx["dish1"]]["req"] == {"type": "dish_level", "n": 1}
+		and Data.GOALS[idx["coldbox1"]]["req"] == {"type": "station_level", "station": "coldbox", "n": 1}, "a dish upgrade goal and a cold box goal")
+	check(int(idx["dish1"]) < int(idx["stall"]) and int(idx["coldbox1"]) < int(idx["truck"]) and int(idx["coldbox1"]) > int(idx["stall"]), "they sit early in the ladder")
+	var previous := TranslationServer.get_locale()
+	for locale in ["en", "ar"]:
+		TranslationServer.set_locale(locale)
+		for id in ["dish1", "coldbox1"]:
+			for suffix in ["", ".desc", ".say"]:
+				var key: String = "goal." + String(id) + String(suffix)
+				check(tr(key) != key, "%s has %s text" % [key, locale])
+	TranslationServer.set_locale(previous)
+	game.new_game()
+	var dish_goal: Dictionary = Data.GOALS[idx["dish1"]]
+	check(Economy.goal_progress(dish_goal, game.goal_snapshot()) == 0.0, "no dish upgraded yet")
+	game.menu["chicken_tikka"]["level"] = 1
+	check(Economy.goal_progress(dish_goal, game.goal_snapshot()) == 1.0, "one dish upgrade completes the goal")
+	game.menu["chicken_tikka"]["level"] = 0
+	# the bot chases them
+	game.money = 3000.0
+	for day in range(3):
+		Autoplayer.play_day(false, null, null)
+	game.money = 3000.0
+	for id in game.menu:
+		game.menu[id]["level"] = 0
+	game.rig["stations"]["coldbox"] = 0
+	game.goal_index = idx["dish1"]
+	var chase: Dictionary = Autoplayer.rank([], null, true)
+	check(chase["cands"].any(func(c: Dictionary) -> bool: return c["kind"] == "enhance" and float(c["net"]) < float(c["cost"])), "the bot weighs a dish upgrade for the goal's reward")
+	game.goal_index = idx["coldbox1"]
+	chase = Autoplayer.rank([], null, true)
+	check(chase["cands"].any(func(c: Dictionary) -> bool: return c["kind"] == "station" and c["id"] == "coldbox" and float(c["net"]) < float(c["cost"]) and float(c["gain"]) > 0.0),
+		"the bot weighs a cold box for the goal's reward")
+	# an older save steps back to the new goals, then skips what it had done
+	game.persist = true
+	game.new_game()
+	game.save()
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(game.save_path))
+	var old_ladder := []
+	for g in Data.GOALS:
+		if not g["id"] in ["dish1", "coldbox1"]:
+			old_ladder.append(g["id"])
+	raw["version"] = 5
+	raw["goal_index"] = 13
+	raw["goals_claimed"] = old_ladder.slice(0, 13)
+	_write_save(game, raw)
+	check(game.load_game() and game.goal_index == idx["dish1"], "a release 3 save is offered the new dish goal first (%d)" % game.goal_index)
+	game.menu["chicken_tikka"]["level"] = 1
+	check(game.claim_goal() and game.goal_index == idx["coldbox1"], "then the cold box goal (%d)" % game.goal_index)
+	game.rig["stations"]["coldbox"] = 1
+	check(game.claim_goal() and String(game.current_goal()["id"]) == String(old_ladder[13]), "then where it left off (%s)" % str(game.current_goal().get("id", "")))
+	game.delete_save()
+	game.persist = was_persistent
+	game.new_game()

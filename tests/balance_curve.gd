@@ -7,9 +7,12 @@ extends SceneTree
 ##     `--autodays --sim=day`) plays seeds 1-3 for 150 played days (DaySim via DayRunner):
 ##     an easy first week (the opening buzz: 12+ buyers and 90+ AED profit a day on
 ##     average, no loss day but in a sandstorm), stage milestones inside their windows, no
-##     family loan, a profitable last day, at least 14 goals, two or more rented places
-##     used, guests eating in on fixed stages, and wages paid that are 8-25% of the
-##     takings over the last 20 days.
+##     family loan, a profitable last day, at least 16 of the 20 goals, two or more rented
+##     places used, guests eating in on fixed stages, wages paid that are 8-25% of the
+##     takings over the last 20 days; fame: the top level (Dubai legend) reached, but not
+##     before day 80, popularity still short of 1.0 on the last day, never below a level
+##     once reached, falling on fewer than 10% of days; and the upgrades with a job beyond
+##     the day: at least one cold box level and two dish upgrades bought.
 ##   loc: matched setups per stage (mid station levels, popularity 0.6 and 1.0, ample
 ##     stock, the player's best price by the estimate, 16 played seeds per place): the
 ##     right rented place beats the free souk net of rent by 25% (Creek from the stall,
@@ -26,7 +29,13 @@ const BOT_SEEDS := [1, 2, 3]
 ## wages from the truck up stretch the later stages: truck 30-48, kiosk 55-75, restaurant
 ## 78-100, flagship 105-135.
 const MILESTONES := {1: [8, 16], 2: [30, 48], 3: [55, 75], 4: [78, 100], 5: [105, 135]}
-const GOALS_MIN := 14
+const GOALS_MIN := 16
+## Fame (Data.FAME_LEVELS): the top level no earlier than this day; fame may fall on at most
+## this share of days; and the upgrades that work through fame and stock that the bot must buy.
+const FAME_TOP_FROM := 80
+const FAME_FALL_SHARE := 0.10
+const COLDBOX_MIN := 1
+const DISH_UPGRADES_MIN := 2
 ## The first week (the opening buzz): average buyers and profit a day at least these.
 const WEEK1_BUYERS := 12.0
 const WEEK1_PROFIT := 90.0
@@ -177,7 +186,40 @@ func _check_bot(bot: Dictionary) -> int:
 	f += _line(int(bot["loans"]) == 0, "seed %d: family loans %d (0 wanted)" % [seed_id, int(bot["loans"])])
 	f += _line(float(bot["final_profit"]) > 0.0, "seed %d: last day's profit %.0f (> 0), money %.0f, %d levels" % [seed_id,
 		float(bot["final_profit"]), float(bot["final_money"]), int(bot["levels"])])
-	f += _line(int(bot["goals"]) >= GOALS_MIN, "seed %d: %d goals claimed (>= %d), first on day %d" % [seed_id, int(bot["goals"]), GOALS_MIN, int(bot["first_goal_day"])])
+	f += _line(int(bot["goals"]) >= GOALS_MIN, "seed %d: %d of %d goals claimed (>= %d), first on day %d" % [seed_id, int(bot["goals"]), data.GOALS.size(), GOALS_MIN, int(bot["first_goal_day"])])
+	# fame: climbs to the top level slowly, never loses a level, rarely falls
+	var top: int = data.FAME_LEVELS.size() - 1
+	var top_day := -1
+	var best := 0
+	var falls := []
+	var below := []
+	var reached := []
+	for i in range(rows.size()):
+		var r: Dictionary = rows[i]
+		var lvl := int(r["fame_level"])
+		if lvl > best:
+			best = lvl
+			reached.append("%d@%d" % [lvl, int(r["day"])])
+		if lvl >= top and top_day < 0:
+			top_day = int(r["day"])
+		if float(r["pop"]) < economy.fame_floor(best) - 1e-6 or lvl < best:
+			below.append(int(r["day"]))
+		if i > 0 and float(r["pop"]) < float(rows[i - 1]["pop"]) - 1e-9:
+			falls.append(int(r["day"]))
+	f += _line(top_day >= FAME_TOP_FROM, "seed %d: Dubai legend on day %s (not before %d; levels %s)" % [seed_id, str(top_day) if top_day > 0 else "never", FAME_TOP_FROM, ", ".join(reached)])
+	f += _line(float(rows.back()["pop"]) < 1.0, "seed %d: fame %.3f on day %d (< 1.0)" % [seed_id, float(rows.back()["pop"]), int(rows.back()["day"])])
+	f += _line(below.is_empty(), "seed %d: fame never below a level reached (%s)" % [seed_id, str(below)])
+	f += _line(falls.size() < FAME_FALL_SHARE * rows.size(), "seed %d: fame fell on %d of %d days (< %.0f%%) %s" % [seed_id, falls.size(), rows.size(), 100.0 * FAME_FALL_SHARE, str(falls)])
+	var cold := 0
+	var dishes := 0
+	for r in rows:
+		for b in r["buys"]:
+			if String(b) == "station:coldbox":
+				cold += 1
+			elif String(b).begins_with("enhance:"):
+				dishes += 1
+	f += _line(cold >= COLDBOX_MIN and dishes >= DISH_UPGRADES_MIN, "seed %d: %d cold box levels (>= %d) and %d dish upgrades (>= %d) bought" % [
+		seed_id, cold, COLDBOX_MIN, dishes, DISH_UPGRADES_MIN])
 	var rented := []
 	for id in bot["locations"]:
 		if float(data.LOCATIONS[id]["rent"]) > 0.0:
@@ -271,7 +313,7 @@ func _part_bot(run_seed: int, days: int, out: String) -> void:
 		result["rows"].append({"day": r["day"], "location": r["location"], "weather": r["weather"], "stage": tier, "served": r["served"], "portions": r["portions"],
 			"dine_in": r["dine_in"], "crowd": r["crowd"], "revenue": r["revenue"], "profit": r["profit"], "wages": r["wages"], "money": r["money"],
 			"goals": game.goals_claimed.size(), "pop": game.popularity, "rep": game.local_reputation(), "levels": game.levels_owned(),
-			"buys": autoplayer.last_buys.duplicate()})
+			"fame_level": game.fame_level(), "buys": autoplayer.last_buys.duplicate()})
 		for b in autoplayer.last_buys:
 			if String(b).begins_with("promo:"):
 				result["promos"] = int(result.get("promos", 0)) + 1
