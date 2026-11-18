@@ -21,6 +21,7 @@ var _quality_time := 0.0
 var _quality_frames := 0
 var _quality_warmup := 4.0
 var _web_visibility_callback: JavaScriptObject
+var _web_skip_callback: JavaScriptObject
 
 func _ready() -> void:
 	_load_graphics()
@@ -41,6 +42,10 @@ func _ready() -> void:
 	if OS.has_feature("web"):
 		_web_visibility_callback = JavaScriptBridge.create_callback(_on_web_visibility)
 		JavaScriptBridge.get_interface("window").godotSetPaused = _web_visibility_callback
+		if DevTools.has("uitest"):
+			# Players only have 2x and 4x. Browser tests close a day quickly through this hook.
+			_web_skip_callback = JavaScriptBridge.create_callback(func(_args: Array): skip_day())
+			JavaScriptBridge.get_interface("window").godotSkipDay = _web_skip_callback
 		JavaScriptBridge.eval("if (window.godotSyncVisibility) window.godotSyncVisibility()")
 		# Keep the HTML loading art up until the canvas has actually drawn.
 		await RenderingServer.frame_post_draw
@@ -221,6 +226,13 @@ func _apply_dev_flags() -> void:
 	world.set_location(Game.location)
 	if DevTools.has("screenshot"):
 		Game.persist = false # screenshot runs never overwrite the player's save
+	if DevTools.has("played"):
+		# Reviews of the report, advisor and reputation sheets need a history: N quick bot days.
+		Game.persist = false
+		Game.new_game()
+		for i in range(int(DevTools.get_flag("played"))):
+			Autoplayer.play_day(false, null, world)
+		world.set_location(Game.location)
 	var ph := DevTools.get_flag("phase", "title")
 	match ph:
 		"day":
@@ -231,9 +243,24 @@ func _apply_dev_flags() -> void:
 				set_speed(float(DevTools.get_flag("speed")))
 		"prep":
 			show_prep()
-			if DevTools.has("panel") and hud:
+			if DevTools.has("coach") and hud:
+				# Layout reviews: the guide at a named step (e.g. --coach=dish) over any panel.
+				Game.tutorial = GuideJourney.fresh()
+				Game.tutorial["step"] = maxi(0, GuideJourney.STEPS.find(DevTools.get_flag("coach")))
+				hud.start_tutorial()
+			if DevTools.get_flag("panel") == "advisor" and hud:
+				hud.show_advisor()
+			elif DevTools.get_flag("panel") == "reputation" and hud:
+				hud.show_reputation()
+			elif DevTools.has("panel") and hud:
 				_stock_up_for_test()
 				hud.open_panel(DevTools.get_flag("panel"))
+				if DevTools.has("dish"):
+					hud._select_dish(DevTools.get_flag("dish"))
+				if DevTools.has("detail"):
+					hud._open_prep_detail(DevTools.get_flag("detail"))
+				if DevTools.has("card"):
+					hud.panel_roll.move_to(int(DevTools.get_flag("card")))
 		"report":
 			_stock_up_for_test()
 			phase = Phase.PREP
@@ -359,7 +386,7 @@ func start_day(skip_weather_roll: bool = false) -> void:
 		hud.show_day()
 	sim.start(Game.sim_context(), world)
 	world.push_in()
-	set_speed(1.0)
+	set_speed(hud.day_speed if hud else 1.0)
 	_publish_state()
 
 func set_speed(s: float) -> void:
@@ -537,6 +564,9 @@ func _autoplay(days: int) -> void:
 		print("%3d | %-8s | %2d | %-9s | %5d %5d %5d %5d %5d | %7.0f %7.0f | %8.0f %.2f %.2f | %3d | %4d %4d %4d | %s" % [r["day"], r["location"], r["stage"], r["weather"],
 			r["passers"], r["served"], int(r.get("portions", r["served"])), r["dine_in"], int(r.get("crowd", 0)), r["revenue"], r["profit"], r["money"], r["popularity"], r["local_rep"], Game.levels_owned(),
 			int(stats.get("left_wait", 0)), int(stats.get("queue_full", 0)), int(stats.get("sold_out", 0)), r["bottleneck"]])
+		if DevTools.has("buys") and (not Autoplayer.last_buys.is_empty() or float(r.get("wages", 0.0)) > 0.0):
+			# `--buys`: the morning's purchases, the wage bill and the campaigns that ran
+			print("    buys %s | wages %.0f | promos %s" % [", ".join(Autoplayer.last_buys), float(r.get("wages", 0.0)), ",".join(r.get("promos", []))])
 		if int(r["day"]) % 10 == 0:
 			print("    ... total profit %.0f, %d purchases, goals claimed %d, loans %d" % [total_profit, buys, Game.goals_claimed.size(), Game.bailouts])
 	print("autoplay: %d days in %.1f s, total profit %.0f, %d purchases, %d goals, %d loans" % [days, (Time.get_ticks_msec() - started) / 1000.0,

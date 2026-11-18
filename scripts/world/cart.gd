@@ -408,7 +408,7 @@ func set_serving(on: bool) -> void:
 	if serving_hook.is_valid():
 		serving_hook.call(on)
 	if _vendor:
-		ModelLib.play_loop(_vendor, "interact-right" if on else "idle", 1.4 if on else 1.0)
+		ModelLib.play_loop(_vendor, "idle") # the serving gesture is a one-shot played per handoff
 	if _helper and _helper.visible:
 		ModelLib.play_loop(_helper, "idle")
 

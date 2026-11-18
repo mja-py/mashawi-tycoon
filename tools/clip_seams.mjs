@@ -15,11 +15,21 @@ const LOOPS = ['idle', 'sit', 'walk', 'carry'];
 const SEAM_MAX_DEG = 2.0;        // a visible pop on a phone
 const STEP_FACTOR = 1.5;         // seam may equal one frame step of the same joint
 const IDLE_HIPS_MAX_DEG = 12.0;  // a standing idle does not turn the body
-const IDLE_HEAD_MAX_DEG = 30.0;
+const IDLE_HEAD_MAX_DEG = 2.0;
+const TRAVEL_LIMITS = {
+  idle: { head: IDLE_HEAD_MAX_DEG, hips: IDLE_HIPS_MAX_DEG },
+  glance: { head: 12.0, hips: 3.0 },
+  sit: { head: 8.0, hips: 4.0 },
+};
 const DRIFT_MAX = 0.04;          // root translation seam, as a share of hip height
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
+// Keep --json stdout machine-readable while always stating the active limits.
+const printLimits = asJson ? console.error : console.log;
+printLimits(`clip limits (deg from first key): ${Object.entries(TRAVEL_LIMITS).map(([clip, limits]) =>
+  `${clip} head <= ${limits.head}, hips <= ${limits.hips}`).join('; ')}; ` +
+  `loop seam <= ${SEAM_MAX_DEG} deg or ${STEP_FACTOR}x frame step; root drift <= ${DRIFT_MAX}`);
 let files = args.filter((a) => !a.startsWith('--'));
 if (files.length === 0) {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'models');
@@ -51,6 +61,7 @@ for (const file of files) {
     let seamStep = 0;
     let hipsTravel = 0;
     let headTravel = 0;
+    let neckTravel = 0;
     let drift = 0;
     for (const channel of anim.listChannels()) {
       const sampler = channel.getSampler();
@@ -77,6 +88,7 @@ for (const file of files) {
         }
         if (/hips$/i.test(name)) hipsTravel = Math.max(hipsTravel, travel);
         if (/head$/i.test(name)) headTravel = Math.max(headTravel, travel);
+        if (/neck$/i.test(name)) neckTravel = Math.max(neckTravel, travel);
       } else if (channel.getTargetPath() === 'translation' && /hips$/i.test(name) && n > 1) {
         const a = vec(out, 0);
         const b = vec(out, n - 1);
@@ -91,15 +103,16 @@ for (const file of files) {
       }
       if (drift > DRIFT_MAX) problems.push(`root slides ${(drift * 100).toFixed(0)}% of hip height`);
     }
-    if (clip === 'idle') {
-      if (hipsTravel > IDLE_HIPS_MAX_DEG) problems.push(`hips turn ${hipsTravel.toFixed(0)} deg`);
-      if (headTravel > IDLE_HEAD_MAX_DEG) problems.push(`head turns ${headTravel.toFixed(0)} deg`);
+    const limits = TRAVEL_LIMITS[clip];
+    if (limits) {
+      if (hipsTravel > limits.hips) problems.push(`hips turn ${hipsTravel.toFixed(1)} deg (limit ${limits.hips})`);
+      if (headTravel > limits.head) problems.push(`head turns ${headTravel.toFixed(1)} deg (limit ${limits.head})`);
     }
     if (problems.length) failed += 1;
     rows.push({
       model, clip, seconds: +duration.toFixed(2), keys,
       seamDeg: +seam.deg.toFixed(1), seamJoint: seam.joint, frameStepDeg: +seamStep.toFixed(1),
-      hipsTravelDeg: +hipsTravel.toFixed(1), headTravelDeg: +headTravel.toFixed(1),
+      hipsTravelDeg: +hipsTravel.toFixed(1), headTravelDeg: +headTravel.toFixed(1), neckTravelDeg: +neckTravel.toFixed(1),
       rootDrift: +drift.toFixed(3), loop: LOOPS.includes(clip), problems,
     });
   }
@@ -113,7 +126,7 @@ if (asJson) {
     console.log(
       `${tag} ${r.model.padEnd(20)} ${r.clip.padEnd(15)} ${String(r.seconds).padStart(5)}s ` +
       `seam ${String(r.seamDeg).padStart(5)} (${r.seamJoint || '-'}, step ${r.frameStepDeg}) ` +
-      `hips ${r.hipsTravelDeg} head ${r.headTravelDeg} drift ${r.rootDrift}` +
+      `hips ${r.hipsTravelDeg} head ${r.headTravelDeg} neck ${r.neckTravelDeg} drift ${r.rootDrift}` +
       (r.problems.length ? `  <- ${r.problems.join('; ')}` : ''));
   }
   console.log(`clip seams: ${rows.length} clips, ${failed} failed`);

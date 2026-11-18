@@ -144,7 +144,7 @@ const PLOT_STAGES := [
 		"requires_rig": 2, "requires_local_rep": 0.55, "branchable": true,
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice",
 			"majlis", "washroom", "staffroom", "office"]},
-	{"id": "flagship", "name": "plot.flagship", "desc": "plot.flagship.desc", "cost": 60000.0, "scope": "plot", "max_staff": 10,
+	{"id": "flagship", "name": "plot.flagship", "desc": "plot.flagship.desc", "cost": 50000.0, "scope": "plot", "max_staff": 10,
 		"appeal": 1.50, "price_cap_bonus": 0.90, "queue_bonus": 5, "dine_in": 0.80, "level_cap_bonus": 5, "icon": "icons/flagship",
 		"requires_rig": 2, "requires_local_rep": 0.7, "branchable": true, "unlocks_city": "sharjah",
 		"stations": ["counter", "grill", "karak", "coldbox", "signage", "shade", "music", "doner", "fryer", "lights", "sweets", "seating", "valet", "juice",
@@ -203,6 +203,22 @@ const PARTY_SIZES := [
 	[[1, 0.08], [2, 0.12], [3, 0.10], [4, 0.14], [6, 0.14], [8, 0.12], [12, 0.13], [16, 0.09], [24, 0.08]],
 	[[1, 0.05], [2, 0.08], [3, 0.07], [4, 0.10], [6, 0.10], [8, 0.10], [12, 0.12], [16, 0.12], [24, 0.12], [36, 0.08], [48, 0.06]],
 ]
+
+## Daily wages in AED (Economy.daily_wages, paid with the rent at closing). You run the cart
+## and the stall alone; the truck takes one helper. From the kiosk up every role the stand
+## has is paid: the cashier at the counter, a cook or barista for each kitchen station that is
+## running (times the stage's SERVICE.kitchen_crew, the hands it puts on every station) and
+## each dining worker (Economy.dining_workers) beyond "counter_covers_tables" (a kiosk's few
+## tables are cleared by its counter crew, so its terrace costs no extra wage). "grade" is the
+## pay per head by plot stage: a restaurant hires trained cooks and waiters, a flagship a
+## senior brigade.
+const WAGES := {
+	"helper": 60.0,
+	"helper_from": 2,
+	"roles": {"cashier": 40.0, "cook": 45.0, "barista": 35.0, "server": 40.0},
+	"counter_covers_tables": [0, 0, 0, 1, 0, 0],
+	"grade": [0.0, 0.0, 0.0, 1.1, 1.8, 2.6],
+}
 
 ## Rigged people on the street at once (iPhone frame time). Buyers are the only ones who can
 ## stop and buy; ambient walkers are scenery on their own budget so they never take a
@@ -337,11 +353,47 @@ const STAGES := {
 	"dubai": {"name": "stage.dubai", "locations": ["fahidi", "creek", "metro", "jbr", "downtown", "mall", "gv"]},
 }
 
+## The opening buzz: a new stand is the talk of the street. Passers-by are multiplied by
+## "traffic" on day 1, fading in a straight line to x1.0 after "days" days (Game.opening_boost,
+## Economy.opening_boost). Every place gets it; the steady-state traffic above is unchanged.
+## x3.5 on day 1 is what lets a 4-place cart serve 14-18 buyers in its first week: the
+## street is busier than the cart (crowd turn-aways teach that levels pay), and the stall
+## is in reach by day 9-14 instead of ~25.
+const OPENING := {"days": 14, "traffic": 3.5}
+
+## Promotions (Promote tab). "boost" = extra stop chance while the campaign runs, times the
+## place's promo_power (Economy.stop_probability); it also drowns out rivals at the Mall and
+## Global Village (Economy.competition_loss). "cost" is the cart's price: a bigger stand's
+## campaign reaches more people and costs PROMO_SCALE[stage tier] times as much
+## (Economy.campaign_cost), so each campaign pays about the same share at every stage when
+## the stand has room for more guests. "days" counts the day it starts.
+## chat: the boost grows with the guests served so far (Game.total_served), full at
+##   "regulars_full".
+## blogger: needs "min_popularity" (stars / 5); the boost follows the recent guests'
+##   satisfaction (Game.recent_satisfaction) from none at "sat_floor" to full at "sat_full";
+##   when it ends, the review moves popularity by "review" (up when the campaign days averaged
+##   "review_good" or better, down below "review_bad").
+const PROMO_SCALE := [1.0, 3.0, 4.5, 8.0, 25.0, 35.0]
+## Game.promo_preview flags a campaign "capped" when the stand already turns away this many
+## would-be buyers (crowd) for every one it serves: most of the extra guests would walk on.
+const PROMO_FULL := 0.75
 const MARKETING := {
-	"fliers": {"name": "mk.fliers", "desc": "mk.fliers.desc", "cost": 150.0, "days": 1, "boost": 0.15, "icon": "icons/fliers"},
-	"posters": {"name": "mk.posters", "desc": "mk.posters.desc", "cost": 450.0, "days": 3, "boost": 0.15, "icon": "icons/posters"},
-	"social": {"name": "mk.social", "desc": "mk.social.desc", "cost": 750.0, "days": 7, "boost": 0.12, "icon": "icons/social"},
-	"radio": {"name": "mk.radio", "desc": "mk.radio.desc", "cost": 1300.0, "days": 5, "boost": 0.30, "icon": "icons/radio"},
+	"samples": {"name": "mk.samples", "desc": "mk.samples.desc", "cost": 20.0, "days": 1, "boost": 0.5, "icon": "icons/promo-samples"},
+	"social": {"name": "mk.social", "desc": "mk.social.desc", "cost": 40.0, "days": 3, "boost": 0.3, "icon": "icons/promo-video"},
+	"chat": {"name": "mk.chat", "desc": "mk.chat.desc", "cost": 60.0, "days": 5, "boost": 0.35, "regulars_full": 3000, "icon": "icons/promo-chat"},
+	"maps": {"name": "mk.maps", "desc": "mk.maps.desc", "cost": 70.0, "days": 14, "boost": 0.12, "icon": "icons/promo-maps"},
+	"blogger": {"name": "mk.blogger", "desc": "mk.blogger.desc", "cost": 60.0, "days": 3, "boost": 0.6, "icon": "icons/promo-blogger",
+		"min_popularity": 0.4, "sat_floor": 0.3, "sat_full": 0.8, "review": 0.02, "review_good": 0.7, "review_bad": 0.5},
+}
+## The campaign the play guide shows first (a day-1 option).
+const STARTER_PROMO := "samples"
+## Campaigns of saves before version 5 (Game.load_game refunds the days left of those that
+## are gone, at these prices; "social" carries on, clamped to its new length).
+const LEGACY_MARKETING := {
+	"fliers": {"cost": 150.0, "days": 1},
+	"posters": {"cost": 450.0, "days": 3},
+	"social": {"cost": 750.0, "days": 7},
+	"radio": {"cost": 1300.0, "days": 5},
 }
 
 ## The goal ladder: one goal at a time, claimed from the Goals tab. "req" types are evaluated
@@ -350,10 +402,10 @@ const MARKETING := {
 ## carrying 200-420 portions ("plates"), a kiosk terrace seats 5-12 diners a day.
 const MENTOR := "mentor.saeed"
 const GOALS := [
-	{"id": "first_30", "req": {"type": "day_served", "n": 8}, "reward": {"money": 150.0}, "say": "goal.first_30.say"},
-	{"id": "counter1", "req": {"type": "station_level", "station": "counter", "n": 1}, "reward": {"money": 200.0}, "say": "goal.counter1.say"},
-	{"id": "stars15", "req": {"type": "stars", "n": 1.5}, "reward": {"money": 250.0, "popularity": 0.02}, "say": "goal.stars15.say"},
-	{"id": "served200", "req": {"type": "total_served", "n": 150}, "reward": {"money": 300.0}, "say": "goal.served200.say"},
+	{"id": "first_30", "req": {"type": "day_served", "n": 8}, "reward": {"money": 250.0}, "say": "goal.first_30.say"},
+	{"id": "counter1", "req": {"type": "station_level", "station": "counter", "n": 1}, "reward": {"money": 300.0}, "say": "goal.counter1.say"},
+	{"id": "stars15", "req": {"type": "stars", "n": 1.5}, "reward": {"money": 300.0, "popularity": 0.02}, "say": "goal.stars15.say"},
+	{"id": "served200", "req": {"type": "total_served", "n": 150}, "reward": {"money": 400.0}, "say": "goal.served200.say"},
 	{"id": "creek", "req": {"type": "location", "id": "creek"}, "reward": {"money": 300.0}, "say": "goal.creek.say"},
 	{"id": "grill3", "req": {"type": "station_level", "station": "grill", "n": 2}, "reward": {"money": 300.0}, "say": "goal.grill3.say"},
 	{"id": "stall", "req": {"type": "stage", "n": 1}, "reward": {"money": 600.0}, "say": "goal.stall.say"},

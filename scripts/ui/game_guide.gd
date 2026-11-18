@@ -5,7 +5,7 @@ const TouchScroll := preload("res://scripts/ui/touch_scroll.gd")
 const CharacterPortrait := preload("res://scripts/ui/character_portrait.gd")
 const TOPICS := ["welcome", "stock", "price", "quality", "build", "promote", "stars", "day"]
 const PANELS := ["", "supplies", "menu", "menu", "build", "promote", "goals", "supplies"]
-const ART := ["food/chicken-skewer", "food/chicken-tray", "food/mutton-skewer", "food/salad-bowl", "icons/stand-big", "icons/fliers", "icons/flagship", "food/tikka-sandwich"]
+const ART := ["food/chicken-skewer", "food/chicken-tray", "food/mutton-skewer", "food/salad-bowl", "icons/stand-big", "icons/promo-samples", "icons/flagship", "food/tikka-sandwich"]
 
 var hud: CanvasLayer
 var step := 0

@@ -5,8 +5,11 @@ extends SceneTree
 ## a failure):
 ##   bot: the greedy autoplayer (scripts/sim/autoplayer.gd, the same player as
 ##     `--autodays --sim=day`) plays seeds 1-3 for 150 played days (DaySim via DayRunner):
-##     stage milestones inside their windows, no family loan, a profitable last day, at
-##     least 14 goals, two or more rented places used, guests eating in on fixed stages.
+##     an easy first week (the opening buzz: 12+ buyers and 90+ AED profit a day on
+##     average, no loss day but in a sandstorm), stage milestones inside their windows, no
+##     family loan, a profitable last day, at least 14 goals, two or more rented places
+##     used, guests eating in on fixed stages, and wages paid that are 8-25% of the
+##     takings over the last 20 days.
 ##   loc: matched setups per stage (mid station levels, popularity 0.6 and 1.0, ample
 ##     stock, the player's best price by the estimate, 16 played seeds per place): the
 ##     right rented place beats the free souk net of rent by 25% (Creek from the stall,
@@ -19,11 +22,16 @@ extends SceneTree
 const DAYS := 150
 const BOT_SEEDS := [1, 2, 3]
 ## [first, last] day the bot should first sell from each stage.
-## Release 2b targets were stall 15-25, truck 40-60, kiosk 60-78, restaurant 78-98, flagship
-## 105-135. The stall window is widened to what seeds 1-3 measured (16-27) plus a small margin:
-## a seed that buys shade or the level-2 grill goal before the stall saves for it ~10 days longer.
-const MILESTONES := {1: [15, 29], 2: [40, 60], 3: [60, 78], 4: [78, 98], 5: [105, 135]}
+## Release 3 (start easy, then harder): the opening buzz brings the stall in by day 8-16, then
+## wages from the truck up stretch the later stages: truck 30-48, kiosk 55-75, restaurant
+## 78-100, flagship 105-135.
+const MILESTONES := {1: [8, 16], 2: [30, 48], 3: [55, 75], 4: [78, 100], 5: [105, 135]}
 const GOALS_MIN := 14
+## The first week (the opening buzz): average buyers and profit a day at least these.
+const WEEK1_BUYERS := 12.0
+const WEEK1_PROFIT := 90.0
+## Wages over the last 20 days as a share of the takings.
+const WAGE_SHARE := [0.08, 0.25]
 const DINE_PRESENT := 0.10
 ## Location check: the rented places that should pay best from each stage up.
 const RENTED_BEST := {1: ["creek"], 2: ["metro", "jbr"], 3: ["downtown", "mall", "gv"], 4: ["downtown", "mall", "gv"], 5: ["downtown", "mall", "gv"]}
@@ -148,6 +156,19 @@ func _check_bot(bot: Dictionary) -> int:
 	var f := 0
 	var seed_id := int(bot["seed"])
 	var first: Dictionary = bot["first_day"]
+	var rows: Array = bot["rows"]
+	var week := rows.slice(0, 7)
+	var buyers := 0.0
+	var profit := 0.0
+	var losses := []
+	for r in week:
+		buyers += float(r["served"]) / week.size()
+		profit += float(r["profit"]) / week.size()
+		if float(r["profit"]) < 0.0 and String(r.get("weather", "")) != data.BAD_WEATHER:
+			losses.append(int(r["day"]))
+	f += _line(buyers >= WEEK1_BUYERS and profit >= WEEK1_PROFIT, "seed %d: days 1-7 average %.1f buyers (>= %.0f) and %.0f AED profit (>= %.0f)" % [
+		seed_id, buyers, WEEK1_BUYERS, profit, WEEK1_PROFIT])
+	f += _line(losses.is_empty(), "seed %d: no loss day in the first week but in a sandstorm (%s)" % [seed_id, str(losses)])
 	for t in MILESTONES:
 		var window: Array = MILESTONES[t]
 		var d := int(first.get(str(t), -1))
@@ -169,6 +190,16 @@ func _check_bot(bot: Dictionary) -> int:
 		var pair: Array = dine[str(t)]
 		var share := float(pair[0]) / maxf(1.0, float(pair[1]))
 		f += _line(share >= DINE_PRESENT, "seed %d: %.0f%% of %s buyers ate in (%d of %d)" % [seed_id, 100.0 * share, data.stage_def(t)["id"], int(pair[0]), int(pair[1])])
+	var tail := rows.slice(maxi(0, rows.size() - 20))
+	var wages := 0.0
+	var revenue := 0.0
+	for r in tail:
+		wages += float(r.get("wages", 0.0))
+		revenue += float(r["revenue"])
+	var wage_share := wages / maxf(revenue, 1.0)
+	f += _line(wages > 0.0 and wage_share >= float(WAGE_SHARE[0]) and wage_share <= float(WAGE_SHARE[1]),
+		"seed %d: wages %.0f AED over the last 20 days, %.0f%% of the takings (%.0f-%.0f%%); %d campaigns bought" % [
+		seed_id, wages, 100.0 * wage_share, 100.0 * float(WAGE_SHARE[0]), 100.0 * float(WAGE_SHARE[1]), int(bot.get("promos", 0))])
 	return f
 
 func _check_locations(locs: Dictionary) -> int:
@@ -237,10 +268,13 @@ func _part_bot(run_seed: int, days: int, out: String) -> void:
 			result["dine"][str(tier)] = [int(pair[0]) + int(r["dine_in"]), int(pair[1]) + int(r["served"])]
 		if result["first_goal_day"] < 0 and not game.goals_claimed.is_empty():
 			result["first_goal_day"] = int(r["day"])
-		result["rows"].append({"day": r["day"], "location": r["location"], "stage": tier, "served": r["served"], "portions": r["portions"],
-			"dine_in": r["dine_in"], "crowd": r["crowd"], "revenue": r["revenue"], "profit": r["profit"], "money": r["money"],
+		result["rows"].append({"day": r["day"], "location": r["location"], "weather": r["weather"], "stage": tier, "served": r["served"], "portions": r["portions"],
+			"dine_in": r["dine_in"], "crowd": r["crowd"], "revenue": r["revenue"], "profit": r["profit"], "wages": r["wages"], "money": r["money"],
 			"goals": game.goals_claimed.size(), "pop": game.popularity, "rep": game.local_reputation(), "levels": game.levels_owned(),
 			"buys": autoplayer.last_buys.duplicate()})
+		for b in autoplayer.last_buys:
+			if String(b).begins_with("promo:"):
+				result["promos"] = int(result.get("promos", 0)) + 1
 	var last: Dictionary = result["rows"].back()
 	result["final_profit"] = last["profit"]
 	result["final_money"] = last["money"]
@@ -263,6 +297,7 @@ func _mid_levels(tier: int) -> Dictionary:
 ## dish upgrades as they become affordable, priced by the estimate under the satisfaction floor.
 func _setup_place(tier: int, location: String, pop: float) -> void:
 	game.new_game()
+	game.day = int(data.OPENING["days"]) + 1 # a steady-state day, after the opening buzz
 	game.money = 1e7
 	game.popularity = pop
 	game.weather = "sunny"

@@ -17,6 +17,15 @@ var loc_label: Label
 var weather_icon: TextureRect
 var weather_label: Label
 var star_box: HBoxContainer
+var rep_button: Button
+var rep_label: Label
+var mood_counts := {}
+var mood_trend: Label
+## The advisor's tip of the day, above the planning screen once the tutorial is over.
+var advisor_strip: PanelContainer
+var _advisor_words: Label
+var _advisor_face: TextureRect
+var _advisor_hidden_day := -1
 var clock_label: Label
 var _clock_minute := -1
 var clock_chip: PanelContainer
@@ -26,7 +35,9 @@ var prep_bar: PanelContainer
 var day_bar: PanelContainer
 var tabs := {}
 var speed_buttons := {}
-var skip_button: Button
+## The two playback speeds a player can pick; the day opens at the last one chosen.
+const DAY_SPEEDS := [2.0, 4.0]
+var day_speed := 2.0
 var live_label: Label
 var ticker_label: Label
 var closing_progress: ProgressBar
@@ -37,6 +48,10 @@ var _purchase_badge: PanelContainer
 var _purchase_tween: Tween
 var _panel_revision := 0
 var panel_dim: Panel
+## Plain (non-container) holder of the panel: slides and fades are tweened here, where no
+## container re-sort can reset them.
+var panel_slot: Control
+var panel_stage: Control
 var panel: PanelContainer
 var panel_title: Label
 var stock_button: Button
@@ -74,6 +89,8 @@ const BOTTOM_BAR_HEIGHT := 84.0
 const PANEL_GAP := 6.0
 ## Where toasts settle (logical px from the top).
 const TOAST_Y := 74.0
+## Header controls: 60 logical px is about 40 pt on an iPhone in landscape.
+const HEAD_BUTTON := 60.0
 var report_dim: PanelContainer
 var report_panel: PanelContainer
 var report_body: VBoxContainer
@@ -85,6 +102,11 @@ var toast_label: Label
 var continue_btn: Button
 var _toast_tween: Tween
 var _panel_tween: Tween
+var _panel_top_tween: Tween
+var _sheet_tween: Tween
+var _panel_area := Vector2.ZERO
+var _last_tap := ""
+var _tight := false
 var _report_tween: Tween
 var _money_tween: Tween
 var _last_money := NAN
@@ -146,6 +168,7 @@ func _build_all() -> void:
 	_build_build_return()
 	_build_panel()
 	_build_title()
+	_build_advisor_strip()
 	_build_report() # above the title so its dialogs (new-game confirm) show over it
 	_build_toast()
 	_build_fade()
@@ -268,14 +291,21 @@ func _publish_menu_targets() -> void:
 			continue
 		if panel_roll.is_ancestor_of(b) and not panel_roll.is_focused_control(b):
 			continue
-		targets[b.get_meta("menu_target")] = {"x": center.x / vp.x, "y": center.y / vp.y, "disabled": b.disabled}
+		var shown := b.get_global_transform_with_canvas().get_scale() * b.size
+		targets[b.get_meta("menu_target")] = {"x": center.x / vp.x, "y": center.y / vp.y, "disabled": b.disabled,
+			"w": shown.x, "h": shown.y}
 	JavaScriptBridge.eval("window.godotMenuTargets = " + JSON.stringify(targets))
 	var bounds := panel_dim.get_global_rect()
-	var panel_bounds := panel.get_global_rect().intersection(bounds)
-	var view := {"menuTop": panel_bounds.position.y, "menuBottom": panel_bounds.end.y / vp.y, "tabsTop": prep_bar.get_global_rect().position.y / vp.y,
+	var panel_bounds := panel.get_global_rect()
+	var view := {"menuTop": panel_bounds.position.y, "menuBottom": panel_bounds.end.y / vp.y,
+		# The real rectangle, not the part the backdrop happens to clip.
+		"panelClipped": panel_dim.visible and not bounds.grow(1.0).encloses(panel_bounds),
+		"stage": {"w": panel_stage.size.x, "h": panel_stage.size.y},
+		"roll": panel_roll.test_view() if panel_roll.is_visible_in_tree() else {},
+		"tabsTop": prep_bar.get_global_rect().position.y / vp.y,
 		"curtain": _curtain_amount if curtain.visible else 0.0, "closing": closing_progress.value if closing_progress.visible and day_bar.visible else -1.0,
 		"purchase": _purchase_badge.modulate.a if _purchase_badge.visible else 0.0, "sale": ticker_label.text,
-		"badges": _badge_state.duplicate(), "floats": float_layer.live_count(), "buildReturn": _build_return.visible}
+		"badges": _badge_state.duplicate(), "floats": float_layer.live_count(), "moods": float_layer.live_moods(), "buildReturn": _build_return.visible}
 	if main:
 		view["service"] = main.sim.service_view()
 		view["warmedCast"] = main.world.warmed_cast.keys()
@@ -316,21 +346,52 @@ func _apply_safe_area() -> void:
 				root.offset_right = -maxf(0.0, float(ins[1])) * sx
 				root.offset_bottom = -maxf(0.0, float(ins[2])) * sy
 				root.offset_left = maxf(0.0, float(ins[3])) * sx
+	if DevTools.has("safe"):
+		# Layout tests emulate a notch and home bar: --safe=top,right,bottom,left in logical px.
+		var forced := String(DevTools.get_flag("safe")).split(",")
+		if forced.size() == 4:
+			root.offset_top = float(forced[0])
+			root.offset_right = -float(forced[1])
+			root.offset_bottom = -float(forced[2])
+			root.offset_left = float(forced[3])
 	var w := vp.x - root.offset_left + root.offset_right
 	var h := vp.y - root.offset_top + root.offset_bottom
 	# Panels use the whole width between the bars: phones are wide but short.
 	_layout_prep_panel(Vector2(w, h))
+	_refresh_advisor_strip()
 	if report_panel:
 		report_panel.custom_minimum_size = Vector2(minf(1100.0, w - 16.0), maxf(300.0, h - 16.0))
 
 func _layout_prep_panel(area: Vector2 = Vector2.ZERO) -> void:
 	if not panel: return
 	if area == Vector2.ZERO: area = root.size
-	panel_dim.offset_top = maxf(TOP_BAR_HEIGHT, top_bar.get_combined_minimum_size().y) + PANEL_GAP
+	_panel_area = area
+	# A closing panel keeps its place; close_panel lays out again once it is hidden.
+	if panel_dim.visible and current_panel == "":
+		return
+	var top := maxf(TOP_BAR_HEIGHT, top_bar.get_combined_minimum_size().y) + PANEL_GAP
 	if is_instance_valid(coach):
-		panel_dim.offset_top += coach.reserve_height()
+		top += coach.reserve_height()
 	panel_dim.offset_bottom = -maxf(BOTTOM_BAR_HEIGHT, prep_bar.get_combined_minimum_size().y) - PANEL_GAP
-	panel.custom_minimum_size = Vector2(area.x - 16.0, maxf(0.0, area.y + panel_dim.offset_bottom - panel_dim.offset_top))
+	if _panel_top_tween:
+		_panel_top_tween.kill()
+	if panel_dim.visible and is_inside_tree() and absf(top - panel_dim.offset_top) > 1.0:
+		_panel_top_tween = create_tween()
+		_panel_top_tween.tween_method(_set_panel_top, panel_dim.offset_top, top, 0.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	else:
+		_set_panel_top(top)
+
+func _set_panel_top(top: float) -> void:
+	panel_dim.offset_top = top
+	panel.custom_minimum_size = Vector2(_panel_area.x - 16.0, maxf(0.0, _panel_area.y + panel_dim.offset_bottom - top))
+
+## Where a toast or banner may sit without hiding under the guide card.
+func _below_guide(y: float) -> float:
+	if is_instance_valid(coach) and coach.card.visible and coach.card.get_parent() == coach:
+		return maxf(y, coach.card.position.y + coach.card.size.y + 8.0)
+	if advisor_strip != null and advisor_strip.visible:
+		return maxf(y, advisor_strip.position.y + advisor_strip.size.y + 8.0)
+	return y
 
 # ================================================================= builders
 
@@ -364,6 +425,7 @@ func _button(text: String, variation: String = "", min_size: Vector2 = Vector2(0
 	b.custom_minimum_size = min_size
 	b.focus_mode = Control.FOCUS_NONE
 	b.button_down.connect(_pulse.bind(b))
+	b.button_down.connect(func(): _last_tap = String(b.get_meta("menu_target", "")))
 	return b
 
 func _card() -> PanelContainer:
@@ -441,11 +503,38 @@ func _build_top_bar() -> void:
 	costs_chip.visible = false
 	h.add_child(costs_chip)
 	h.add_child(_spacer())
+	# Reputation: the stars with their number, and a tap explains what they mean.
+	rep_button = _menu_target(Button.new(), "reputation")
+	rep_button.focus_mode = Control.FOCUS_NONE
+	rep_button.tooltip_text = tr("rep.title")
+	rep_button.accessibility_name = tr("rep.title")
+	var chip_style := root.get_theme_stylebox("panel", "Chip")
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		rep_button.add_theme_stylebox_override(state, chip_style)
+	rep_button.button_down.connect(_pulse.bind(rep_button))
+	rep_button.pressed.connect(show_reputation)
+	rep_button.custom_minimum_size = Vector2(5 * 24 + 4 * 2 + 6 + 40 + 20, 48)
+	var rep_row := HBoxContainer.new()
+	rep_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rep_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	rep_row.add_theme_constant_override("separation", 6)
+	rep_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rep_button.add_child(rep_row)
 	star_box = HBoxContainer.new()
+	star_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	star_box.add_theme_constant_override("separation", 2)
 	for i in range(5):
-		star_box.add_child(_icon(Icons.star_icon(0.0), 28))
-	h.add_child(star_box)
+		var star := _icon(Icons.star_icon(0.0), 24)
+		star.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		star_box.add_child(star)
+	rep_row.add_child(star_box)
+	rep_label = _label("", "Light")
+	rep_label.size_flags_horizontal = 0
+	rep_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rep_label.add_theme_font_size_override("font_size", 22)
+	rep_label.add_theme_color_override("font_color", UiTheme.GOLD_LIGHT)
+	rep_row.add_child(rep_label)
+	h.add_child(rep_button)
 	clock_chip = _chip("10:00")
 	clock_label = clock_chip.get_child(0).get_child(0)
 	_clock_minute = -1
@@ -498,20 +587,31 @@ func _build_day_bar() -> void:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 8)
 	day_bar.add_child(h)
-	for s in [1.0, 2.0, 4.0]:
-		var b := _button(tr("ui.speed_x") % int(s), "Tab", Vector2(72, 60))
+	for s in DAY_SPEEDS:
+		var b := _button(tr("ui.speed_x") % int(s), "Tab", Vector2(84, 64))
 		b.toggle_mode = true
 		b.pressed.connect(func(): _set_speed(s))
 		h.add_child(b)
 		speed_buttons[s] = b
 		_menu_target(b, "speed_%d" % int(s))
-	var skip := _button(tr("ui.skip"), "Ghost", Vector2(170, 56))
-	skip_button = skip
-	_menu_target(skip_button, "skip_day")
-	skip.pressed.connect(func():
-		Sfx.play("click")
-		main.skip_day())
-	h.add_child(skip)
+	# Guest mood so far today: three drawn faces with counts, and where reputation is heading.
+	var mood := HBoxContainer.new()
+	mood.add_theme_constant_override("separation", 5)
+	mood.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mood.tooltip_text = tr("ui.mood_today")
+	h.add_child(mood)
+	for kind in ["great", "ok", "bad"]:
+		mood.add_child(_icon(Icons.mood_icon(kind), 32))
+		var count := _label("0", "Light")
+		count.size_flags_horizontal = 0
+		count.custom_minimum_size.x = 30
+		count.add_theme_font_size_override("font_size", 21)
+		mood.add_child(count)
+		mood_counts[kind] = count
+	mood_trend = _label("", "Light")
+	mood_trend.size_flags_horizontal = 0
+	mood_trend.add_theme_font_size_override("font_size", 18)
+	mood.add_child(mood_trend)
 	var v := VBoxContainer.new()
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -649,19 +749,29 @@ func _build_panel() -> void:
 				and not panel.get_global_rect().has_point(ev.global_position):
 			close_panel())
 	root.add_child(panel_dim)
+	panel_slot = Control.new()
+	panel_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel_slot.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel_dim.add_child(panel_slot)
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	panel_dim.add_child(center)
+	panel_slot.add_child(center)
 	panel = PanelContainer.new()
 	center.add_child(panel)
 	_lattice_bg(panel)
 	_apply_safe_area()
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
+	v.add_theme_constant_override("separation", 6)
 	panel.add_child(v)
+	# One header row: title, back or filter chips, shortcuts and Close. A phone in landscape
+	# has no height to spare for a second row.
 	var head_box := PanelContainer.new()
 	head_box.theme_type_variation = "Head"
+	var head_style := (root.get_theme_stylebox("panel", "Head").duplicate()) as StyleBox
+	head_style.content_margin_top = 4.0
+	head_style.content_margin_bottom = 4.0
+	head_box.add_theme_stylebox_override("panel", head_style)
 	v.add_child(head_box)
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 10)
@@ -669,27 +779,36 @@ func _build_panel() -> void:
 	panel_title = _label(tr("ui.supplies"), "Heading")
 	panel_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(panel_title)
-	stock_outlook_button = _menu_target(_button(tr("ui.stock_outlook"), "Ghost", Vector2(0, 48)), "stock_outlook")
+	panel_chips = HBoxContainer.new()
+	panel_chips.add_theme_constant_override("separation", 8)
+	panel_chips.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel_chips.visible = false
+	head.add_child(panel_chips)
+	stock_outlook_button = _menu_target(_button(tr("ui.stock_outlook"), "Ghost", Vector2(0, HEAD_BUTTON)), "stock_outlook")
 	stock_outlook_button.visible = false
 	stock_outlook_button.pressed.connect(_open_prep_detail.bind("outlook"))
 	head.add_child(stock_outlook_button)
-	stock_button = _button("", "Primary", Vector2(180, 60))
+	stock_button = _button("", "Primary", Vector2(180, HEAD_BUTTON))
 	_menu_target(stock_button, "stock_today")
 	stock_button.visible = false
 	stock_button.pressed.connect(func(): _confirm_purchase(stock_button, Game.stock_for_today))
 	head.add_child(stock_button)
-	var close := _button(tr("ui.close"), "Ghost", Vector2(110, 48))
+	var close := _button(tr("ui.close"), "Ghost", Vector2(110, HEAD_BUTTON))
 	_menu_target(close, "close_panel")
 	close.pressed.connect(close_panel)
 	head.add_child(close)
-	panel_chips = HBoxContainer.new()
-	panel_chips.add_theme_constant_override("separation", 8)
-	panel_chips.visible = false
-	v.add_child(panel_chips)
+	# The content stage is a plain Control: its children's minimum sizes cannot push the
+	# panel past the space it has, and they can slide without a container resetting them.
+	panel_stage = Control.new()
+	panel_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel_stage.custom_minimum_size.y = 120.0
+	panel_stage.clip_contents = true
+	panel_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(panel_stage)
 	panel_scroll = TouchScroll.new()
-	panel_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	v.add_child(panel_scroll)
+	panel_stage.add_child(panel_scroll)
 	panel_body = VBoxContainer.new()
 	panel_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel_body.add_theme_constant_override("separation", 10)
@@ -703,7 +822,8 @@ func _build_panel() -> void:
 			_browse_place = _roll_ids[index]
 		else:
 			_browse_prep[current_panel] = _roll_ids[index])
-	v.add_child(panel_roll)
+	panel_stage.add_child(panel_roll)
+	panel_roll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func _build_report() -> void:
 	report_dim = PanelContainer.new()
@@ -718,7 +838,8 @@ func _build_report() -> void:
 		panel_dim.process_mode = Node.PROCESS_MODE_DISABLED if report_dim.visible else Node.PROCESS_MODE_INHERIT
 		if _graphics_open and not report_dim.visible:
 			_graphics_open = false
-			main.set_graphics_open(false))
+			main.set_graphics_open(false)
+		_refresh_advisor_strip())
 	var center := CenterContainer.new()
 	report_dim.add_child(center)
 	report_panel = PanelContainer.new()
@@ -728,6 +849,62 @@ func _build_report() -> void:
 	report_body.add_theme_constant_override("separation", 8)
 	report_panel.add_child(report_body)
 	_apply_safe_area()
+
+func _build_advisor_strip() -> void:
+	advisor_strip = PanelContainer.new()
+	advisor_strip.add_theme_stylebox_override("panel", UiTheme.flat(UiTheme.PALM_DARK, 18, UiTheme.GOLD_LIGHT, 2))
+	advisor_strip.visible = false
+	root.add_child(advisor_strip)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	advisor_strip.add_child(row)
+	_advisor_face = _icon(Icons.mood_icon("ok"), 38)
+	_advisor_face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(_advisor_face)
+	_advisor_words = _label("", "Light")
+	_advisor_words.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_advisor_words.add_theme_font_size_override("font_size", 18)
+	_advisor_words.add_theme_constant_override("line_spacing", -6)
+	_advisor_words.max_lines_visible = 2
+	_advisor_words.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_advisor_words.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_advisor_words.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_child(_advisor_words)
+	var more := _menu_target(_button(tr("adv.title"), "Primary", Vector2(140, 60)), "advisor_open")
+	more.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	more.pressed.connect(show_advisor)
+	row.add_child(more)
+	var hide := _menu_target(_button("×", "Ghost", Vector2(60, 60)), "advisor_hide")
+	hide.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hide.tooltip_text = tr("adv.hide")
+	hide.accessibility_name = tr("adv.hide")
+	hide.pressed.connect(func():
+		_advisor_hidden_day = Game.day
+		_refresh_advisor_strip())
+	row.add_child(hide)
+
+## The strip shows only over the open street in planning: never over a menu, a report, the
+## title, a running day or the tutorial's own card.
+func _refresh_advisor_strip() -> void:
+	if advisor_strip == null or main == null:
+		return
+	var show: bool = main.phase == main.Phase.PREP and current_panel == "" and not panel_dim.visible and not report_dim.visible \
+		and not title_screen.visible and not Game.tutorial["active"] and _advisor_hidden_day != Game.day
+	if not show:
+		advisor_strip.visible = false
+		return
+	# Advisor.headline() remembers its answer until the stand, menu, money or day changes.
+	var tip := Advisor.headline()
+	_advisor_words.text = String(tip.get("text", ""))
+	_advisor_face.texture = Icons.mood_icon(String(tip.get("mood", "ok")))
+	var appearing := not advisor_strip.visible
+	advisor_strip.visible = _advisor_words.text != ""
+	advisor_strip.position = Vector2(8, maxf(TOP_BAR_HEIGHT, top_bar.size.y) + 6)
+	advisor_strip.size = Vector2(root.size.x - 16, advisor_strip.get_combined_minimum_size().y)
+	if appearing and advisor_strip.visible:
+		_fade_in(advisor_strip, 0.25)
+		if toast != null and toast.visible:
+			toast.position.y = _below_guide(TOAST_Y) # a toast already up moves clear of the strip
 
 func _build_toast() -> void:
 	toast = PanelContainer.new()
@@ -853,8 +1030,6 @@ func show_prep() -> void:
 	_refresh()
 
 func show_day() -> void:
-	skip_button.disabled = false
-	skip_button.text = tr("ui.skip")
 	for b in speed_buttons.values():
 		b.disabled = false
 	close_panel()
@@ -874,12 +1049,11 @@ func show_day() -> void:
 	ticker_label.text = ""
 	ticker_label.modulate.a = 1.0
 	closing_progress.hide()
-	_set_speed(1.0)
+	_set_speed(day_speed)
 	_refresh()
 
+## The fast close that tests drive through `main.skip_day()`; players have no Skip button.
 func show_finishing(from_hour: float, end_hour: float) -> void:
-	skip_button.disabled = true
-	skip_button.text = tr("ui.finishing")
 	for b in speed_buttons.values():
 		b.disabled = true
 		b.button_pressed = false
@@ -908,8 +1082,11 @@ func show_report(r: Dictionary) -> void:
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 10)
 	report_body.add_child(head)
-	var rt := _label(tr("ui.r_title") % [r["day"], tr(Data.LOCATIONS[r["location"]]["name"])], "Title")
-	rt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# A landscape phone has about 370 points of height: the title is a heading, not a banner.
+	var rt := _label(tr("ui.r_title") % [r["day"], tr(Data.LOCATIONS[r["location"]]["name"])], "Heading")
+	rt.add_theme_font_size_override("font_size", 28)
+	rt.autowrap_mode = TextServer.AUTOWRAP_OFF
+	rt.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	head.add_child(rt)
 	var best_chip: PanelContainer
 	if best:
@@ -926,52 +1103,123 @@ func show_report(r: Dictionary) -> void:
 	var wchip := _chip(tr(Data.WEATHER[r["weather"]]["name"]), Icons.weather_icon(r["weather"]), true)
 	wchip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(wchip)
+	# --- verdict: one face, the profit against yesterday, the guests' mood, the stars
+	var sat := float(r["satisfaction"])
+	var pd := float(r["pop_delta"])
+	var lost_total := int(r["left_wait"]) + int(r["queue_full"]) + int(r["sold_out"]) + int(r.get("too_pricey", 0)) + int(r.get("lost_rival", 0))
+	var verdict := "bad" if profit < 0.0 else ("great" if best or (sat >= 0.7 and lost_total == 0) else ("good" if sat >= 0.5 else "ok"))
+	var vcard := _card()
+	report_body.add_child(vcard)
+	var vrow := HBoxContainer.new()
+	vrow.add_theme_constant_override("separation", 14)
+	vcard.add_child(vrow)
+	var vface := _icon(Icons.mood_icon("great" if verdict == "good" else verdict, 64), 52)
+	vface.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	vrow.add_child(vface)
+	var vtext := VBoxContainer.new()
+	vtext.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vtext.add_theme_constant_override("separation", -4)
+	vrow.add_child(vtext)
+	var vhead := _label(tr("rpt.verdict_" + verdict), "Heading")
+	vhead.add_theme_font_size_override("font_size", 22)
+	vtext.add_child(vhead)
+	var prow := HBoxContainer.new()
+	prow.add_theme_constant_override("separation", 10)
+	vtext.add_child(prow)
+	var pk := _label(tr("ui.r_profit"), "Muted")
+	pk.autowrap_mode = TextServer.AUTOWRAP_OFF
+	pk.size_flags_horizontal = 0
+	prow.add_child(pk)
+	var pl := _label(Loc.money(profit), "Big")
+	pl.size_flags_horizontal = 0
+	pl.add_theme_color_override("font_color", UiTheme.GOOD if profit >= 0 else UiTheme.BAD)
+	prow.add_child(pl)
+	var change := profit - float(yesterday.get("profit", 0.0))
+	var dl := _label(tr("ui.r_first_day") if yesterday.is_empty() else ("%s  %s" % ["▲" if change > 0.004 else ("▼" if change < -0.004 else "="), _signed_money(change)]), "Small")
+	dl.size_flags_horizontal = 0
+	dl.add_theme_color_override("font_color", UiTheme.MUTED if yesterday.is_empty() or absf(change) < 0.005 else (UiTheme.GOOD if change > 0.0 else UiTheme.BAD))
+	prow.add_child(dl)
+	var moods := HBoxContainer.new()
+	moods.add_theme_constant_override("separation", 5)
+	moods.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for kind in ["great", "ok", "bad"]:
+		moods.add_child(_icon(Icons.mood_icon(kind), 30))
+		var ml := _label(str(int(r.get("mood_" + kind, 0))), "")
+		ml.size_flags_horizontal = 0
+		ml.add_theme_font_override("font", UiTheme.bold())
+		moods.add_child(ml)
+	vrow.add_child(moods)
+	var rep := HBoxContainer.new()
+	rep.add_theme_constant_override("separation", 4)
+	rep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rep.add_child(_icon(Icons.star_icon(1.0, 30), 28))
+	var review := float(r.get("review", 0.0))
+	var repl := _label(Loc.ltr("%+.2f" % ((pd + review) * 5.0)), "")
+	repl.size_flags_horizontal = 0
+	repl.add_theme_font_override("font", UiTheme.bold())
+	repl.add_theme_color_override("font_color", UiTheme.GOOD if pd + review >= 0 else UiTheme.BAD)
+	rep.add_child(repl)
+	vrow.add_child(rep)
 	var cols_scroll: ScrollContainer = TouchScroll.new()
 	cols_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	report_body.add_child(cols_scroll)
 	var cols := HBoxContainer.new()
-	cols.add_theme_constant_override("separation", 16)
+	cols.add_theme_constant_override("separation", 12)
 	cols.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cols_scroll.add_child(cols)
-	# customers column
+	var left := VBoxContainer.new()
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.add_theme_constant_override("separation", 10)
+	cols.add_child(left)
+	# --- what happened: who came, and every guest lost with the reason
 	var c1 := _card()
-	cols.add_child(c1)
+	left.add_child(c1)
 	var v1 := VBoxContainer.new()
-	v1.add_theme_constant_override("separation", 8)
+	v1.add_theme_constant_override("separation", 6)
 	c1.add_child(v1)
+	v1.add_child(_heading(tr("rpt.why")))
+	var passers := int(r["passers"])
+	var funnel := _label(tr("rpt.funnel") % [passers, int(r["served"]), roundi(100.0 * int(r["served"]) / maxf(passers, 1))], "")
+	funnel.add_theme_font_override("font", UiTheme.bold())
+	v1.add_child(funnel)
+	var shown := 0
+	for reason in [["left_wait", "ui.r_left_wait", "slow"], ["queue_full", "ui.r_left_full", "full"], ["sold_out", "ui.r_sold_out", "sold_out"],
+			["too_pricey", "ui.r_too_pricey", "pricey"], ["lost_rival", "ui.r_lost_rival", "rival"], ["crowd", "ui.r_crowd", "full"],
+			["no_item", "rpt.no_item", "bad"], ["closing", "rpt.closing", "ok"]]:
+		var n := int(r.get(reason[0], 0))
+		if n <= 0:
+			continue
+		shown += 1
+		var lost_row := HBoxContainer.new()
+		lost_row.add_theme_constant_override("separation", 8)
+		lost_row.add_child(_icon(Icons.mood_icon(reason[2]), 28))
+		var lost_name := _label(tr(reason[1]), "")
+		lost_name.autowrap_mode = TextServer.AUTOWRAP_OFF
+		lost_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		lost_row.add_child(lost_name)
+		var lost_n := _label(str(n), "")
+		lost_n.size_flags_horizontal = 0
+		lost_n.add_theme_font_override("font", UiTheme.bold())
+		lost_n.add_theme_color_override("font_color", UiTheme.BAD)
+		lost_row.add_child(lost_n)
+		v1.add_child(lost_row)
+	if shown == 0:
+		var none := _label(tr("rpt.lost_none"), "")
+		none.add_theme_color_override("font_color", UiTheme.GOOD)
+		v1.add_child(none)
 	var g1 := _grid()
 	v1.add_child(g1)
-	_row(g1, tr("ui.r_passers"), str(r["passers"]))
-	var served_label := _row(g1, tr("ui.r_served"), str(r["served"]), UiTheme.GOOD)
-	_delta_row(g1, int(r["served"]) - int(yesterday.get("served", 0)), yesterday.is_empty(), func(v: float) -> String:
-		return Loc.ltr("%+d" % int(v)))
 	# One buyer may order for a family or an office: show the portions when they differ.
 	if int(r.get("portions", r["served"])) != int(r["served"]):
 		_row(g1, tr("ui.r_portions"), str(r["portions"]), UiTheme.GOOD)
 	if int(r.get("dine_in", 0)) > 0:
 		_row(g1, tr("ui.r_dine_in"), str(r["dine_in"]), UiTheme.GOOD)
-	_row(g1, tr("ui.r_left_wait"), str(r["left_wait"]), UiTheme.BAD if r["left_wait"] > 0 else UiTheme.INK)
-	_row(g1, tr("ui.r_left_full"), str(r["queue_full"]), UiTheme.BAD if r["queue_full"] > 0 else UiTheme.INK)
-	_row(g1, tr("ui.r_sold_out"), str(r["sold_out"]), UiTheme.BAD if r["sold_out"] > 0 else UiTheme.INK)
-	if int(r.get("crowd", 0)) > 0:
-		_row(g1, tr("ui.r_crowd"), str(r["crowd"]), UiTheme.BAD)
-	if int(r.get("lost_rival", 0)) > 0:
-		_row(g1, tr("ui.r_lost_rival"), str(r["lost_rival"]), UiTheme.BAD)
-	if int(r.get("too_pricey", 0)) > 0:
-		_row(g1, tr("ui.r_too_pricey"), str(r["too_pricey"]), UiTheme.BAD)
-	_row(g1, tr("ui.r_satisfaction"), "%d%%" % int(round(float(r["satisfaction"]) * 100.0)))
-	var pd := float(r["pop_delta"])
-	_row(g1, tr("ui.r_reputation"), (tr("ui.r_stars") % Loc.ltr("%+.2f" % (pd * 5.0))), UiTheme.GOOD if pd >= 0 else UiTheme.BAD)
+	_row(g1, tr("ui.r_satisfaction"), "%d%%" % int(round(sat * 100.0)))
+	if review != 0.0:
+		_row(g1, tr("rpt.review"), (tr("ui.r_stars") % Loc.ltr("%+.2f" % (review * 5.0))), UiTheme.GOOD if review > 0.0 else UiTheme.BAD)
 	var ld := float(r.get("local_delta", 0.0))
 	_row(g1, tr("ui.r_local"), (tr("ui.r_stars") % Loc.ltr("%+.2f" % (ld * 5.0))), UiTheme.GOOD if ld >= 0 else UiTheme.BAD)
-	var bn := String(r.get("bottleneck", ""))
-	if bn != "" and bn != "arrivals":
-		var bl := _label(tr("ui.r_bottleneck") % _station_name(bn), "Small")
-		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		bl.add_theme_color_override("font_color", UiTheme.GOLD)
-		bl.add_theme_font_override("font", UiTheme.bold())
-		v1.add_child(bl)
 	# the sold list can get long, so it gets its own wrapped line under the table
 	var sold_lines := []
 	for id in r["sold"]:
@@ -980,11 +1228,15 @@ func show_report(r: Dictionary) -> void:
 	sold.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sold.add_theme_font_override("font", UiTheme.bold())
 	v1.add_child(sold)
-	# money column
+	# --- money
 	var c2 := _card()
-	cols.add_child(c2)
+	left.add_child(c2)
+	var v2 := VBoxContainer.new()
+	v2.add_theme_constant_override("separation", 6)
+	c2.add_child(v2)
+	v2.add_child(_heading(tr("rpt.money")))
 	var g2 := _grid()
-	c2.add_child(g2)
+	v2.add_child(g2)
 	var revenue_label := _row(g2, tr("ui.r_revenue"), Loc.money(r["revenue"]), UiTheme.GOOD)
 	_row(g2, tr("ui.r_cogs"), Loc.money(float(r["cogs"])), UiTheme.BAD)
 	_row(g2, tr("ui.r_rent"), Loc.money(float(r["rent"])), UiTheme.BAD)
@@ -996,35 +1248,33 @@ func show_report(r: Dictionary) -> void:
 		for ing in sp:
 			parts.append("%d %s" % [sp[ing], tr(Data.INGREDIENTS[ing]["name"])])
 		_row(g2, tr("ui.r_spoiled") % _join(parts), Loc.money(float(r["spoil_cost"])), UiTheme.BAD)
-	var pl := _row(g2, tr("ui.r_profit"), Loc.money(profit), UiTheme.GOOD if profit >= 0 else UiTheme.BAD)
-	pl.theme_type_variation = "Big"
-	_delta_row(g2, profit - float(yesterday.get("profit", 0.0)), yesterday.is_empty(), _signed_money)
 	_row(g2, tr("ui.r_cash"), Loc.money(r["money"]))
-	# A goal waiting to be claimed: say so here, with a way straight to it.
-	if bool(r.get("goal_ready", false)) or Game.goal_ready():
-		var goal_row := HBoxContainer.new()
-		goal_row.add_theme_constant_override("separation", 12)
-		report_body.add_child(goal_row)
-		var gl := _label("◆  " + tr("ui.r_goal_ready"), "Heading")
-		gl.add_theme_font_size_override("font_size", 21)
-		gl.add_theme_color_override("font_color", UiTheme.GOOD)
-		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		goal_row.add_child(gl)
-		var to_goals := _menu_target(_button(tr("ui.r_open_goals"), "Ghost", Vector2(200, 52)), "report_goals")
-		to_goals.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		to_goals.pressed.connect(func():
-			Sfx.play("confirm")
-			fade_through(func():
-				main.show_prep()
-				open_panel("goals")))
-		goal_row.add_child(to_goals)
-	# footer
+	# --- do this next: the advisor's three, each with a way straight to it
+	var c3 := _card()
+	c3.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c3.size_flags_stretch_ratio = 1.15
+	cols.add_child(c3)
+	var v3 := VBoxContainer.new()
+	v3.add_theme_constant_override("separation", 10)
+	c3.add_child(v3)
+	v3.add_child(_heading(tr("adv.next")))
+	_fill_report_advice(v3, r)
+	# footer: tomorrow's weather, a goal waiting to be claimed, and on to the next day
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 12)
 	report_body.add_child(foot)
 	var fc := _chip(tr("ui.r_forecast") % tr(Data.WEATHER[Game.forecast]["name"]), Icons.weather_icon(Game.forecast), true)
 	foot.add_child(fc)
 	foot.add_child(_spacer())
+	if bool(r.get("goal_ready", false)) or Game.goal_ready():
+		var to_goals := _menu_target(_button("◆  " + tr("ui.r_goal_ready"), "Ghost", Vector2(0, 64)), "report_goals")
+		to_goals.add_theme_color_override("font_color", UiTheme.GOOD)
+		to_goals.pressed.connect(func():
+			Sfx.play("confirm")
+			fade_through(func():
+				main.show_prep()
+				open_panel("goals")))
+		foot.add_child(to_goals)
 	var next := _button(tr("ui.next_day"), "Primary", Vector2(220, 64))
 	_menu_target(next, "next_day")
 	next.pressed.connect(func():
@@ -1035,7 +1285,6 @@ func show_report(r: Dictionary) -> void:
 	_show_report_overlay()
 	Sfx.stinger("day_close")
 	# The headline figures count up once the sheet has landed, then a best day is called out.
-	_count_up(served_label, float(r["served"]), func(v: float) -> String: return str(int(round(v))), 0.3)
 	_count_up(revenue_label, float(r["revenue"]), Loc.money, 0.35)
 	var counting := _count_up(pl, profit, Loc.money, 0.45, 1.0)
 	if best_chip:
@@ -1043,6 +1292,149 @@ func show_report(r: Dictionary) -> void:
 			best_chip.modulate.a = 1.0
 			_pop_in(best_chip, 0.45)
 			Sfx.stinger("best_day"))
+
+func _heading(text: String) -> Label:
+	var l := _label(text, "Heading")
+	l.add_theme_font_size_override("font_size", 20)
+	l.add_theme_color_override("font_color", UiTheme.GOLD)
+	return l
+
+## The report is built while the closing curtain is shut (main._on_day_finished), so the
+## advisor's ranking (dozens of estimates, about 0.15 s on a desktop) costs no visible frame.
+## The planning screen that follows has the same state and reuses the answer.
+func _fill_report_advice(into: VBoxContainer, r: Dictionary) -> void:
+	var advice := Advisor.for_report(r)
+	for i in range(advice.size()):
+		into.add_child(_insight_row(advice[i], "advice_%d" % i))
+	Advisor.for_prep()
+
+## One piece of advice: its face, the sentence, what it is worth, and a button that opens
+## the exact menu it talks about.
+func _insight_row(it: Dictionary, target: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var face := _icon(Icons.mood_icon(String(it["mood"])), 34)
+	face.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(face)
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", -2)
+	row.add_child(text)
+	var words := _label(String(it["text"]), "")
+	words.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	words.add_theme_font_size_override("font_size", 19)
+	words.add_theme_constant_override("line_spacing", -6)
+	text.add_child(words)
+	if float(it["gain"]) >= 3.0 and bool(it.get("daily", true)):
+		var worth := _label(tr("adv.gain") % Loc.money(roundf(float(it["gain"]))), "Small")
+		worth.add_theme_color_override("font_color", UiTheme.GOOD)
+		worth.add_theme_font_override("font", UiTheme.bold())
+		text.add_child(worth)
+	if String(it["panel"]) != "":
+		var go := _menu_target(_button(tr("adv.show"), "Ghost", Vector2(124, 56)), target)
+		go.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		go.pressed.connect(_advisor_go.bind(it))
+		row.add_child(go)
+	return row
+
+## Leave the report or the advisor sheet and open the menu a piece of advice points at.
+func _advisor_go(it: Dictionary) -> void:
+	Sfx.play("confirm")
+	var go := func():
+		report_dim.visible = false
+		if main.phase != main.Phase.PREP:
+			main.show_prep()
+		var panel_id := String(it["panel"])
+		var detail := String(it["detail"])
+		open_panel(panel_id)
+		if String(it["dish"]) != "" and Game.item_available(String(it["dish"])):
+			_select_dish(String(it["dish"]))
+		elif detail == "stage" or (panel_id == "build" and Data.STATIONS.has(detail) and (Game.stage_def()["stations"] as Array).has(detail)) \
+				or (panel_id == "promote" and Data.MARKETING.has(detail)):
+			_open_prep_detail(detail)
+	if main.phase == main.Phase.REPORT:
+		fade_through(go)
+	else:
+		go.call()
+
+## The advisor's sheet in planning: what to do next, and how the last days went.
+func show_advisor() -> void:
+	if main == null or main.phase != main.Phase.PREP or report_dim.visible:
+		return
+	Sfx.play("open")
+	_detach_coach_card()
+	for c in report_body.get_children():
+		c.queue_free()
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	head.add_child(_label(tr("adv.title"), "Title"))
+	var ok := _menu_target(_button(tr("rep.ok"), "Primary", Vector2(170, HEAD_BUTTON)), "dialog_ok")
+	ok.pressed.connect(func():
+		Sfx.play("close")
+		report_dim.visible = false)
+	head.add_child(ok)
+	report_body.add_child(head)
+	var scroll: ScrollContainer = TouchScroll.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	report_body.add_child(scroll)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 12)
+	cols.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(cols)
+	var c1 := _card()
+	c1.size_flags_stretch_ratio = 1.4
+	cols.add_child(c1)
+	var v1 := VBoxContainer.new()
+	v1.add_theme_constant_override("separation", 12)
+	c1.add_child(v1)
+	v1.add_child(_heading(tr("adv.next")))
+	var advice := Advisor.for_prep()
+	for i in range(advice.size()):
+		v1.add_child(_insight_row(advice[i], "advice_%d" % i))
+	var c2 := _card()
+	cols.add_child(c2)
+	var v2 := VBoxContainer.new()
+	v2.add_theme_constant_override("separation", 8)
+	c2.add_child(v2)
+	var t := Advisor.trends()
+	if int(t["days"]) == 0:
+		v2.add_child(_heading(tr("adv.trends") % 0))
+		var none := _label(tr("adv.none"), "Muted")
+		v2.add_child(none)
+	else:
+		v2.add_child(_heading(tr("adv.trends") % int(t["days"])))
+		var served: Array[float] = t["served"]
+		var profits: Array[float] = t["profit"]
+		var happy: Array[float] = t["happy"]
+		v2.add_child(_trend_row(tr("adv.t_served"), served, str(int(served.back())), UiTheme.PALM))
+		v2.add_child(_trend_row(tr("adv.t_profit"), profits, Loc.money(roundf(profits.back())), UiTheme.PALM))
+		v2.add_child(_trend_row(tr("adv.t_happy"), happy, "%d%%" % roundi(happy.back() * 100.0), UiTheme.PALM))
+		if String(t["best_dish"]) != "" and Data.MENU_ITEMS.has(t["best_dish"]):
+			var best := _label(tr("adv.t_best") % [tr(Data.MENU_ITEMS[t["best_dish"]]["name"]), int(t["best_count"]), roundi(float(t["share"]) * 100.0)], "Small")
+			best.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			best.add_theme_font_override("font", UiTheme.bold())
+			v2.add_child(best)
+	_apply_safe_area()
+	_show_report_overlay()
+
+func _trend_row(title: String, series: Array[float], latest: String, color: Color) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var name := _label(title, "Muted")
+	name.autowrap_mode = TextServer.AUTOWRAP_OFF
+	name.size_flags_horizontal = 0
+	name.custom_minimum_size.x = 108
+	row.add_child(name)
+	var bars := Spark.new(series, color)
+	bars.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(bars)
+	var value := _label(latest, "", HORIZONTAL_ALIGNMENT_RIGHT)
+	value.size_flags_horizontal = 0
+	value.custom_minimum_size.x = 92
+	value.add_theme_font_override("font", UiTheme.bold())
+	row.add_child(value)
+	return row
 
 ## The report that came before `r` in the history ({} on the first day).
 func _report_before(r: Dictionary) -> Dictionary:
@@ -1156,6 +1548,16 @@ func _refresh() -> void:
 	for i in range(5):
 		var t: TextureRect = star_box.get_child(i)
 		t.texture = Icons.star_icon(clampf(stars - i, 0.0, 1.0))
+	rep_label.text = Loc.ltr("%.1f" % stars)
+	# A small phone with rent or wages to show has no room for every chip at full length:
+	# shorten the forecast first, then the costs, so Settings never leaves the screen.
+	# (48 px spare: the cash figure counts up after this and may gain digits)
+	if top_bar.get_combined_minimum_size().x + 48.0 > root.size.x and not in_day:
+		weather_label.text = tr(Data.WEATHER[w]["name"])
+	if top_bar.get_combined_minimum_size().x + 48.0 > root.size.x and costs_chip.visible:
+		costs_label.text = Loc.ltr("−") + Loc.money(daily)
+	_refresh_advisor_strip()
+	rep_button.disabled = main == null or main.phase != main.Phase.PREP
 	if current_panel != "":
 		_rebuild_panel()
 	_refresh_badges()
@@ -1193,8 +1595,26 @@ func _on_stats(stats: Dictionary) -> void:
 		money_label.text = Loc.money(Game.money)
 		_shown_money = Game.money
 	live_label.text = tr("ui.live") % [stats.get("served", 0), Loc.money(stats.get("revenue", 0.0)), stats.get("queue", 0), stats.get("kitchen", 0), stats.get("seated", 0)]
+	_show_mood(stats)
+
+func _show_mood(stats: Dictionary) -> void:
+	for kind in mood_counts:
+		var n := str(int(stats.get("mood_" + kind, 0)))
+		if mood_counts[kind].text != n:
+			mood_counts[kind].text = n
+			if n != "0":
+				_pulse(mood_counts[kind])
+	if int(stats.get("served", 0)) == 0:
+		mood_trend.text = ""
+		return
+	# The same formula the day settles with, on the day so far.
+	var delta := Economy.popularity_delta(stats, Game.popularity)
+	mood_trend.text = tr("ui.mood_up") if delta > 0.001 else (tr("ui.mood_down") if delta < -0.001 else tr("ui.mood_flat"))
+	mood_trend.add_theme_color_override("font_color", Color("8fd6a3") if delta > 0.001 else (Color("f08c79") if delta < -0.001 else UiTheme.GOLD_LIGHT))
 
 func _set_speed(s: float) -> void:
+	if s in DAY_SPEEDS:
+		day_speed = s
 	for k in speed_buttons:
 		speed_buttons[k].button_pressed = is_equal_approx(k, s)
 	if main:
@@ -1223,12 +1643,13 @@ func _toast(text: String, kind: String = "info") -> void:
 	toast.visible = true
 	toast.modulate = Color(1, 1, 1, 0)
 	toast.reset_size()
-	toast.position = Vector2((root.size.x - toast.size.x) / 2.0, TOAST_Y - 16.0)
+	var toast_y := _below_guide(TOAST_Y)
+	toast.position = Vector2((root.size.x - toast.size.x) / 2.0, toast_y - 16.0)
 	if _toast_tween:
 		_toast_tween.kill()
 	_toast_tween = create_tween().set_parallel(true)
 	_toast_tween.tween_property(toast, "modulate:a", 1.0, 0.18)
-	_toast_tween.tween_property(toast, "position:y", TOAST_Y, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_toast_tween.tween_property(toast, "position:y", toast_y, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_toast_tween.set_parallel(false)
 	_toast_tween.tween_interval(2.4)
 	_toast_tween.tween_property(toast, "modulate:a", 0.0, 0.4)
@@ -1414,6 +1835,7 @@ func start_tutorial(restart: bool = false) -> void:
 		coach.setup(self)
 	Game.save()
 	_layout_prep_panel()
+	_refresh_advisor_strip()
 
 func pause_tutorial() -> void:
 	Game.tutorial["active"] = false
@@ -1423,6 +1845,7 @@ func pause_tutorial() -> void:
 	if main.phase != main.Phase.DAY:
 		Game.save()
 	_layout_prep_panel()
+	_refresh_advisor_strip()
 
 func resume_tutorial() -> void:
 	if Game.tutorial["active"]:
@@ -1500,6 +1923,105 @@ func show_dialog(title: String, lines: Array, button: String, on_ok: Callable = 
 	report_panel.custom_minimum_size = Vector2(minf(720.0, report_panel.custom_minimum_size.x), 0.0)
 	_show_report_overlay()
 
+## What the stars are, what moved them, and what they open next. Planning phase only: it
+## uses the report overlay, which the report itself owns after a day.
+func show_reputation() -> void:
+	if main == null or main.phase != main.Phase.PREP or report_dim.visible:
+		return
+	Sfx.play("open")
+	_detach_coach_card()
+	for c in report_body.get_children():
+		c.queue_free()
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	head.add_child(_label(tr("rep.title"), "Title"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for i in range(5):
+		row.add_child(_icon(Icons.star_icon(clampf(Game.stars() - i, 0.0, 1.0), 34), 34))
+	head.add_child(row)
+	var number := _label(Loc.ltr("%.1f / 5" % Game.stars()), "Heading")
+	number.size_flags_horizontal = 0
+	head.add_child(number)
+	report_body.add_child(head)
+	var stop := roundi((0.05 + 0.20 * Game.effective_popularity()) * 100.0)
+	report_body.add_child(_rep_line(tr("rep.what") % stop))
+	if not Game.history.is_empty():
+		var r: Dictionary = Game.history.back()
+		var sat := float(r.get("satisfaction", 0.0))
+		var text := tr("rep.last") % [Loc.ltr("%+.2f" % (float(r.get("pop_delta", 0.0)) * 5.0)), roundi(sat * 100.0)]
+		var lost := int(r.get("left_wait", 0)) + int(r.get("sold_out", 0))
+		if lost > 0:
+			text += " " + tr("rep.last_lost") % lost
+		report_body.add_child(_rep_line(text, _mood_of(sat)))
+	report_body.add_child(_rep_line(tr("rep.how")))
+	var next_id := ""
+	var needs_stage := ""
+	for id in Game.stage_locations():
+		if not Game.location_unlocked(id):
+			if next_id == "" or float(Data.LOCATIONS[id]["unlock_pop"]) < float(Data.LOCATIONS[next_id]["unlock_pop"]):
+				next_id = id
+		elif not Game.location_stage_ok(id) and needs_stage == "":
+			needs_stage = id
+	if next_id != "":
+		var def: Dictionary = Data.LOCATIONS[next_id]
+		var needs := float(def["unlock_pop"])
+		var text := tr("rep.next") % [tr(def["name"]), Loc.ltr("%.1f" % (needs * 5.0))]
+		if not Game.location_stage_ok(next_id):
+			text += " " + tr("rep.next_stage") % tr(Data.stage_def(int(def.get("min_stage", 0)))["name"])
+		report_body.add_child(_rep_line(text))
+		var bar := ProgressBar.new()
+		bar.max_value = 1.0
+		bar.value = clampf(Game.popularity / maxf(needs, 0.01), 0.0, 1.0)
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(0, 12)
+		report_body.add_child(bar)
+	elif needs_stage != "":
+		# enough stars everywhere, but a place still waits for a bigger stand
+		var waiting: Dictionary = Data.LOCATIONS[needs_stage]
+		report_body.add_child(_rep_line(tr("rep.next_needs") % [tr(waiting["name"]), tr(Data.stage_def(int(waiting.get("min_stage", 0)))["name"])]))
+	else:
+		report_body.add_child(_rep_line(tr("rep.all_open")))
+	var here := Loc.ltr("%.1f" % (Game.local_reputation() * 5.0))
+	var upgrade := Game.next_stage_def()
+	if upgrade.has("requires_local_rep"):
+		report_body.add_child(_rep_line(tr("rep.local_needs") % [here, tr(upgrade["name"]), Loc.ltr("%.1f" % (float(upgrade["requires_local_rep"]) * 5.0))]))
+	else:
+		report_body.add_child(_rep_line(tr("rep.local") % here))
+	report_body.add_child(_rep_line(tr("rep.spend")))
+	report_body.add_child(_spacer(false))
+	var foot := HBoxContainer.new()
+	foot.add_child(_spacer())
+	var ok := _menu_target(_button(tr("rep.ok"), "Primary", Vector2(220, 60)), "dialog_ok")
+	ok.pressed.connect(func():
+		Sfx.play("confirm")
+		report_dim.visible = false)
+	foot.add_child(ok)
+	report_body.add_child(foot)
+	_apply_safe_area()
+	report_panel.custom_minimum_size = Vector2(minf(900.0, report_panel.custom_minimum_size.x), 0.0)
+	_show_report_overlay()
+
+## The face for a satisfaction score, on the thresholds the sale chips use.
+func _mood_of(satisfaction: float) -> String:
+	return "great" if satisfaction >= 0.7 else ("ok" if satisfaction >= 0.4 else "bad")
+
+func _rep_line(text: String, mood: String = "") -> Control:
+	var l := _label(text, "")
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", 20)
+	l.add_theme_constant_override("line_spacing", -6)
+	if mood == "":
+		return l
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var face := _icon(Icons.mood_icon(mood), 36)
+	face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(face)
+	row.add_child(l)
+	return row
+
 # ================================================================= panels
 
 func _toggle_panel(id: String) -> void:
@@ -1509,6 +2031,7 @@ func _toggle_panel(id: String) -> void:
 		open_panel(id)
 
 func open_panel(id: String) -> void:
+	var was := current_panel
 	if current_panel != id:
 		selected_dish = ""
 		_prep_detail = ""
@@ -1518,20 +2041,29 @@ func open_panel(id: String) -> void:
 	for k in tabs:
 		tabs[k].button_pressed = (k == id)
 	panel_title.text = tr(PANELS[id])
+	if is_instance_valid(coach):
+		coach.sync_now() # the guide folds to its strip before the panel takes its size
 	_apply_safe_area()
 	if tabs.has(id):
 		_pulse(tabs[id])
 	if _panel_tween:
 		_panel_tween.kill()
+	# From closed the panel rises from the tabs; between tabs it slides the way the tab lies.
+	var from := Vector2(0.0, 34.0)
+	var backdrop := panel_dim.self_modulate.a if panel_dim.visible else 0.0
+	if panel_dim.visible and was != "" and was != id and tabs.has(was) and tabs.has(id):
+		var order := tabs.keys()
+		var dir := signf(order.find(id) - order.find(was)) * (-1.0 if root.is_layout_rtl() else 1.0)
+		from = Vector2(64.0 * dir, 0.0)
 	panel_dim.visible = true
 	panel_dim.modulate.a = 1.0
-	# Open within the space above the tabs without springing over the bar.
-	panel.pivot_offset = Vector2(panel.custom_minimum_size.x / 2.0, panel.custom_minimum_size.y)
-	panel.scale = Vector2(0.9, 0.9)
-	panel.modulate.a = 0.0
+	panel_dim.self_modulate.a = backdrop
+	_shift(panel_slot, from)
+	panel_slot.modulate.a = 0.0
 	_panel_tween = create_tween().set_parallel(true)
-	_panel_tween.tween_property(panel, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_panel_tween.tween_property(panel, "modulate:a", 1.0, 0.16)
+	_panel_tween.tween_method(func(v: Vector2): _shift(panel_slot, v), from, Vector2.ZERO, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_panel_tween.tween_property(panel_slot, "modulate:a", 1.0, 0.2)
+	_panel_tween.tween_property(panel_dim, "self_modulate:a", 1.0, 0.22)
 	_rebuild_panel(true)
 	panel_scroll.scroll_vertical = 0
 	if main:
@@ -1550,15 +2082,17 @@ func close_panel() -> void:
 	if _panel_tween:
 		_panel_tween.kill()
 	_panel_tween = create_tween().set_parallel(true)
-	_panel_tween.tween_property(panel, "scale", Vector2(0.92, 0.92), 0.14).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	_panel_tween.tween_property(panel, "modulate:a", 0.0, 0.14)
-	_panel_tween.tween_property(panel_dim, "modulate:a", 0.0, 0.16)
+	_panel_tween.tween_method(func(v: Vector2): _shift(panel_slot, v), Vector2.ZERO, Vector2(0.0, 28.0), 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_panel_tween.tween_property(panel_slot, "modulate:a", 0.0, 0.14)
+	_panel_tween.tween_property(panel_dim, "self_modulate:a", 0.0, 0.18)
 	_panel_tween.set_parallel(false)
 	_panel_tween.tween_callback(func():
 		panel_dim.visible = false
-		panel_dim.modulate.a = 1.0
-		panel.scale = Vector2.ONE
-		panel.modulate.a = 1.0)
+		panel_dim.self_modulate.a = 1.0
+		_shift(panel_slot, Vector2.ZERO)
+		panel_slot.modulate.a = 1.0
+		_layout_prep_panel()
+		_refresh_advisor_strip())
 
 ## `animate` staggers the cards in (used when the panel opens or the filter changes, not on
 ## every refresh after a purchase).
@@ -1573,6 +2107,12 @@ func _rebuild_panel(animate: bool = false) -> void:
 	stock_button.visible = current_panel == "supplies"
 	stock_outlook_button.visible = stock_button.visible and _prep_detail.is_empty()
 	panel_chips.visible = current_panel in ["menu", "build"] or not _prep_detail.is_empty()
+	panel_title.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if panel_chips.visible else Control.SIZE_EXPAND_FILL
+	var was_roll := panel_roll.visible
+	# A notch plus the guide strip leaves a short panel: cards trade art and a line of text
+	# for staying at full size.
+	_tight = panel.custom_minimum_size.y < 312.0
+	panel_roll.tight = _tight
 	panel_roll.visible = current_panel in ["place", "menu", "supplies", "build", "promote"] and selected_dish.is_empty() and _prep_detail.is_empty()
 	panel_scroll.visible = not panel_roll.visible
 	for c in panel_chips.get_children():
@@ -1588,12 +2128,57 @@ func _rebuild_panel(animate: bool = false) -> void:
 	# The card roll is the landing view of five tabs: it gets its own short entrance.
 	if animate and panel_roll.visible:
 		panel_roll.play_entrance()
+	if _sheet_tween:
+		_sheet_tween.kill()
+	_shift(panel_scroll, Vector2.ZERO)
+	panel_scroll.modulate.a = 1.0
+	if animate and panel_scroll.visible:
+		# A sheet rises out of the card that opened it (or the tab that was tapped).
+		var rise := Vector2(0.0, 44.0 if was_roll else 22.0)
+		_shift(panel_scroll, rise)
+		panel_scroll.modulate.a = 0.0
+		_sheet_tween = create_tween().set_parallel(true)
+		_sheet_tween.tween_method(func(v: Vector2): _shift(panel_scroll, v), rise, Vector2.ZERO, 0.26).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		_sheet_tween.tween_property(panel_scroll, "modulate:a", 1.0, 0.18)
+	elif scroll > 0:
+		# Keep the reader's place through a refresh: no jump to the top for a frame.
+		var bar := panel_scroll.get_v_scroll_bar()
+		bar.max_value = maxf(bar.max_value, panel_body.get_combined_minimum_size().y)
+		panel_scroll.scroll_vertical = scroll
 	await get_tree().process_frame
 	if revision != _panel_revision:
 		return
 	panel_scroll.scroll_vertical = scroll
 	if animate:
 		_stagger_cards()
+	else:
+		_echo_tap()
+	if DevTools.has("dbg-layout"):
+		print("TOPBAR min=", top_bar.get_combined_minimum_size().x, " root=", root.size.x)
+		for c in top_bar.get_child(0).get_children():
+			print("  bar child ", c.get_class(), " vis=", (c as Control).visible, " min=", (c as Control).get_combined_minimum_size().x)
+		print("LAYOUT panel=", panel.size, " stage=", panel_stage.size, " scroll=", panel_scroll.size, " scrollmin=", panel_scroll.get_combined_minimum_size(), " body=", panel_body.size, " bodymin=", panel_body.get_combined_minimum_size())
+		for c in panel_body.get_children():
+			print("  child ", c.get_class(), " min=", (c as Control).get_combined_minimum_size())
+
+## Slide a full-rect child by moving all four offsets together. Setting `position` instead
+## would freeze whatever size the control had at that moment into its offsets.
+func _shift(c: Control, by: Vector2) -> void:
+	c.offset_left = by.x
+	c.offset_right = by.x
+	c.offset_top = by.y
+	c.offset_bottom = by.y
+
+## After a price, recipe or purchase tap rebuilt the sheet, the control that was tapped
+## answers with a pulse, so the change reads as a response rather than a redraw.
+func _echo_tap() -> void:
+	if _last_tap == "" or not panel_dim.visible:
+		return
+	for node in panel_body.find_children("*", "Button", true, false):
+		if String(node.get_meta("menu_target", "")) == _last_tap:
+			_pulse(node)
+			break
+	_last_tap = ""
 
 func _needed_ingredients() -> Array:
 	var out := []
@@ -1659,11 +2244,13 @@ func _supply_roll_card(index: int) -> PanelContainer:
 	var packs: Array = def["packs"]
 	for i in range(packs.size()):
 		var cost := float(packs[i][1])
-		var text := "%s\n%s" % [Loc.ltr("+%d" % int(packs[i][0])), Loc.money(cost)]
+		var text := ("%s · %s" if _tight else "%s\n%s") % [Loc.ltr("+%d" % int(packs[i][0])), Loc.money(cost)]
 		var buy := _buy_button(text, cost, func() -> bool:
 			return index == panel_roll.selected_index() and Game.buy_pack(id, i), 0, "Primary")
 		buy.add_theme_font_size_override("font_size", 16)
 		buy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if _tight:
+			buy.custom_minimum_size.y = 58.0
 		row.add_child(_menu_target(buy, "pack_%s_%d" % [id, i]))
 	return card
 
@@ -1677,7 +2264,7 @@ func _open_prep_detail(id: String) -> void:
 	_rebuild_panel(true)
 
 func _prep_back() -> void:
-	var back := _menu_target(_button(tr("ui.all_cards"), "Ghost", Vector2(0, 48)), "back_cards")
+	var back := _menu_target(_button(tr("ui.all_cards"), "Ghost", Vector2(0, HEAD_BUTTON)), "back_cards")
 	back.pressed.connect(_open_prep_detail.bind(""))
 	panel_chips.add_child(back)
 
@@ -1703,7 +2290,7 @@ func _select_dish(id: String) -> void:
 
 func _fill_menu() -> void:
 	if selected_dish != "" and Data.MENU_ITEMS.has(selected_dish):
-		var back := _button(tr("ui.m_back"), "Ghost", Vector2(200, 52))
+		var back := _button(tr("ui.m_back"), "Ghost", Vector2(0, HEAD_BUTTON))
 		_menu_target(back, "back_dishes")
 		back.pressed.connect(func(): _select_dish(""))
 		panel_chips.add_child(back)
@@ -1723,7 +2310,7 @@ func _fill_menu() -> void:
 		var gid: String = group[0]
 		if not groups.has(gid):
 			continue
-		var b := _button(tr(group[1]), "Filter", Vector2(0, 48))
+		var b := _button(tr(group[1]), "Filter", Vector2(0, HEAD_BUTTON))
 		_menu_target(b, "category_" + gid)
 		b.toggle_mode = true
 		b.button_pressed = gid == menu_group
@@ -1749,7 +2336,7 @@ func _roll_card(art_id: String, title: String, value: String, art_height: float 
 	card.add_child(body)
 	var art := MenuArt.new(art_id)
 	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	art.custom_minimum_size.y = art_height
+	art.custom_minimum_size.y = minf(art_height, 44.0 if _tight else 62.0)
 	body.add_child(art)
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 8)
@@ -1902,9 +2489,15 @@ func _menu_detail(id: String) -> void:
 
 func _fill_place() -> void:
 	_roll_ids.clear()
+	# Open places first, then the locked ones with what each needs: hiding them left
+	# players guessing what the stars were for.
+	var locked: Array[String] = []
 	for id in Game.stage_locations():
 		if id == Game.location or (Game.location_unlocked(id) and Game.location_stage_ok(id)):
 			_roll_ids.append(id)
+		else:
+			locked.append(id)
+	_roll_ids.append_array(locked)
 	var preferred := _browse_place if _browse_place in _roll_ids else Game.location
 	panel_roll.configure(_roll_ids.size(), _roll_ids.find(preferred), _place_roll_card)
 
@@ -1917,6 +2510,14 @@ func _place_roll_card(index: int) -> PanelContainer:
 	var action: Button
 	if Game.location == id:
 		action = _locked_button(tr("ui.p_here"))
+	elif not (Game.location_unlocked(id) and Game.location_stage_ok(id)):
+		var needs: Array[String] = []
+		if not Game.location_unlocked(id):
+			needs.append(tr("ui.p_needs") % (float(def.get("unlock_pop", 0.0)) * 5.0))
+		if not Game.location_stage_ok(id):
+			needs.append(tr("ui.p_needs_stage") % tr(Data.stage_def(int(def.get("min_stage", 0)))["name"]))
+		action = _locked_button(" · ".join(needs))
+		card.modulate = Color(1, 1, 1, 0.82)
 	else:
 		action = _button(tr("ui.p_move"), "Primary", Vector2(0, 49))
 		action.pressed.connect(func():
@@ -1961,7 +2562,7 @@ func _fill_build() -> void:
 		var id: String = group[0]
 		if not available.has(id):
 			continue
-		var tab := _menu_target(_button(tr(group[1]), "Filter", Vector2(0, 48)), "build_group_" + id)
+		var tab := _menu_target(_button(tr(group[1]), "Filter", Vector2(0, HEAD_BUTTON)), "build_group_" + id)
 		tab.toggle_mode = true
 		tab.button_pressed = id == _build_group
 		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2093,7 +2694,7 @@ func _fill_goals() -> void:
 		var reward: Dictionary = g["reward"]
 		var rw := tr("ui.g_reward") % Loc.money(float(reward.get("money", 0.0)))
 		if reward.has("popularity"):
-			rw += "  +" + (tr("ui.r_stars") % Loc.ltr("%.1f" % (float(reward["popularity"]) * 5.0)))
+			rw += "  " + (tr("rep.reward") % Loc.ltr("%.1f" % (float(reward["popularity"]) * 5.0)))
 		v.add_child(_label(rw, "Small"))
 		if Game.goal_ready():
 			var b := _menu_target(_button(tr("ui.g_claim"), "Primary", Vector2(230, 52)), "claim_goal")
@@ -2144,21 +2745,47 @@ func _fill_promote() -> void:
 	panel_body.add_child(eff)
 	var id := _prep_detail
 	var def: Dictionary = Data.MARKETING[id]
-	var v := _item_card(Icons.model_icon(def["icon"]), tr(def["name"]), tr(def["desc"]), 88, "campaign:" + id)
+	var cost := Game.campaign_cost(id)
+	var v := _item_card(Icons.model_icon(_promo_icon(id)), tr(def["name"]), tr(def["desc"]), 88, "campaign:" + id)
 	panel_grid.columns = 1
+	# What it should bring here, before a dirham is spent.
+	var preview := Game.promo_preview(id)
+	var worth: Label
+	if bool(preview["capped"]):
+		worth = _label(tr("ui.a_capped"), "Small")
+		worth.add_theme_color_override("font_color", UiTheme.BAD)
+	else:
+		var extra := maxi(0, roundi(float(preview["extra_buyers_per_day"])))
+		var net := float(preview["net"])
+		worth = _label(tr("ui.a_gain" if net >= 0.0 else "ui.a_loss") % [extra, int(preview["days"]), Loc.money(roundf(absf(net)))], "Small")
+		worth.add_theme_color_override("font_color", UiTheme.GOOD if net >= 0.0 else UiTheme.BAD)
+	worth.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	worth.add_theme_font_override("font", UiTheme.bold())
+	v.add_child(worth)
 	var b: Button
+	var why := Game.marketing_lock_reason(id)
 	if Game.marketing.has(id):
 		b = _locked_button(tr("ui.a_active") % int(Game.marketing[id]), 220)
+	elif why != "":
+		b = _locked_button(why, 220)
 	else:
-		b = _buy_button(tr("ui.a_start") % Loc.money(float(def["cost"])), float(def["cost"]), Game.start_marketing.bind(id), 220)
+		b = _buy_button(tr("ui.a_start") % Loc.money(cost), cost, Game.start_marketing.bind(id), 220)
 	_card_action(v, _menu_target(b, "start_promo"))
+
+func _promo_icon(id: String) -> String:
+	return String(Data.MARKETING[id]["icon"])
 
 func _promo_roll_card(index: int) -> PanelContainer:
 	var id := _roll_ids[index]
 	var def: Dictionary = Data.MARKETING[id]
 	var title := tr(def["name"])
-	var value := tr("ui.a_active") % int(Game.marketing[id]) if Game.marketing.has(id) else Loc.money(float(def["cost"]))
-	var card := _model_roll_card("campaign:" + id, def["icon"], title, value)
+	var why := Game.marketing_lock_reason(id)
+	var value := Loc.money(Game.campaign_cost(id))
+	if Game.marketing.has(id):
+		value = tr("ui.a_active") % int(Game.marketing[id])
+	elif why != "":
+		value = why
+	var card := _model_roll_card("campaign:" + id, _promo_icon(id), title, value)
 	_roll_open(card, index, "inspect_" + id, title, _open_prep_detail.bind(id))
 	return card
 
@@ -2348,7 +2975,7 @@ func _reveal_purchase(kind: String) -> void:
 
 ## label  [-]  value  [+]   with on_delta.call(-1 / +1). The buttons grey out at the ends.
 func _stepper(parent: Container, label: String, value: String, value_w: float, variation: String, on_delta: Callable,
-		btn: Vector2 = Vector2(56, 52), can_dec: bool = true, can_inc: bool = true) -> Array[Button]:
+		btn: Vector2 = Vector2(60, 56), can_dec: bool = true, can_inc: bool = true) -> Array[Button]:
 	var buttons: Array[Button] = []
 	var nl := _label(label, "Muted")
 	nl.size_flags_horizontal = 0
@@ -2433,12 +3060,8 @@ func _stagger_cards() -> void:
 		var ctl := c as Control
 		if i >= 6:
 			break
-		ctl.pivot_offset = Vector2(ctl.size.x / 2.0, 0.0)
 		ctl.modulate.a = 0.0
-		ctl.scale = Vector2(0.97, 0.97)
-		var tw := ctl.create_tween().set_parallel(true)
-		tw.tween_property(ctl, "modulate:a", 1.0, 0.2).set_delay(0.03 * i)
-		tw.tween_property(ctl, "scale", Vector2.ONE, 0.28).set_delay(0.03 * i).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		ctl.create_tween().tween_property(ctl, "modulate:a", 1.0, 0.22).set_delay(0.05 * i)
 		i += 1
 
 ## The money figure jumps and flashes green (gain) or coral (loss).
@@ -2502,7 +3125,7 @@ func _banner(text: String) -> void:
 	await get_tree().process_frame # layout first: the strip and the root need their sizes
 	banner.reset_size()
 	var w := root.size.x
-	var y := root.size.y * 0.3
+	var y := _below_guide(root.size.y * 0.3)
 	banner.modulate.a = 0.0
 	banner.position = Vector2((w - banner.size.x) / 2.0 + 80.0, y)
 	if _banner_tween:

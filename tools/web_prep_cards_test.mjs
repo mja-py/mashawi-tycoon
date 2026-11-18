@@ -57,20 +57,30 @@ try {
 
       await hit('tab_promote');
       await snapshot('promote');
-      const campaigns = { fliers: [150, 1], posters: [450, 3], social: [750, 7], radio: [1300, 5] };
-      for (const [id, [cost, days]] of Object.entries(campaigns)) {
+      // The modern campaigns: each shows what it should bring, spends once, then reads active.
+      // Cart prices and lengths (Data.MARKETING; a bigger stand pays PROMO_SCALE times as much).
+      for (const [id, [cost, days]] of Object.entries({ samples: [20, 1], social: [40, 3], chat: [60, 5], maps: [70, 14] })) {
         await rollTo('inspect_' + id);
         const before = await saved();
         await hit('inspect_' + id);
-        assert.equal((await saved()).money, before.money);
+        assert.equal((await saved()).money, before.money, id + ': looking is free');
         await hit('start_promo');
         const after = await saved();
-        assert.equal(after.marketing[id], days);
-        assert.equal(before.money - after.money, cost);
-        assert((await peek('start_promo')).disabled);
+        assert.equal(after.marketing[id], days, id + ' runs for its days');
+        assert.equal(before.money - after.money, cost, id + ' costs its cart price');
+        assert((await peek('start_promo')).disabled, id + ' cannot be bought twice');
         await hit('back_cards');
       }
-      console.log(lang, 'all four promotions spend once and show active state');
+      // A food blogger only comes to a stand with a name (2.0 stars); a new stand has 1.1.
+      await rollTo('inspect_blogger');
+      const beforeBlogger = await saved();
+      await hit('inspect_blogger');
+      assert((await peek('start_promo')).disabled, 'the blogger is locked for a new stand');
+      assert.deepEqual(Object.keys((await saved()).marketing).sort(), ['chat', 'maps', 'samples', 'social']);
+      assert.equal((await saved()).money, beforeBlogger.money);
+      await hit('back_cards');
+      for (const gone of ['fliers', 'posters', 'radio']) assert(!(await peek('inspect_' + gone)), gone + ' is retired');
+      console.log(lang, 'four modern promotions spend once and show active state; the blogger waits for 2 stars');
 
       await hit('tab_build');
       await snapshot('build');

@@ -43,6 +43,13 @@ func _ready() -> void:
 	_test_played_day_reputation(game)
 	_test_group_orders(game)
 	_test_reveal_before_open(game)
+	_test_loss_stats(game)
+	_test_opening_buzz(game)
+	_test_wages(game)
+	_test_promotions(game)
+	_test_advisor(game)
+	_test_feedback_ui()
+	_test_release3_strings()
 	game.delete_save() # the suite must not leave user://save_test.json behind
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
@@ -327,6 +334,7 @@ func _test_group_orders(game) -> void:
 	var stall_days := {}
 	for grill in [1, 6]:
 		game.new_game()
+		game.day = int(Data.OPENING["days"]) + 1 # a steady day, after the opening buzz
 		for id in Data.INGREDIENTS:
 			game.inventory[id] = 5000
 		game.rig = {"stage": "stall", "stations": {"grill": grill, "karak": 2, "doner": 1}}
@@ -685,8 +693,21 @@ func _test_skip_pickup(game) -> void:
 	check(receipts.size() == 1 and game.inventory["fries"] == 29, "a repeated service callback cannot charge the buyer twice")
 	check(not sim._pickup_ready(buyer), "an active handoff holds the pickup counter")
 	sim._process(0.05)
-	check(is_equal_approx(world._handoff_elapsed, 0.10) and buyer._bag == null,
-		"Skip advances the pose and prop transfer at the readable service speed")
+	check(world._handoff_elapsed > 0.0 and world._handoff_elapsed <= 0.10 + 0.001 and buyer._bag == null,
+		"Skip advances the pose and prop transfer no faster than the readable service speed")
+	# Speed changes glide: a 4x day eases down to 2x for a handoff instead of snapping.
+	sim.finishing = false
+	sim.set_playback_speed(4.0)
+	sim._speed_now = 4.0
+	sim._process(0.05)
+	var eased: float = sim._speed_now
+	check(eased < 4.0 and eased > 2.0, "a handoff at 4x starts easing towards 2x (%.2f)" % eased)
+	for frame in range(8):
+		sim._process(0.05)
+		if sim._handoff_left <= 0.0:
+			break
+	check(sim._handoff_left <= 0.0 or is_equal_approx(sim._speed_now, 2.0), "the eased speed settles at the readable 2x")
+	sim.finishing = true
 	sim._close()
 	check(reports.is_empty(), "the closing curtain waits for the active handoff")
 	for tick in range(45):
@@ -844,10 +865,12 @@ func _test_closing_meal_handoff(game) -> void:
 	game.new_game()
 
 ## A fixed stage at the parity run's mid levels: the full menu, ample stock, the
-## autoplayer's prices. Same setup as tests/balance_curve.gd's location matrix.
+## autoplayer's prices. Same setup as tests/balance_curve.gd's location matrix. A rig tier
+## (cart, stall, truck) puts the same levels on the rig.
 func _setup_fixed(game, tier: int, location: String, pop: float) -> void:
 	var levels: Dictionary = load("res://tests/sim_parity.gd").get_script_constant_map()["LEVELS"][tier]["mid"]
 	game.new_game()
+	game.day = int(Data.OPENING["days"]) + 1 # a steady-state day, after the opening buzz
 	game.money = 1e7
 	game.popularity = pop
 	game.weather = "sunny"
@@ -858,10 +881,10 @@ func _setup_fixed(game, tier: int, location: String, pop: float) -> void:
 	for id in levels:
 		if id in def["stations"]:
 			stations[id] = mini(int(levels[id]), Economy.station_level_cap(Data.STATIONS[id], def))
-	game.rig["stage"] = "truck"
-	game.rig["stations"] = {}
+	game.rig["stage"] = "truck" if tier >= 3 else def["id"]
+	game.rig["stations"] = {} if tier >= 3 else stations
 	game.location = location
-	game.plots[location] = {"stage": def["id"], "stations": stations, "reputation": pop, "last_visit": game.day}
+	game.plots[location] = {"stage": def["id"] if tier >= 3 else "", "stations": stations if tier >= 3 else {}, "reputation": pop, "last_visit": game.day}
 	for id in Data.MENU_ITEMS:
 		var on: bool = game.item_available(id)
 		game.menu[id]["unlocked"] = on
@@ -957,7 +980,7 @@ func _test_economy() -> void:
 	var promoted := Economy.stop_probability(0.4, 0.9, 0.3, 0, 4, 0.6, 1.8)
 	check(rivals < quiet * 0.5, "rivals halve stops without promotion")
 	check(promoted > quiet, "promotion drowns out rivals and then some")
-	check(is_zero_approx(Economy.competition_loss(0.6, 0.3, 1.8)), "radio at x1.8 covers competition fully")
+	check(is_zero_approx(Economy.competition_loss(0.6, 0.3, 1.8)), "a +30% campaign at x1.8 covers competition fully")
 	check(Economy.stop_probability(1.0, 1.2, 0.3, 0, 4) > Economy.stop_probability(0.2, 0.9, 0.0, 0, 4), "popular + marketed stand attracts more")
 	var t_sun := Economy.traffic_per_hour(loc, "sunny", 13.0, false)
 	var t_rain := Economy.traffic_per_hour(loc, "sandstorm", 13.0, false)
@@ -1123,7 +1146,7 @@ func _test_goals(game) -> void:
 	game.end_day({"served": 12, "revenue": 120.0, "cogs": 40.0, "satisfaction_sum": 8.0, "sold": {}})
 	check(game.goal_ready(), "8 served in a day completes the first goal")
 	var m: float = game.money
-	check(game.claim_goal() and game.money == m + 150.0 and game.goal_index == 1 and game.goals_claimed == ["first_30"], "claim pays once and advances")
+	check(game.claim_goal() and game.money == m + float(Data.GOALS[0]["reward"]["money"]) and game.goal_index == 1 and game.goals_claimed == ["first_30"], "claim pays once and advances")
 	check(not game.claim_goal(), "next goal not ready yet")
 	game.money = 1000.0
 	game.buy_station_level("counter")
@@ -1359,7 +1382,7 @@ func _test_economy_audit(game) -> void:
 	for i in range(5):
 		game.buy_station_level("counter")
 	game.money = 4321.0
-	game.marketing["fliers"] = 999
+	game.marketing["social"] = 999
 	game.save()
 	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(game.save_path))
 	raw["menu"]["chicken_tikka"]["unlocked"] = null
@@ -1369,7 +1392,7 @@ func _test_economy_audit(game) -> void:
 	check(game.load_game() and game.rig["stage"] == "truck" and game.station_level("counter") == 5 and game.money == 4321.0,
 		"malformed menu flags do not wipe rig and stations on load")
 	check(game.menu["chicken_tikka"]["unlocked"] and not game.menu["soda"]["enabled"], "menu flags recover to safe values")
-	check(int(game.marketing.get("fliers", 0)) == int(Data.MARKETING["fliers"]["days"]), "loaded promotions cannot outlast their campaign")
+	check(int(game.marketing.get("social", 0)) == int(Data.MARKETING["social"]["days"]), "loaded promotions cannot outlast their campaign")
 	game.delete_save()
 	# the headless day seats only meals, as the visible day does
 	game.new_game()
@@ -1393,3 +1416,581 @@ func _test_economy_audit(game) -> void:
 	check(float(est["dine_in"]) == 0.0 and float(est["served"]) > 0.0, "the estimate seats no drink orders")
 	var stats: Dictionary = FastSim.run(ctx, game.rng)
 	check(int(stats["served"]) > 0 and int(stats["dine_in"]) == 0, "FastSim seats no drink orders (%d served)" % int(stats["served"]))
+
+## Losses and moods: both sims count would-be buyers nobody could serve (no drink on the menu,
+## no sweet at a stage that could sell one), guests sent home at closing, and every sale's
+## mood; the books keep them with the day's average wait, prices and campaigns.
+func _test_loss_stats(game) -> void:
+	var was_persistent: bool = game.persist
+	game.persist = false
+	# a busy cart with every drink switched off, at a level-0 counter
+	var busy := func() -> void:
+		game.new_game()
+		game.day = 30
+		game.popularity = 1.0
+		game.location = "creek"
+		game.plot()["reputation"] = 1.0
+		game.weather = "hot"
+		game.forecast = "hot"
+		game.weather_day = game.day
+		for ing in Data.INGREDIENTS:
+			game.inventory[ing] = 500
+		for id in Data.MENU_ITEMS:
+			if Data.MENU_ITEMS[id]["kind"] == "drink":
+				game.menu[id]["enabled"] = false
+	var fast_sum := {"no_item": 0, "drink": 0, "closing": 0, "moods": 0, "served": 0}
+	for i in range(4):
+		busy.call()
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 4401 + i
+		var s := FastSim.run(game.sim_context(), rng)
+		for k in ["no_item", "closing", "mood_great", "mood_ok", "mood_bad", "no_item_kinds"]:
+			check(s.has(k), "FastSim reports %s" % k)
+		fast_sum["no_item"] += int(s["no_item"])
+		fast_sum["drink"] += int(s["no_item_kinds"].get("drink", 0))
+		fast_sum["closing"] += int(s["closing"])
+		fast_sum["moods"] += int(s["mood_great"]) + int(s["mood_ok"]) + int(s["mood_bad"])
+		fast_sum["served"] += int(s["served"])
+	check(int(fast_sum["drink"]) > 0 and int(fast_sum["no_item"]) >= int(fast_sum["drink"]), "FastSim counts thirsty passers with no drink on the menu (%s)" % str(fast_sum))
+	check(int(fast_sum["moods"]) == int(fast_sum["served"]), "every FastSim sale has one mood (%s)" % str(fast_sum))
+	# Global Village peaks at 23:00 and closes at midnight: a level-0 truck still has a line
+	var closing := 0
+	for i in range(4):
+		game.new_game()
+		game.popularity = 1.0
+		game.rig["stage"] = "truck"
+		game.location = "gv"
+		game.plot()["reputation"] = 1.0
+		game.weather = "breeze"
+		game.weather_day = game.day
+		for ing in Data.INGREDIENTS:
+			game.inventory[ing] = 500
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 5501 + i
+		closing += int(FastSim.run(game.sim_context(), rng)["closing"])
+	check(closing > 0, "FastSim counts buyers still in line at closing (%d)" % closing)
+	# the played day: the same keys, the same rules
+	busy.call()
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	game.day_seed = 4401
+	var sim := DaySim.new()
+	add_child(sim)
+	var played := DayRunner.play(sim, world, game.sim_context())
+	for k in ["no_item", "closing", "mood_great", "mood_ok", "mood_bad", "no_item_kinds"]:
+		check(played.has(k), "the played day reports %s" % k)
+	check(int(played["no_item_kinds"].get("drink", 0)) > 0, "the played day counts thirsty passers with no drink on the menu (%d)" % int(played["no_item"]))
+	check(int(played["mood_great"]) + int(played["mood_ok"]) + int(played["mood_bad"]) == int(played["served"]), "every played sale has one mood")
+	sim.free()
+	# a guest still in line at closing is counted once
+	busy.call()
+	game.day_seed = 4402
+	sim = DaySim.new()
+	add_child(sim)
+	sim.start(game.sim_context(), world)
+	var guest := world.spawn_guest(-1, world.queue_slot(0))
+	sim._on_gave_up(guest, "closing")
+	check(int(sim.stats["closing"]) == 1 and int(sim.stats["left_wait"]) == 0, "closing time sends the line home as 'closing', not 'left waiting'")
+	sim.free()
+	world.free()
+	# sweets wished for at a truck that has no sweets counter yet, none at a cart
+	game.new_game()
+	check(not game.kind_possible("sweet") and game.kind_possible("side") and game.kind_on_sale("side"), "a cart cannot sell sweets; salad is on")
+	game.rig["stage"] = "truck"
+	check(game.kind_possible("sweet") and not game.kind_on_sale("sweet"), "a truck could sell sweets once it has the counter")
+	for ing in Data.INGREDIENTS:
+		game.inventory[ing] = 100
+	var ledger := StockLedger.new()
+	var draw := RandomNumberGenerator.new()
+	draw.seed = 3
+	var wished := 0
+	for i in range(40):
+		var sale := ledger.settle(i, "chicken_tikka", 1, 1.0, "food", false, "sunny", draw)
+		wished += int(sale["wished"].get("sweet", 0))
+		check(not sale["wished"].has("side") and not sale["wished"].has("drink"), "kinds on the menu are never 'wished for'")
+	check(wished > 5 and wished < 30, "about a third of food portions wish for a sweet the truck does not sell (%d of 40)" % wished)
+	# the books: average wait, moods, losses, prices and campaigns of the day
+	game.new_game()
+	game.menu["soda"]["enabled"] = false
+	game.marketing = {Data.MARKETING.keys()[0]: 1}
+	var r: Dictionary = game.end_day({"served": 4, "portions": 5, "revenue": 50.0, "cogs": 20.0, "satisfaction_sum": 2.4, "wait_sum": 6.0,
+		"no_item": 3, "no_item_kinds": {"drink": 2, "sweet": 1}, "closing": 2, "mood_great": 1, "mood_ok": 2, "mood_bad": 1, "sold": {}})
+	check(is_equal_approx(float(r["wait"]), 1.5) and int(r["no_item"]) == 3 and int(r["closing"]) == 2, "the report keeps the average wait and the losses")
+	check(int(r["mood_great"]) == 1 and int(r["mood_ok"]) == 2 and int(r["mood_bad"]) == 1, "the report keeps the moods")
+	check(r["prices"].has("chicken_tikka") and not r["prices"].has("soda") and float(r["prices"]["chicken_tikka"]) == float(game.menu["chicken_tikka"]["price"]), "the report keeps the prices of the dishes on sale")
+	check(r["promos"] == [Data.MARKETING.keys()[0]] and game.marketing.is_empty(), "the report names the campaign that ran, which then ends")
+	# old or malformed history rows are cleaned on load
+	game.history = [{"location": "creek", "weather": "sunny", "served": 3},
+		{"location": "creek", "weather": "sunny", "served": 3, "no_item": -4, "wait": "x", "prices": {"chicken_tikka": 12, "ghost": 3, "soda": NAN},
+			"promos": ["ghost", 7, Data.MARKETING.keys()[0], Data.MARKETING.keys()[0]], "no_item_kinds": {"drink": 2, "rocket": 9}, "mood_bad": 1.0}]
+	game._validate()
+	var a: Dictionary = game.history[0]
+	var b: Dictionary = game.history[1]
+	check(int(a["no_item"]) == 0 and float(a["wait"]) == 0.0 and a["prices"].is_empty() and a["promos"].is_empty() and int(a["mood_great"]) == 0,
+		"a version-4 history row gains empty loss, mood, price and campaign fields")
+	check(int(b["no_item"]) == 0 and float(b["wait"]) == 0.0 and b["prices"].keys() == ["chicken_tikka"] and b["promos"] == [Data.MARKETING.keys()[0]]
+		and b["no_item_kinds"].keys() == ["drink"] and int(b["mood_bad"]) == 1, "malformed history fields are cleaned (%s)" % str(b))
+	game.persist = was_persistent
+	game.new_game()
+
+## The opening buzz (Data.OPENING): a new stand draws extra passers-by on day 1, fading in a
+## straight line to none, through the same traffic_mult every sim and the estimate read.
+func _test_opening_buzz(game) -> void:
+	var days := int(Data.OPENING["days"])
+	var start := float(Data.OPENING["traffic"])
+	check(start > 1.0 and days >= 7, "the opening buzz starts above normal traffic and lasts at least a week")
+	check(is_equal_approx(Economy.opening_boost(1), start) and is_equal_approx(Economy.opening_boost(days + 1), 1.0) and Economy.opening_boost(500) == 1.0,
+		"the buzz is x%.1f on day 1 and over after day %d" % [start, days])
+	var falling := true
+	for d in range(1, days + 1):
+		falling = falling and Economy.opening_boost(d) > Economy.opening_boost(d + 1)
+	check(falling and is_equal_approx(Economy.opening_boost(2) - Economy.opening_boost(3), Economy.opening_boost(days - 1) - Economy.opening_boost(days)), "the buzz fades in a straight line")
+	game.new_game()
+	check(is_equal_approx(game.opening_boost(), start) and is_equal_approx(float(game.sim_context()["traffic_mult"]), start), "day 1's context carries the buzz")
+	check(is_equal_approx(float(game.what_if({"stations": {"grill": 2}})["traffic_mult"]), start), "previews see today's buzz")
+	var loc: Dictionary = Data.LOCATIONS["fahidi"]
+	check(is_equal_approx(Economy.arrival_rate(loc, "sunny", 13.0, {"traffic_mult": start}), start * Economy.arrival_rate(loc, "sunny", 13.0, {})), "the buzz multiplies passers-by")
+	var busy := Economy.throughput_estimate(game.sim_context())
+	game.day = days + 1
+	check(game.opening_boost() == 1.0 and float(game.sim_context()["traffic_mult"]) == 1.0, "after the buzz the street is back to normal")
+	var quiet := Economy.throughput_estimate(game.sim_context())
+	check(float(busy["want"]) > float(quiet["want"]) * 2.0 and float(busy["served"]) > float(quiet["served"]), "the estimate sees the opening crowd (%.0f vs %.0f buyers)" % [float(busy["served"]), float(quiet["served"])])
+	var passers := {}
+	for d in [1, days + 1]:
+		game.new_game()
+		game.day = d
+		for ing in Data.INGREDIENTS:
+			game.inventory[ing] = 300
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 77
+		passers[d] = int(FastSim.run(game.sim_context(), rng)["passers"])
+	check(float(passers[1]) > float(passers[days + 1]) * 2.0, "FastSim's day 1 is busier than a steady day (%s)" % str(passers))
+	game.new_game()
+
+## Promotions (Data.MARKETING): five campaigns priced by the stand's stage, each scaled as
+## Economy.campaign_boost, locked by Game.marketing_lock_reason and previewed without side
+## effects by Game.promo_preview; the blogger's review moves stars; version-4 saves get the
+## days left of removed campaigns refunded once.
+func _test_promotions(game) -> void:
+	var was_persistent: bool = game.persist
+	game.persist = false
+	var ids: Array = Data.MARKETING.keys()
+	ids.sort()
+	check(ids == ["blogger", "chat", "maps", "samples", "social"], "the five campaigns (%s)" % str(ids))
+	check(Data.MARKETING.has(Data.STARTER_PROMO) and int(Data.MARKETING[Data.STARTER_PROMO]["days"]) == 1, "the guide's starter campaign is a one-day trial")
+	var previous := TranslationServer.get_locale()
+	for locale in ["en", "ar"]:
+		TranslationServer.set_locale(locale)
+		for id in Data.MARKETING:
+			var def: Dictionary = Data.MARKETING[id]
+			var text := tr(String(def["desc"]))
+			check(tr(String(def["name"])) != String(def["name"]) and text.contains("+%d%%" % roundi(float(def["boost"]) * 100.0))
+				and (int(def["days"]) == 1 or text.contains(str(int(def["days"])))), "%s card (%s) states its boost and days" % [id, locale])
+		check(tr("ui.a_needs_stars") != "ui.a_needs_stars" and tr("ui.promo_refund").contains("%s") and tr("mk.review_good") != "mk.review_good",
+			"lock, refund and review lines exist (%s)" % locale)
+	TranslationServer.set_locale(previous)
+	for id in Data.MARKETING:
+		check(ResourceLoader.exists("res://assets/models/%s.glb" % Data.MARKETING[id]["icon"]), "campaign %s shows an existing icon" % id)
+	# prices grow with the stand
+	var samples: Dictionary = Data.MARKETING["samples"]
+	check(Economy.campaign_cost(samples, 0) == float(samples["cost"]) and is_equal_approx(Economy.campaign_cost(samples, 4), float(samples["cost"]) * float(Data.PROMO_SCALE[4])),
+		"a restaurant's tasting tray costs PROMO_SCALE times the cart's")
+	# offers to regulars grow with the guests served, the blogger's word with their mood
+	var chat: Dictionary = Data.MARKETING["chat"]
+	var full := int(chat["regulars_full"])
+	check(Economy.campaign_boost(chat, 0, 0.8) == 0.0 and is_equal_approx(Economy.campaign_boost(chat, full / 2, 0.8), float(chat["boost"]) * 0.5)
+		and is_equal_approx(Economy.campaign_boost(chat, full * 3, 0.8), float(chat["boost"])), "offers to regulars grow with the guests served, capped")
+	var blog: Dictionary = Data.MARKETING["blogger"]
+	var mid_mood := Economy.campaign_boost(blog, 0, 0.55)
+	check(Economy.campaign_boost(blog, 0, float(blog["sat_floor"])) == 0.0 and is_equal_approx(Economy.campaign_boost(blog, 0, 1.0), float(blog["boost"]))
+		and mid_mood > 0.0 and mid_mood < float(blog["boost"]), "the blogger's word follows the guests' mood")
+	check(is_equal_approx(Economy.campaign_boost(samples, 0, 0.0), float(samples["boost"])), "a plain campaign gives its boost")
+	check(Economy.campaign_review(blog, 0.9) > 0.0 and Economy.campaign_review(blog, 0.3) < 0.0 and Economy.campaign_review(blog, 0.6) == 0.0
+		and Economy.campaign_review(samples, 0.9) == 0.0, "only the blogger's review moves stars")
+	# locks and prices
+	game.new_game()
+	game.money = 10000.0
+	game.popularity = float(blog["min_popularity"]) - 0.05
+	var why: String = game.marketing_lock_reason("blogger")
+	check(why != "" and why.contains("2.0"), "the blogger needs 2.0 stars (%s)" % why)
+	check(not game.start_marketing("blogger") and game.money == 10000.0 and game.marketing.is_empty(), "a locked campaign cannot start")
+	check(game.marketing_lock_reason("ghost") != "" and not game.start_marketing("ghost"), "an unknown campaign is refused")
+	game.popularity = float(blog["min_popularity"])
+	check(game.marketing_lock_reason("blogger") == "", "with 2.0 stars the blogger can come")
+	check(game.start_marketing("samples") and is_equal_approx(game.money, 10000.0 - float(samples["cost"])) and int(game.marketing["samples"]) == 1,
+		"starting a campaign at the cart charges the cart's price")
+	check(game.marketing_lock_reason("samples") != "" and not game.start_marketing("samples"), "a running campaign cannot start twice")
+	game.marketing = {"chat": 3}
+	game.total_served = full / 2
+	check(is_equal_approx(game.marketing_boost(), float(chat["boost"]) * 0.5) and is_equal_approx(float(game.sim_context()["boost"]), game.marketing_boost() + game.attract_bonus()),
+		"the running campaigns' scaled boost reaches the day")
+	game.marketing = {"ghost": 2, "maps": 99}
+	game._validate()
+	check(game.marketing.keys() == ["maps"] and int(game.marketing["maps"]) == int(Data.MARKETING["maps"]["days"]), "unknown campaigns are dropped, lengths clamped")
+	game.new_game()
+	game.money = 10000.0
+	game.rig["stage"] = Data.stage_def(2)["id"]
+	check(game.start_marketing("social") and is_equal_approx(game.money, 10000.0 - Economy.campaign_cost(Data.MARKETING["social"], 2)), "a truck's campaign costs the truck's price")
+	# the preview: no side effects, no RNG; pays where the stand has room, flags a full one
+	_setup_fixed(game, 3, "creek", 0.6)
+	game.total_served = 2000
+	var money_before: float = game.money
+	var rng_before: int = game.rng.state
+	var pv: Dictionary = game.promo_preview("maps")
+	check(game.money == money_before and game.marketing.is_empty() and game.rng.state == rng_before, "a preview changes nothing")
+	check(pv.has_all(["cost", "days", "extra_buyers_per_day", "extra_profit_total", "net", "capped"])
+		and is_equal_approx(float(pv["net"]), float(pv["extra_profit_total"]) - float(pv["cost"])) and is_equal_approx(float(pv["cost"]), game.campaign_cost("maps")),
+		"the preview's fields")
+	var best := {}
+	for setup in [[0, "fahidi"], [1, "fahidi"], [2, "creek"], [3, "creek"], [4, "creek"], [5, "creek"]]:
+		_setup_fixed(game, setup[0], setup[1], 0.6)
+		game.total_served = 600 * (int(setup[0]) + 1)
+		game.history = [{"served": 30, "satisfaction": 0.75, "promos": []}]
+		var top := 0.0
+		for id in Data.MARKETING:
+			var p: Dictionary = game.promo_preview(id)
+			top = maxf(top, float(p["extra_profit_total"]) / float(p["cost"]))
+		best[Data.stage_def(setup[0])["id"]] = snappedf(top, 0.01)
+	var all_pay := true
+	for k in best:
+		all_pay = all_pay and float(best[k]) >= 1.3
+	check(all_pay, "with room to serve, the best campaign returns 1.3x its price or more at every stage (%s)" % str(best))
+	_setup_fixed(game, 3, "creek", 0.6)
+	var room: Dictionary = game.promo_preview("samples")
+	_setup_fixed(game, 3, "downtown", 0.6)
+	var full_day: Dictionary = game.promo_preview("samples")
+	check(not room["capped"] and full_day["capped"] and float(full_day["extra_profit_total"]) < float(room["extra_profit_total"]),
+		"a full stand is flagged and earns less from the same campaign")
+	_setup_fixed(game, 3, "mall", 0.6)
+	var mall: Dictionary = game.promo_preview("samples")
+	check(float(mall["extra_profit_total"]) > 2.0 * float(mall["cost"]), "at the Mall a campaign wins the crowd back from rivals (x%.1f)" % (float(mall["extra_profit_total"]) / float(mall["cost"])))
+	game.new_game()
+	check(game.promo_preview("samples")["capped"], "during the opening buzz the cart is already full")
+	# the blogger's review when the visit ends: the campaign days' guests decide
+	game.new_game()
+	game.popularity = 0.6
+	game.marketing = {"blogger": 1}
+	game.history = [{"location": "fahidi", "weather": "sunny", "served": 10, "satisfaction": 0.9, "promos": ["blogger"]},
+		{"location": "fahidi", "weather": "sunny", "served": 10, "satisfaction": 0.9, "promos": ["blogger"]}]
+	var happy := {"_day": game.day, "served": 10, "satisfaction_sum": 4.0}
+	var expect := clampf(0.6 + Economy.popularity_delta(happy, 0.6) + float(blog["review"]), 0.05, 1.0)
+	var r: Dictionary = game.end_day(happy)
+	check(is_equal_approx(game.popularity, expect) and is_equal_approx(float(r["review"]), float(blog["review"])) and game.marketing.is_empty(),
+		"a visit whose days averaged happy guests lifts the stars")
+	game.popularity = 0.6
+	game.marketing = {"blogger": 1}
+	game.history = []
+	var sad := {"_day": game.day, "served": 10, "satisfaction_sum": 3.0}
+	expect = clampf(0.6 + Economy.popularity_delta(sad, 0.6) - float(blog["review"]), 0.05, 1.0)
+	r = game.end_day(sad)
+	check(is_equal_approx(game.popularity, expect) and float(r["review"]) < 0.0, "an unhappy visit lowers them")
+	# a version-4 save: removed campaigns refunded once for their days left, the video carries on
+	game.persist = true
+	game.new_game()
+	game.save()
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(game.save_path))
+	raw["version"] = 4
+	raw["money"] = 1000.0
+	raw["marketing"] = {"fliers": 1, "radio": 3, "posters": 0, "social": 6, "ghost": 2}
+	_write_save(game, raw)
+	var notes := []
+	var grab := func(text: String, _kind: String) -> void: notes.append(text)
+	game.notify.connect(grab)
+	check(game.load_game(), "a version-4 save with old campaigns loads")
+	game.notify.disconnect(grab)
+	var refund: float = float(Data.LEGACY_MARKETING["fliers"]["cost"]) + float(Data.LEGACY_MARKETING["radio"]["cost"]) * 3.0 / float(Data.LEGACY_MARKETING["radio"]["days"])
+	check(is_equal_approx(game.money, 1000.0 + refund), "removed campaigns are refunded for their days left (%.0f)" % game.money)
+	check(game.marketing.keys() == ["social"] and int(game.marketing["social"]) == int(Data.MARKETING["social"]["days"]), "the short video carries on, clamped to its new length")
+	check(notes.size() == 1, "the player is told once (%s)" % str(notes))
+	check(game.load_game() and is_equal_approx(game.money, 1000.0 + refund), "the refund is paid only once")
+	raw = JSON.parse_string(FileAccess.get_file_as_string(game.save_path))
+	check(int(raw["version"]) == 5, "the refunded save is rewritten as version 5")
+	raw["marketing"] = {"fliers": 1}
+	_write_save(game, raw)
+	check(game.load_game() and is_equal_approx(game.money, 1000.0 + refund) and game.marketing.is_empty(), "a version-5 save never refunds an unknown campaign")
+	game.delete_save()
+	game.persist = was_persistent
+	game.new_game()
+
+## Wages (Data.WAGES): nothing at the cart and stall, one helper on the truck, then a wage per
+## role the fixed stand has, growing with the stage; previews, the estimate, the closing books
+## and the Stock-today reserve all use the same bill.
+func _test_wages(game) -> void:
+	var was_persistent: bool = game.persist
+	game.persist = false
+	var w: Dictionary = Data.WAGES
+	game.new_game()
+	check(game.daily_wages() == 0.0 and float(game.sim_context()["wages"]) == 0.0, "you run the cart alone: no wages")
+	game.rig["stage"] = Data.stage_def(1)["id"]
+	check(game.daily_wages() == 0.0, "the stall is still a one-person stand")
+	game.rig["stage"] = Data.stage_def(2)["id"]
+	check(is_equal_approx(game.daily_wages(), float(w["helper"])) and is_equal_approx(float(game.sim_context()["wages"]), float(w["helper"])),
+		"the truck pays one helper (%.0f AED)" % float(w["helper"]))
+	game.rig["stage"] = Data.stage_def(0)["id"]
+	check(is_equal_approx(float(game.what_if({"stage": 2})["wages"]), float(w["helper"])) and game.daily_wages() == 0.0,
+		"a truck preview carries the helper's wage without hiring anyone")
+	var bills := []
+	for tier in [3, 4, 5]:
+		_setup_fixed(game, tier, "creek", 0.6)
+		var bill: float = game.daily_wages()
+		bills.append(bill)
+		check(is_equal_approx(bill, Economy.daily_wages(tier, game.active_stations(), game.terrace_seats())) and is_equal_approx(float(game.sim_context()["wages"]), bill),
+			"the %s's wage bill reaches the context (%.0f AED)" % [Data.stage_def(tier)["id"], bill])
+		if tier < 5:
+			var next: Dictionary = game.what_if({"stage": tier + 1})
+			check(float(next["wages"]) > bill and is_equal_approx(game.daily_wages(), bill), "a preview of the next stage pays its bigger crew, today's bill is unchanged")
+	check(bills[0] > float(w["helper"]) and bills[1] > bills[0] and bills[2] > bills[1], "wages grow from the truck to the flagship (%s)" % str(bills))
+	# each role costs its own wage: a running kitchen station adds a cook, the terrace a server
+	var crew_table: Array = Data.SERVICE["kitchen_crew"]
+	var grade := float(w["grade"][3])
+	var base := Economy.daily_wages(3, {"counter": 1, "grill": 1}, 0)
+	var with_doner := Economy.daily_wages(3, {"counter": 1, "grill": 1, "doner": 1}, 0)
+	check(absf(with_doner - base - float(w["roles"]["cook"]) * float(crew_table[3]) * grade) <= 5.0,
+		"a second kitchen station hires its cook (%.0f AED more)" % (with_doner - base))
+	check(Economy.daily_wages(3, {"counter": 1, "grill": 1, "seating": 3}, 6) == base, "a kiosk's counter crew clears its few tables: no extra wage")
+	check(Economy.daily_wages(4, {"counter": 1, "grill": 1, "seating": 3}, 6) > Economy.daily_wages(4, {"counter": 1, "grill": 1}, 0), "a restaurant terrace pays its servers")
+	check(Economy.daily_wages(3, {"counter": 1, "grill": 1, "shade": 4}, 0) == base, "a station with no crew costs no wage")
+	# the closing books pay rent and wages; Stock today keeps both in the till
+	_setup_fixed(game, 4, "creek", 0.6)
+	var bill4: float = game.daily_wages()
+	var rent := float(game.loc()["rent"])
+	var before: float = game.money
+	var r: Dictionary = game.end_day({"_day": game.day})
+	check(is_equal_approx(float(r["wages"]), bill4) and is_equal_approx(before - game.money, rent + bill4), "closing pays the rent and the wage bill (%.0f + %.0f)" % [rent, bill4])
+	for ing in Data.INGREDIENTS:
+		game.inventory[ing] = 0
+	var cost := float(game.daily_stock_plan()["cost"])
+	game.money = rent + bill4 + cost - 1.0
+	check(cost > 0.0 and not game.stock_for_today(), "Stock today will not spend the rent and wages")
+	game.money = rent + bill4 + cost + 1.0
+	check(game.stock_for_today() and game.money < rent + bill4 + 2.0, "Stock today buys when rent and wages stay covered")
+	game.persist = was_persistent
+	game.new_game()
+
+## The built-in advisor: specific, priced, pointed at a real menu, and never touching the game.
+func _test_advisor(game) -> void:
+	game.new_game()
+	var panels := ["", "supplies", "menu", "place", "build", "promote", "goals"]
+	var first := Advisor.for_prep()
+	check(not first.is_empty(), "the advisor has something to say on day one")
+	for day in range(6):
+		Autoplayer.play_day(false, null, null)
+	var money: float = game.money
+	var rng_state: int = game.rng.state
+	var levels: int = game.levels_owned()
+	var menu_before := JSON.stringify(game.menu)
+	var prep := Advisor.for_prep()
+	check(is_equal_approx(game.money, money) and game.rng.state == rng_state and game.levels_owned() == levels and JSON.stringify(game.menu) == menu_before,
+		"asking the advisor spends nothing, buys nothing and rolls no dice")
+	check(prep.size() >= 1 and prep.size() <= Advisor.SHEET_TOP, "the planning sheet lists one to six things (%d)" % prep.size())
+	var ids := {}
+	for it in prep:
+		check(not String(it["text"]).begins_with("adv.") and not String(it["text"]).contains("%"), "advice '%s' is a finished sentence" % it["id"])
+		check(panels.has(String(it["panel"])), "advice '%s' points at a real menu (%s)" % [it["id"], it["panel"]])
+		check(not ids.has(it["id"]), "advice '%s' appears once" % it["id"])
+		ids[it["id"]] = true
+		if String(it["panel"]) == "build" and String(it["detail"]) != "" and String(it["detail"]) != "stage":
+			check(Data.STATIONS.has(String(it["detail"])), "advice '%s' names a real station" % it["id"])
+		if String(it["dish"]) != "":
+			check(Data.MENU_ITEMS.has(String(it["dish"])), "advice '%s' names a real dish" % it["id"])
+	# A day with every kind of loss: the report names the costliest and keeps room for a purchase.
+	game.money = 5000.0
+	var bad: Dictionary = (game.history.back() as Dictionary).duplicate(true)
+	bad.merge({"served": 12, "revenue": 120.0, "cogs": 50.0, "sold_out": 6, "left_wait": 5, "queue_full": 2, "crowd": 8,
+		"too_pricey": 4, "no_item": 5, "spoil_cost": 40.0, "bottleneck": "grill", "satisfaction": 0.45}, true)
+	game.set_price("chicken_tikka", float(game.price_range("chicken_tikka")[1]))
+	var report := Advisor.for_report(bad)
+	check(report.size() == Advisor.REPORT_TOP, "a bad day gets exactly three next steps (%d)" % report.size())
+	var kinds := report.map(func(it: Dictionary) -> String: return String(it["id"]))
+	check(kinds.has("sold_out") or kinds.has("line"), "the costliest losses lead the list (%s)" % [kinds])
+	check(report.any(func(it: Dictionary) -> bool: return int(it["prio"]) == 2), "one of the three is something to buy or save for (%s)" % [kinds])
+	check(Advisor._priciest_dish() == "chicken_tikka", "price complaints point at the dish furthest above its usual price")
+	var line := Advisor._day_insights(bad).filter(func(it: Dictionary) -> bool: return it["id"] == "line")
+	check(line.size() == 1 and line[0]["panel"] == "build" and line[0]["detail"] == "grill" and String(line[0]["text"]).contains("7"),
+		"a slow line names the station that held it back and how many left")
+	# A clean day has no loss lines.
+	var clean: Dictionary = bad.duplicate(true)
+	clean.merge({"sold_out": 0, "left_wait": 0, "queue_full": 0, "crowd": 0, "too_pricey": 0, "no_item": 0, "spoil_cost": 0.0,
+		"lost_rival": 0, "bottleneck": "", "satisfaction": 0.6}, true)
+	var losses := Advisor._day_insights(clean).filter(func(it: Dictionary) -> bool: return it["id"] in ["sold_out", "line", "crowd", "pricey", "no_item", "spoil", "rival"])
+	check(losses.is_empty(), "a clean day lists no lost guests")
+	# Weather and the opening crowd.
+	game.forecast = "hot"
+	check(Advisor._forecast_insights().size() == 1 and Advisor._forecast_insights()[0]["id"] == "hot", "a heatwave forecast gets a drinks tip")
+	game.forecast = "sunny"
+	check(Advisor._forecast_insights().is_empty(), "plain weather gets no weather tip")
+	game.day = int(Data.OPENING["days"]) - 1
+	check(Advisor._opening_insights().size() == 1, "the advisor warns before the opening crowd fades")
+	game.day = int(Data.OPENING["days"]) + 10
+	check(Advisor._opening_insights().is_empty(), "no opening warning once it is over")
+	var t := Advisor.trends()
+	check(int(t["days"]) == mini(14, game.history.size()) and (t["served"] as Array).size() == int(t["days"]) and Data.MENU_ITEMS.has(String(t["best_dish"])),
+		"trends cover the recorded days and name the best seller")
+	check((game.stage_def()["stations"] as Array).has(Advisor.best_station("counter")), "the guide's suggested upgrade exists at this stand")
+	_test_advisor_review(game)
+	game.new_game()
+
+## Cases from the independent review: each of these was wrong once.
+func _test_advisor_review(game) -> void:
+	game.new_game()
+	game.money = 100000.0
+	for day in range(3):
+		Autoplayer.play_day(false, null, null)
+	game.money = 100000.0
+	# The same answer is reused until the stand, menu or money changes.
+	var first: Array = Advisor.for_prep()
+	check(is_same(first, Advisor.for_prep()), "the advisor answers once per planning state")
+	var levels := JSON.stringify([game.rig, game.plots, game.menu, game.marketing])
+	var ranked: Dictionary = Autoplayer.rank([], null, true)
+	check(JSON.stringify([game.rig, game.plots, game.menu, game.marketing]) == levels and not (ranked["cands"] as Array).is_empty(),
+		"ranking at the player's own prices changes nothing")
+	game.set_price("chicken_tikka", float(game.menu["chicken_tikka"]["price"]) + 1.0)
+	check(not is_same(first, Advisor.for_prep()), "a price edit gets fresh advice")
+	# Extras guests asked for: named from the day's own count, pointed where they can be fixed.
+	var row: Dictionary = (game.history.back() as Dictionary).duplicate(true)
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["kind"] == "drink":
+			game.set_enabled(id, false)
+	row["no_item_kinds"] = {"drink": 7, "side": 1}
+	var drinks := Advisor._missing_extras(row)
+	check(not drinks.is_empty() and drinks["panel"] == "menu" and Data.MENU_ITEMS[drinks["dish"]]["kind"] == "drink" and String(drinks["text"]).contains("7"),
+		"missing drinks point at a drink to switch on (%s)" % [drinks])
+	check(float(drinks["gain"]) < 7 * 6.0, "a missed extra is valued as an add-on, not a whole order (%.0f)" % float(drinks.get("gain", 0.0)))
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["kind"] == "drink" and game.menu[id]["unlocked"]:
+			game.set_enabled(id, true)
+	check(Advisor._missing_extras(row).is_empty(), "no line once a drink is back on sale")
+	game.buy_stage()
+	game.buy_stage()
+	row["no_item_kinds"] = {"sweet": 9}
+	var sweets := Advisor._missing_extras(row)
+	check(game.station_available("sweets") and game.station_level("sweets") == 0 and not sweets.is_empty() and sweets["panel"] == "build" and sweets["detail"] == "sweets",
+		"missing sweets on a truck point at the sweets counter in Build (%s)" % [sweets])
+	row["no_item_kinds"] = {"sweet": 2}
+	check(Advisor._missing_extras(row).is_empty(), "a couple of wishes are not worth a line")
+	# A price rise is judged against today's prices, on that one dish.
+	for id in game.menu:
+		game.menu[id]["price"] = float(Data.MENU_ITEMS[id]["base_price"]) * 1.35
+	game.clamp_prices()
+	var before := JSON.stringify(game.menu)
+	var now := float(Economy.throughput_estimate(game.sim_context())["profit"])
+	var raise := Advisor._raise_candidate()
+	if not raise.is_empty():
+		var up := float(Economy.throughput_estimate(game.what_if({"prices": {raise["dish"]: raise["price"]}}))["profit"])
+		check(up > now and is_equal_approx(float(raise["gain"]), up - now) and is_equal_approx(float(raise["price"]), float(game.menu[raise["dish"]]["price"]) + 1.0),
+			"a suggested rise is +1 on that dish and earns more than today's prices")
+	var one: Dictionary = game.what_if({"prices": {"chicken_tikka": 9.0}})
+	var offered: Array = (one["offer"] as Array).filter(func(o: Dictionary) -> bool: return o["id"] == "chicken_tikka")
+	check(JSON.stringify(game.menu) == before and offered.size() == 1 and is_equal_approx(float(offered[0]["price"]), 9.0),
+		"what_if can price one dish and puts the menu back")
+	# One multiplier on the whole menu: complaints are about the food that sells most.
+	check(Data.MENU_ITEMS[Advisor._priciest_dish()]["kind"] == "food", "equal price ratios name a food dish, not a drink (%s)" % Advisor._priciest_dish())
+	# A plot that pays best elsewhere says where, and sends the player to Place.
+	var other: String = "creek" if game.location != "creek" else "metro"
+	var elsewhere := Advisor._purchase({"kind": "stage", "id": "kiosk", "where": other, "cost": 9000.0, "net": 9000.0, "gain": 120.0, "payback": 75.0, "score": 0.01}, true, 300.0)
+	check(elsewhere["id"] == "stage_at" and elsewhere["panel"] == "place" and String(elsewhere["text"]).contains(tr(Data.LOCATIONS[other]["name"])),
+		"a stage that pays best at another place names the place (%s)" % [elsewhere])
+	var here := Advisor._purchase({"kind": "stage", "id": "kiosk", "where": game.location, "cost": 9000.0, "net": 9000.0, "gain": 120.0, "payback": 75.0, "score": 0.01}, true, 300.0)
+	check(here["id"] == "buy" and here["panel"] == "build" and here["detail"] == "stage", "a stage that pays best here opens its Build card")
+	# A dish counts as unsold only on days it was on sale.
+	game.history.clear()
+	for i in range(5):
+		game.history.append({"day": i + 1, "location": game.location, "served": 10, "profit": 50.0, "sold": {"chicken_tikka": 10}, "prices": {"chicken_tikka": 10.0}})
+	check(not Advisor._trend_insights(game.history.back()).any(func(it: Dictionary) -> bool: return it["id"] == "dead_dish"),
+		"a dish that was not on sale those days is not called unsold")
+	for r in game.history:
+		r["prices"]["sandwich"] = 7.0
+	game.set_enabled("sandwich", true)
+	var dead := Advisor._trend_insights(game.history.back()).filter(func(it: Dictionary) -> bool: return it["id"] == "dead_dish")
+	check(dead.size() == 1 and dead[0]["dish"] == "sandwich", "five days on sale without an order is called out")
+	# The quick campaign preview agrees with the full one when every day is alike.
+	game.day = int(Data.OPENING["days"]) + 5
+	game.forecast = "sunny"
+	var full: Dictionary = game.promo_preview("social")
+	var quick: Dictionary = game.promo_preview("social", true)
+	check(is_equal_approx(float(full["extra_profit_total"]), float(quick["extra_profit_total"])) and is_equal_approx(float(full["cost"]), float(quick["cost"])),
+		"the advisor's quick campaign preview matches the full one on level days")
+	# The guide may point its upgrade lesson at any station, and that survives a reload.
+	check(GuideJourney.clean({"station": "shade"})["station"] == "shade" and GuideJourney.clean({"station": "seating"})["station"] == "seating"
+		and GuideJourney.clean({"station": "nonsense"})["station"] == "counter", "the guide remembers any real station across a reload")
+
+## Mood faces, the two day speeds and the reason faces the sim uses.
+func _test_feedback_ui() -> void:
+	var seen := {}
+	for kind in ["great", "ok", "bad", "pricey", "slow", "sold_out", "full", "rival"]:
+		var tex: Texture2D = Icons.mood_icon(kind)
+		check(tex != null and tex.get_width() == 48 and tex == Icons.mood_icon(kind), "mood face '%s' is drawn once and cached" % kind)
+		var img := tex.get_image()
+		seen[kind] = img.get_pixel(24, 8)
+		check(img.get_pixel(1, 1).a < 0.01 and img.get_pixel(24, 8).a > 0.9, "mood face '%s' is a disc on a clear background" % kind)
+	check(seen["great"].g > seen["great"].r and seen["bad"].r > seen["bad"].g, "a happy face is green and an unhappy one red")
+	var great := Icons.mood_icon("great").get_image()
+	var bad := Icons.mood_icon("bad").get_image()
+	# The mouth differs as well as the colour: a smile is dark low in the face, a frown is not.
+	check(great.get_pixel(24, 34).r < 0.3 and bad.get_pixel(24, 34).r > 0.5, "smile and frown differ in shape, not only colour")
+	for reason in DaySim.LEAVE_MOOD.values():
+		check(Icons.mood_icon(reason) != null, "the sim's leave reason '%s' has a face" % reason)
+	# A chip can carry a face with words, or a face alone (the buyer walking away).
+	var layer := FloatLayer.new()
+	add_child(layer)
+	var speaker := Node3D.new()
+	add_child(speaker)
+	layer.say(speaker, "Chicken Tikka", Color.WHITE, 0.5, 0.8, "great")
+	check(layer.live_moods() == ["great"] and layer.live_count() == 1, "a sale chip carries the buyer's mood")
+	layer.say(speaker, "", Color.WHITE, 1.3, 0.9, "bad")
+	var chip_label: Label = layer._live[0]["label"]
+	var chip_face: TextureRect = layer._live[0]["face"]
+	check(layer.live_count() == 1 and layer.live_moods() == ["bad"] and not chip_label.visible and chip_face.visible and chip_face.texture == Icons.mood_icon("bad"),
+		"the same speaker's chip turns into a face on its own")
+	layer.say(speaker, "12:00", Color.WHITE, 0.5, 0.8)
+	check(layer.live_moods().is_empty() and chip_label.visible and not chip_face.visible, "a plain line shows no face")
+	layer.queue_free()
+	speaker.queue_free()
+	var hud_script: Script = load("res://scripts/ui/hud.gd")
+	var consts := hud_script.get_script_constant_map()
+	check(consts["DAY_SPEEDS"] == [2.0, 4.0], "players choose between 2x and 4x only")
+	check(float(consts["HEAD_BUTTON"]) >= 60.0, "header controls are at least 60 logical px tall")
+	var roll: Control = load("res://scripts/ui/card_roll.gd").new()
+	add_child(roll)
+	roll.size = Vector2(900, 240)
+	var made := []
+	roll.configure(5, 0, func(i: int) -> Control:
+		var card := PanelContainer.new()
+		card.custom_minimum_size = Vector2(0, 150)
+		made.append(i)
+		return card)
+	roll._layout_cards()
+	var opened := []
+	roll.choose(0, func(): opened.append(0))
+	check(opened == [0], "a tap on the focused card opens it at once")
+	var view: Dictionary = roll.test_view()
+	check(is_equal_approx(float(view["fit"]), 1.0) and bool(view["arrows"]) and bool(view["arrowsInside"]), "roll cards keep full size with arrows at the sides (%s)" % [view])
+	roll.tight = true
+	roll.size = Vector2(900, 150)
+	roll._layout_cards()
+	check(float(roll.test_view()["fit"]) >= 0.9, "a short roll in tight mode still shows cards at 90%% or more (%.2f)" % float(roll.test_view()["fit"]))
+	roll.queue_free()
+
+## Every string added for the tester feedback exists in both languages with matching
+## placeholders, and uses only glyphs the web font can draw.
+func _test_release3_strings() -> void:
+	var file := FileAccess.open("res://assets/i18n/strings.csv", FileAccess.READ)
+	var placeholders := RegEx.create_from_string("%[+]?[.0-9]*[dsf]")
+	var rows := 0
+	while not file.eof_reached():
+		var row := file.get_csv_line()
+		if row.size() < 3:
+			continue
+		var key := row[0]
+		if not (key.begins_with("adv.") or key.begins_with("rep.") or key.begins_with("rpt.") or key.begins_with("ui.mood_") or key.begins_with("mk.")
+				or key in ["ui.a_gain", "ui.a_loss", "ui.a_capped", "ui.p_needs_stage", "coach.finish.say", "guide.day.say"]):
+			continue
+		rows += 1
+		check(row[1].strip_edges() != "" and row[2].strip_edges() != "", "%s has English and Arabic text" % key)
+		var en := placeholders.search_all(row[1]).map(func(m: RegExMatch) -> String: return m.get_string().right(1))
+		var ar := placeholders.search_all(row[2]).map(func(m: RegExMatch) -> String: return m.get_string().right(1))
+		check(en == ar, "%s takes the same values in both languages (%s / %s)" % [key, en, ar])
+		for bad in ["✓", "✕", "●", "○", "★", "☺", "☹", "Skip", "radio", "Radio", "WhatsApp", "Instagram"]:
+			check(not row[1].contains(bad) and not row[2].contains(bad), "%s avoids '%s'" % [key, bad])
+	check(rows >= 60, "the release 3 strings are present (%d)" % rows)

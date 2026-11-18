@@ -22,8 +22,8 @@ duplicate model downloads. The male vendor uses the mature Creek kandura charact
 Active character files are approximately 0.62–0.85 MB each, with lossless atlas imports
 to prevent dark or white facial seams. The guide uses a bounded,
 supersampled portrait and real-time animation independent of trading speed.
-Normal play, 2×, 4× and Skip share the same business simulation; readable service
-beats slow the whole clock together, so faster play does not penalize sales.
+The day runs at 2× or 4× on the same business simulation; readable service
+beats ease the whole clock down together, so faster play does not penalize sales.
 
 Each trading day records its opening cash, stock, weather and customer seed.
 Reloading an unfinished day restarts that checkpoint. Purchases require the right
@@ -51,11 +51,19 @@ Each dish can be enhanced up to three times. Grilled dishes use the meat / salad
 Weather: sunny, heatwave, cloudy, sandstorm, winter breeze.
 
 Progression: cart → stall (AED 1,400) → truck (AED 5,000), followed by location-owned
-kiosks (7,000), restaurants (18,000) and flagships (60,000). One visible buyer can order
+kiosks (7,000), restaurants (18,000) and flagships (50,000). A new stand gets an opening fortnight
+of extra passers-by; wages start with the truck's helper and grow with the crew. One visible buyer can order
 for a whole party, so bigger stands earn through bigger orders; every sale is a customer
 you can see. The Hospitality upgrade adds dates and gahwa from the dallah. The Metro and JBR require a stall plus reputation;
-Downtown, the Mall and Global Village require a truck plus reputation. Promotions
-have a stronger effect against Mall and Global Village competition (x1.8 and x2.0).
+Downtown, the Mall and Global Village require a truck plus reputation. Promotions (a free
+tasting tray, a short video post, offers to regulars, a delivery and maps listing, a food
+blogger's visit) show what they should bring before you pay, and have a stronger effect
+against Mall and Global Village competition (x1.8 and x2.0).
+
+Guests show a drawn face when they buy or leave, and the day bar counts the day's moods.
+The report names every guest you lost and why, then gives three next steps from the
+built-in advisor (it reads your own sales history and works offline). Tap the stars for
+what reputation does and what it unlocks next.
 The truck can fit a sweets counter; buy it, unlock the dishes, then stock ingredients
 for saffron milk cake, sago halwa and Omani halwa.
 

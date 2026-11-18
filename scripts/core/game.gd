@@ -6,7 +6,8 @@ signal changed
 signal notify(text: String, kind: String)
 signal goal_claimed(goal: Dictionary)
 
-const SAVE_VERSION := 4
+## 5: the campaigns of Data.MARKETING (older saves get the days left of removed ones refunded).
+const SAVE_VERSION := 5
 const HISTORY_LIMIT := 90
 ## Tests and headless runs point this elsewhere so the player's save is never touched.
 var save_path := "user://save.json"
@@ -323,6 +324,23 @@ func is_on_sale(item_id: String) -> bool:
 	var m: Dictionary = menu[item_id]
 	return m["unlocked"] and m["enabled"] and item_available(item_id)
 
+## True when something of this kind ("food", "drink", "side", "sweet") is on the menu today.
+func kind_on_sale(kind: String) -> bool:
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["kind"] == kind and is_on_sale(id):
+			return true
+	return false
+
+## True when this stage could sell something of the kind (its equipment fits here), bought or not.
+func kind_possible(kind: String) -> bool:
+	for id in Data.MENU_ITEMS:
+		if Data.MENU_ITEMS[id]["kind"] != kind:
+			continue
+		var s := required_station(Data.MENU_ITEMS[id])
+		if s == "" or station_available(s):
+			return true
+	return false
+
 func competition() -> float:
 	return float(loc().get("competition", 0.0))
 
@@ -361,14 +379,100 @@ func satisfaction_bonus() -> float:
 		b += float(Data.STATIONS[id].get("satisfaction_per_level", 0.0)) * station_level(id)
 	return b
 
+## Extra stop chance from the campaigns running today (each scaled as Economy.campaign_boost).
 func marketing_boost() -> float:
 	var b := 0.0
 	for id in marketing:
-		b += float(Data.MARKETING[id]["boost"])
+		if Data.MARKETING.has(id):
+			b += campaign_boost(id)
 	return b
 
+## What one campaign adds to the stop chance today (running or not).
+func campaign_boost(id: String) -> float:
+	return Economy.campaign_boost(Data.MARKETING[id], total_served, recent_satisfaction())
+
+## A campaign's price for the stand you have here.
+func campaign_cost(id: String) -> float:
+	return Economy.campaign_cost(Data.MARKETING[id], stage_tier())
+
+## Average satisfaction of the guests served over the last week of books (each day weighted
+## by its buyers); 0.6 before there are any.
+func recent_satisfaction(days: int = 7) -> float:
+	var sum := 0.0
+	var n := 0
+	for i in range(mini(days, history.size())):
+		var r: Dictionary = history[history.size() - 1 - i]
+		var served := int(r.get("served", 0))
+		sum += float(r.get("satisfaction", 0.0)) * served
+		n += served
+	return sum / n if n > 0 else 0.6
+
+## Why a campaign cannot start today ("" when it can; the price is checked on starting).
+func marketing_lock_reason(id: String) -> String:
+	if not Data.MARKETING.has(id):
+		return tr("ui.b_soon")
+	if marketing.has(id):
+		return tr("ui.already_running")
+	var def: Dictionary = Data.MARKETING[id]
+	if popularity < float(def.get("min_popularity", 0.0)) - 0.0001:
+		return tr("ui.a_needs_stars") % (float(def["min_popularity"]) * 5.0)
+	return ""
+
+## What a campaign would bring if started today, without starting it (no state change, no
+## RNG): the analytic estimate with and without its boost over each of its days (today on the
+## forecast, later days sunny, the opening buzz day by day) at today's stand, menu and prices.
+## {cost, days, boost, extra_buyers_per_day, extra_profit_total, net (profit less the price),
+##  capped (the stand is already full on those days: it turns away Data.PROMO_FULL or more
+##  would-be buyers for every one it serves, so most of the guests a campaign draws walk on)}.
+## `quick` prices the first day only and repeats it (the advisor's shortlist; the campaign it
+## then recommends gets the full preview).
+func promo_preview(id: String, quick: bool = false) -> Dictionary:
+	if not Data.MARKETING.has(id):
+		return {}
+	var def: Dictionary = Data.MARKETING[id]
+	var days := int(def["days"])
+	var cost := campaign_cost(id)
+	var add := campaign_boost(id)
+	var ctx := sim_context()
+	ctx["weather"] = forecast
+	var served := 0.0
+	var crowd := 0.0
+	var extra_served := 0.0
+	var extra_profit := 0.0
+	var memo := {}
+	var span := 1 if quick else days
+	for d in range(span):
+		var c := ctx.duplicate()
+		c["day"] = day + d
+		c["traffic_mult"] = Economy.opening_boost(day + d)
+		if d > 0:
+			c["weather"] = "sunny"
+		var key := "%s|%.4f" % [c["weather"], float(c["traffic_mult"])]
+		if not memo.has(key):
+			var base := Economy.throughput_estimate(c)
+			var boosted := c.duplicate()
+			boosted["boost"] = float(c["boost"]) + add
+			var more := Economy.throughput_estimate(boosted)
+			memo[key] = [float(more["served"]) - float(base["served"]), float(more["profit"]) - float(base["profit"]),
+				float(base["served"]), float(base["crowd"])]
+		extra_served += float(memo[key][0])
+		extra_profit += float(memo[key][1])
+		served += float(memo[key][2])
+		crowd += float(memo[key][3])
+	if quick:
+		extra_served *= days
+		extra_profit *= days
+	return {"cost": cost, "days": days, "boost": add,
+		"extra_buyers_per_day": extra_served / days, "extra_profit_total": extra_profit, "net": extra_profit - cost,
+		"capped": crowd >= Data.PROMO_FULL * served}
+
+## Today's wage bill for the stand where you stand (Economy.daily_wages, Data.WAGES).
 func daily_wages() -> float:
-	return 0.0
+	return Economy.daily_wages(stage_tier(), active_stations(), terrace_seats())
+
+## Today's opening-buzz multiplier on passers-by (1.0 once the buzz is over), for the UI.
+func opening_boost() -> float:
+	return Economy.opening_boost(day)
 
 func stars() -> float:
 	return popularity * 5.0
@@ -694,11 +798,12 @@ func buy_stage() -> bool:
 	return true
 
 func start_marketing(id: String) -> bool:
-	if marketing.has(id):
-		notify.emit(tr("ui.already_running"), "error")
+	var why := marketing_lock_reason(id)
+	if why != "":
+		notify.emit(why, "error")
 		return false
 	var def: Dictionary = Data.MARKETING[id]
-	if not _spend(float(def["cost"])):
+	if not _spend(campaign_cost(id)):
 		return false
 	marketing[id] = int(def["days"])
 	notify.emit(tr("ui.started") % tr(def["name"]), "good")
@@ -761,6 +866,8 @@ func sim_context() -> Dictionary:
 		"offer": offer(true),
 		"wages": daily_wages(),
 		"cars_per_hour": 0.0,
+		# the opening buzz (Data.OPENING): every sim and the estimate read it in arrival_rate
+		"traffic_mult": opening_boost(),
 	}
 
 ## The context a different setup would produce, without changing anything:
@@ -800,6 +907,11 @@ func what_if(overrides: Dictionary) -> Dictionary:
 	if overrides.has("price_mult"):
 		for id in menu:
 			menu[id]["price"] = float(Data.MENU_ITEMS[id]["base_price"]) * float(overrides["price_mult"])
+	if overrides.has("prices"):
+		# single dishes at given prices, the rest of the menu as it is (the advisor's "+1 on this dish")
+		for id in overrides["prices"]:
+			if menu.has(id):
+				menu[id]["price"] = float(overrides["prices"][id])
 	clamp_prices()
 	var ctx := sim_context()
 	rig = saved_rig
@@ -850,10 +962,23 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 	var local_delta := Economy.popularity_delta(day_stats, float(p["reputation"])) * 1.5
 	p["reputation"] = clampf(float(p["reputation"]) + local_delta, 0.05, 1.0)
 	p["last_visit"] = day
+	# what the day was sold at and under which campaigns (before today's campaigns tick down)
+	var prices_today := {}
+	for id in Data.MENU_ITEMS:
+		if is_on_sale(id):
+			prices_today[id] = float(menu[id]["price"])
+	var promos_today: Array = marketing.keys()
+	# a reviewed campaign (the blogger) that ends today moves popularity by its guests' mood
+	var review := 0.0
 	for id in marketing.keys():
 		marketing[id] = int(marketing[id]) - 1
 		if marketing[id] <= 0:
 			marketing.erase(id)
+			if Data.MARKETING.has(id):
+				review += Economy.campaign_review(Data.MARKETING[id], _campaign_satisfaction(id, day_stats))
+	if review != 0.0:
+		popularity = clampf(popularity + review, 0.05, 1.0)
+		notify.emit(tr("mk.review_good") if review > 0.0 else tr("mk.review_bad"), "good" if review > 0.0 else "warn")
 	var revenue := float(day_stats.get("revenue", 0.0))
 	var cogs := float(day_stats.get("cogs", 0.0))
 	var profit := revenue - cogs - rent - wages - spoil_cost
@@ -880,6 +1005,16 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 		"sold_out": int(day_stats.get("sold_out", 0)),
 		"queue_full": int(day_stats.get("queue_full", 0)),
 		"crowd": int(day_stats.get("crowd", 0)),
+		"no_item": int(day_stats.get("no_item", 0)),
+		"no_item_kinds": _int_dict(day_stats.get("no_item_kinds", {})),
+		"closing": int(day_stats.get("closing", 0)),
+		"mood_great": int(day_stats.get("mood_great", 0)),
+		"mood_ok": int(day_stats.get("mood_ok", 0)),
+		"mood_bad": int(day_stats.get("mood_bad", 0)),
+		"wait": float(day_stats.get("wait_sum", 0.0)) / maxi(1, int(day_stats.get("served", 0))),
+		"prices": prices_today,
+		"promos": promos_today,
+		"review": review,
 		"satisfaction": (float(day_stats.get("satisfaction_sum", 0.0)) / maxi(1, int(day_stats.get("served", 0)))),
 		"pop_delta": pop_delta,
 		"popularity": popularity,
@@ -903,6 +1038,21 @@ func end_day(day_stats: Dictionary) -> Dictionary:
 	save()
 	changed.emit()
 	return report
+
+## Average satisfaction over a campaign's days: today's guests plus the books of the earlier
+## days it ran (each day weighted by its buyers).
+func _campaign_satisfaction(id: String, day_stats: Dictionary) -> float:
+	var served := int(day_stats.get("served", 0))
+	var sum := float(day_stats.get("satisfaction_sum", 0.0))
+	var back := int(Data.MARKETING[id]["days"]) - 1
+	for i in range(history.size() - 1, -1, -1):
+		if back <= 0 or not (history[i].get("promos", []) as Array).has(id):
+			break
+		var n := int(history[i].get("served", 0))
+		sum += float(history[i].get("satisfaction", 0.0)) * n
+		served += n
+		back -= 1
+	return sum / served if served > 0 else 0.6 # nobody came: the blogger has nothing to say
 
 func _roll_weather() -> String:
 	var r := rng.randf()
@@ -1031,9 +1181,16 @@ func load_game() -> bool:
 			menu[id]["level"] = int(_number(m.get("level", 0)))
 			for k in Data.RECIPE_SLIDERS:
 				menu[id]["recipe"][k] = int(_number(_dictionary(m.get("recipe", {})).get(k, menu[id]["recipe"][k]), menu[id]["recipe"][k]))
+	var save_version := int(_number(parsed.get("version", 1), 1))
+	var refund := 0.0
 	for id in _dictionary(parsed.get("marketing", {})):
+		var left := int(_number(parsed["marketing"][id]))
 		if Data.MARKETING.has(id):
-			marketing[id] = int(_number(parsed["marketing"][id]))
+			marketing[id] = left
+		elif save_version < 5 and Data.LEGACY_MARKETING.has(id) and left > 0:
+			# a campaign that no longer exists: its days left are paid back
+			var old: Dictionary = Data.LEGACY_MARKETING[id]
+			refund += float(old["cost"]) * float(mini(left, int(old["days"]))) / float(old["days"])
 	history = parsed.get("history", []) if parsed.get("history") is Array else []
 	if parsed.get("rig", null) is Dictionary:
 		rig = {"stage": _identifier(parsed["rig"].get("stage"), "cart"), "stations": _int_dict(parsed["rig"].get("stations", {}))}
@@ -1051,9 +1208,13 @@ func load_game() -> bool:
 		for k in stats:
 			if parsed["stats"].has(k):
 				stats[k] = (parsed["stats"][k] if parsed["stats"][k] is Array else []) if k == "locations_visited" else _number(parsed["stats"][k])
-	if int(_number(parsed.get("version", 1), 1)) < 3:
+	if save_version < 3:
 		_migrate_legacy(parsed)
 	_validate()
+	if refund > 0.0:
+		money += refund
+		notify.emit(tr("ui.promo_refund") % Loc.money(refund), "good")
+		save() # the refund is paid once: the save is version 5 from now on
 	changed.emit()
 	return true
 
@@ -1168,7 +1329,7 @@ func _validate() -> void:
 			menu[id]["recipe"][k] = clampi(int(menu[id]["recipe"][k]), int(s["min"]), int(s["max"]))
 	clamp_prices()
 	for id in marketing.keys():
-		if int(marketing[id]) < 1:
+		if not (id is String) or not Data.MARKETING.has(id) or int(_number(marketing[id])) < 1:
 			marketing.erase(id)
 		else:
 			marketing[id] = mini(int(marketing[id]), int(Data.MARKETING[id]["days"]))
@@ -1194,14 +1355,34 @@ func _validate() -> void:
 	for r in history:
 		if r is Dictionary and Data.LOCATIONS.has(_identifier(r.get("location"))) and Data.WEATHER.has(_identifier(r.get("weather"))):
 			var row: Dictionary = r.duplicate(true)
-			for k in ["day", "stage", "served", "portions", "passers", "dine_in", "left_wait", "lost_rival", "too_pricey", "sold_out", "queue_full", "crowd"]:
+			for k in ["day", "stage", "served", "portions", "passers", "dine_in", "left_wait", "lost_rival", "too_pricey", "sold_out", "queue_full", "crowd",
+					"no_item", "closing", "mood_great", "mood_ok", "mood_bad"]:
 				row[k] = maxi(0, int(_number(row.get(k, 0))))
-			for k in ["profit", "money", "revenue", "cogs", "rent", "wages", "spoil_cost", "satisfaction", "pop_delta", "popularity", "local_rep", "local_delta"]:
+			for k in ["profit", "money", "revenue", "cogs", "rent", "wages", "spoil_cost", "satisfaction", "pop_delta", "popularity", "local_rep", "local_delta", "review"]:
 				row[k] = _number(row.get(k, 0.0))
+			row["wait"] = maxf(0.0, _number(row.get("wait", 0.0)))
 			row["bottleneck"] = _identifier(row.get("bottleneck"))
 			row["sold"] = _int_dict(row.get("sold", {}))
 			row["spoiled"] = _int_dict(row.get("spoiled", {}))
 			row["util"] = _dictionary(row.get("util", {}))
+			var kinds := {}
+			var raw_kinds := _int_dict(row.get("no_item_kinds", {}))
+			for kind in raw_kinds:
+				if kind in ["food", "drink", "side", "sweet"] and int(raw_kinds[kind]) > 0:
+					kinds[kind] = int(raw_kinds[kind])
+			row["no_item_kinds"] = kinds
+			var prices := {}
+			var raw_prices := _dictionary(row.get("prices", {}))
+			for id in raw_prices:
+				var price := _number(raw_prices[id], -1.0)
+				if Data.MENU_ITEMS.has(id) and price >= 0.0:
+					prices[String(id)] = price
+			row["prices"] = prices
+			var promos := []
+			for id in (row.get("promos") if row.get("promos") is Array else []):
+				if id is String and Data.MARKETING.has(id) and not promos.has(id):
+					promos.append(id)
+			row["promos"] = promos
 			clean.append(row)
 	history = clean
 	if history.size() > HISTORY_LIMIT:

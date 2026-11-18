@@ -27,7 +27,8 @@ static func clean(value: Variant) -> Dictionary:
 	if (price is int or price is float) and is_finite(float(price)):
 		out["price"] = clampf(float(price), 0.0, 100000.0)
 	var station: Variant = value.get("station", "counter")
-	if station in ["counter", "grill", "karak", "signage"]:
+	# The advisor may point the upgrade lesson at any station of the stand.
+	if station is String and (Data.STATIONS.has(station) or station == "seating"):
 		out["station"] = station
 	if out["completed"]:
 		out["active"] = false

@@ -44,7 +44,7 @@ try{
    await hit('coach_next');await at('open');await hit('open_shop');await waitPhase(page,'day');await at('open',true);
    await hit('coach_next');await at('order',true);await page.screenshot({path:`${out}/${lang}-3-order.png`});
    await hit('coach_next');await at('sale',true);let v=await view();assert(v.service.served>0&&v.service.purchases.every(p=>p.visible&&p.ordered),'mentor waits for real visible purchases');
-   await hit('coach_next');await at('finish');await hit('speed_2');await hit('skip_day');await waitPhase(page,'report',120000);await at('report');
+   await hit('coach_next');await at('finish');await hit('speed_4');await page.evaluate(() => window.godotSkipDay());await waitPhase(page,'report',120000);await at('report');
    await page.waitForFunction(()=>window.godotPresentation?.coach?.embedded);await page.waitForFunction(()=>!window.godotPresentation?.curtain);await page.waitForTimeout(500);await page.screenshot({path:`${out}/${lang}-4-report.png`});
    assert.equal((await save()).history.length,1);await hit('next_day');await waitPhase(page,'prep');await at('report',true);
    await hit('coach_next');await at('upgrade');await hit('coach_next');await page.screenshot({path:`${out}/${lang}-5-upgrade.png`});

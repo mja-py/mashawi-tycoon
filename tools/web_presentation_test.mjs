@@ -69,7 +69,7 @@ try {
       await hit('open_shop');
       await waitPhase(page, 'day');
       await page.waitForTimeout(1100);
-      await hit('skip_day');
+      await page.evaluate(() => window.godotSkipDay());
       await page.waitForFunction(() => window.godotPresentation?.closing > 0);
       await shot('closing');
       await page.waitForFunction(() => window.godotPresentation?.curtain > 0.1);

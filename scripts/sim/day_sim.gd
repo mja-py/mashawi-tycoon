@@ -28,6 +28,10 @@ const MAX_FRAME_TIME := 0.1
 const MAX_TICKS_PER_FRAME := 32
 var _accumulator := 0.0
 var playback_speed := 1.0
+## The speed on screen right now. It glides towards `effective_speed()` so the slow-down
+## for a handoff at 4x does not read as a stutter. Presentation only: ticks are identical.
+const SPEED_EASE_S := 0.3
+var _speed_now := 1.0
 var _life_rng := RandomNumberGenerator.new()
 var _seeded_movement := false
 var _car_timer := 0.0
@@ -60,6 +64,7 @@ func start(context: Dictionary, w: World) -> void:
 	_accumulator = 0.0
 	_seeded_movement = false
 	playback_speed = 1.0
+	_speed_now = 1.0
 	ctx = context
 	if world.plot:
 		ctx["seats"] = mini(int(ctx["seats"]), world.plot.seats.size())
@@ -77,6 +82,7 @@ func start(context: Dictionary, w: World) -> void:
 	stats = {"_day": int(ctx.get("day", Game.day)), "passers": 0, "served": 0, "portions": 0, "revenue": 0.0, "cogs": 0.0, "sold": {},
 		"satisfaction_sum": 0.0, "wait_sum": 0.0, "left_wait": 0, "sold_out": 0, "queue_full": 0, "lost_rival": 0, "too_pricey": 0,
 		"crowd": 0, "dine_in": 0, "queue": 0, "kitchen": 0, "seated": 0}
+	Throughput.add_loss_stats(stats)
 	_warned.clear()
 	_stats_tick = 0.0
 	_hot_min.clear()
@@ -117,6 +123,8 @@ func start(context: Dictionary, w: World) -> void:
 ## All business actors consume identical fixed simulation ticks at every speed.
 func set_playback_speed(value: float) -> void:
 	playback_speed = maxf(value, 0.01)
+	if not running:
+		_speed_now = playback_speed
 
 func effective_speed() -> float:
 	if playback_speed <= 2.0:
@@ -137,6 +145,8 @@ func _process(delta: float) -> void:
 	if not running:
 		return
 	_accumulator += minf(delta, MAX_FRAME_TIME)
+	var target := effective_speed()
+	_speed_now = move_toward(_speed_now, target, maxf(2.0, absf(target - _speed_now)) * minf(delta, MAX_FRAME_TIME) / SPEED_EASE_S)
 	var ticks := 0
 	var tick_time := _tick_time()
 	while running and _accumulator + 0.0000001 >= tick_time and ticks < MAX_TICKS_PER_FRAME:
@@ -161,7 +171,7 @@ func _process(delta: float) -> void:
 
 ## Wall-clock seconds one tick takes right now; ambient poses read the same pace.
 func _tick_time() -> float:
-	ModelLib.sim_speed = effective_speed()
+	ModelLib.sim_speed = maxf(_speed_now, 0.01)
 	return STEP / ModelLib.sim_speed
 
 ## One fixed step for every business actor. Also driven directly by headless runs.
@@ -281,6 +291,9 @@ func _spawn_passer() -> void:
 	var r := _rng.randf()
 	var p_room := _stop_chance(best, 0)
 	var p_any := Economy.stop_probability(float(ctx["popularity"]), best * float(ctx["appeal"]), float(ctx["boost"]), 0, int(ctx["queue_cap"]))
+	if look["cands"].is_empty() and r < _stop_chance(Economy.NO_ITEM_VALUE, 0):
+		# would have stopped for an ordinary dish of this kind, but none is on the menu
+		Throughput.count_no_item(stats, wants)
 	var visit := ""
 	if r < p_room:
 		visit = "buyer"
@@ -314,7 +327,7 @@ func _on_decision(c: Customer) -> void:
 		return
 	if c.visit == "rival":
 		if _life_rng.randf() < 0.35:
-			c.say(Data.pick_bubble("rival", _life_rng), Color(1.0, 0.75, 0.5))
+			c.say(Data.pick_bubble("rival", _life_rng), Color(1.0, 0.75, 0.5), 1.0, 0.78, "rival")
 		return
 	if c.visit == "pricey":
 		_reject(c, "too_pricey", "price", Color("ffab81"))
@@ -324,6 +337,7 @@ func _on_decision(c: Customer) -> void:
 	var look := _look(c.wants)
 	var cands: Array = look["cands"]
 	if cands.is_empty():
+		Throughput.count_no_item(stats, c.wants)
 		return
 	var p := _stop_chance(float(look["best"]), tp.queue_len())
 	var r := c.decision_roll if c.decision_roll >= 0.0 else _rng.randf()
@@ -363,14 +377,18 @@ func _on_gave_up(payload, reason: String) -> void:
 		return
 	ledger.release(c)
 	if reason == "closing":
+		stats["closing"] = int(stats["closing"]) + 1
 		c.leave(tr("ev.closing"), Color(0.9, 0.9, 0.9), false)
 		return
 	stats["left_wait"] = int(stats["left_wait"]) + 1
 	_reject(c, "too_slow", "angry", Color("ff9384"))
 	_warn("slow", tr("ev.slow"))
 
+## The face a leaving guest shows for each reason (`Icons.mood_icon`).
+const LEAVE_MOOD := {"too_pricey": "pricey", "queue_full": "full", "sold_out": "sold_out", "too_slow": "slow"}
+
 func _reject(c: Customer, bubble_key: String, clip: String, color: Color) -> void:
-	c.reject(world.queue_slot(0) + Vector3.FORWARD * 0.4, clip, Data.pick_bubble(bubble_key, _life_rng), color)
+	c.reject(world.queue_slot(0) + Vector3.FORWARD * 0.4, clip, Data.pick_bubble(bubble_key, _life_rng), color, String(LEAVE_MOOD.get(bubble_key, "bad")))
 
 ## The demo opens with a repeatable rush so players see every beat in one visit.
 func _showcase_guest(step: int) -> void:
@@ -390,7 +408,7 @@ func _showcase_guest(step: int) -> void:
 	var price := float(Game.menu[item]["price"])
 	if step == 5 and price > float(Data.MENU_ITEMS[item]["base_price"]) * 0.8:
 		stats["too_pricey"] += 1
-		guest.reject(world.queue_slot(0), "price", tr("bubble.quoted_price") % Loc.money(price), Color("ffab81"))
+		guest.reject(world.queue_slot(0), "price", tr("bubble.quoted_price") % Loc.money(price), Color("ffab81"), "pricey")
 		return
 	guest.item = item
 	if tp.enqueue(guest, guest.item, guest.portions):
@@ -519,7 +537,7 @@ func _sold_out(c: Customer, item: String) -> void:
 	ledger.release(c)
 	_release_seat(c)
 	if c.state == Customer.State.SEATED:
-		c.leave_from_seat(Data.pick_bubble("sold_out", _life_rng), Color("efa36f"))
+		c.leave_from_seat(Data.pick_bubble("sold_out", _life_rng), Color("efa36f"), "sold_out")
 	else:
 		_reject(c, "sold_out", "price", Color("efa36f"))
 	_warn("sold_out", tr("ev.sold_out_item") % tr(Data.MENU_ITEMS[item]["name"]))
@@ -544,6 +562,8 @@ func _settle_sale(c: Customer, item: String, wait_s: float, dine_in: bool, porti
 	stats["sold"][item] = int(stats["sold"].get(item, 0)) + sold
 	for extra in sale["extras"]:
 		stats["sold"][extra] = int(stats["sold"].get(extra, 0)) + int(sale["extras"][extra])
+	for kind in sale["wished"]:
+		Throughput.count_no_item(stats, kind, int(sale["wished"][kind]))
 	if sale["sweet"] and _life_rng.randf() < 0.3:
 		c.say(Data.pick_bubble("sweet", _life_rng), Color(1.0, 0.85, 0.6))
 	stats["revenue"] = float(stats["revenue"]) + total
@@ -558,15 +578,19 @@ func _settle_sale(c: Customer, item: String, wait_s: float, dine_in: bool, porti
 	var wait_ratio := clampf(wait_s / float(ctx["patience_s"]), 0.0, 1.0)
 	var s := Economy.satisfaction(Game.quality(item), ratio, wait_ratio, loc, float(ctx["satisfaction_bonus"]) + (0.05 if dine_in else 0.0))
 	stats["satisfaction_sum"] = float(stats["satisfaction_sum"]) + s
+	Throughput.count_mood(stats, s)
 	var key := Economy.bubble_for_satisfaction(s)
 	var col := Color(0.35, 0.85, 0.4) if key == "great" else (Color(1, 1, 1) if key == "ok" else Color(0.95, 0.5, 0.3))
 	var text := tr(Data.MENU_ITEMS[item]["name"])
+	# The buyer's face tells the player how the sale went: great, ok or bad.
+	var mood := "great" if key == "great" else ("ok" if key == "ok" else "bad")
+	c.sale_mood = mood
 	_check_stock_warnings()
 	c.purchase_shown = true
 	if dine_in:
-		c.say(text, col, 0.9)
+		c.say(text, col, 0.9, 0.78, mood)
 	else:
-		_play_pickup(c, sold_items, text, col, c.leave, sold)
+		_play_pickup(c, sold_items, text, col, c.leave, sold, mood)
 	# Every sale shows its takings over the buyer (visual only; the money is already booked).
 	world.sale_pop(c, total)
 	if DevTools.has("uitest"):
@@ -592,12 +616,18 @@ func _show_receipt(items: Array[String], total: float) -> void:
 	sale_completed.emit(items, total)
 
 ## The bag changes hands: the hatch is busy for a beat that grows with the party.
-func _play_pickup(guest: Customer, items: Array[String], text: String, color: Color, done: Callable, portions: int = 1) -> void:
+func _play_pickup(guest: Customer, items: Array[String], text: String, color: Color, done: Callable, portions: int = 1, mood: String = "") -> void:
 	var seconds := Economy.handoff_seconds(portions, int(ctx.get("counter_level", 0)))
 	_handoff_left = seconds
 	world.handoff(guest, items, seconds)
-	guest.say(text, color, 0.46)
-	guest.perform("collect", "pick-up", seconds, done)
+	guest.say(text, color, 0.46, 0.78, mood)
+	# The dish name is gone in half a second; the buyer's face stays as they walk off, long
+	# enough for the player to read how the sale went.
+	var after := func():
+		done.call()
+		if mood != "" and is_instance_valid(guest):
+			guest.say("", color, 1.3, 0.92, mood)
+	guest.perform("collect", "pick-up", seconds, after)
 
 func _take_seat(c: Customer) -> Dictionary:
 	if world.plot == null or not world.plot.has_method("free_seat"):
@@ -625,7 +655,12 @@ func _on_left_seat(payload) -> int:
 		return -1
 	var table := int(_seat_of.get(c, {}).get("table", -1))
 	_release_seat(c)
-	c.leave_from_seat(Data.pick_bubble("dine_in", _life_rng), Color(0.6, 0.9, 0.6))
+	# A diner leaves with the mood of their meal, not always a smile.
+	var mood: String = c.sale_mood if c.sale_mood != "" else "great"
+	if mood == "bad":
+		c.leave_from_seat("", Color.WHITE, "bad")
+	else:
+		c.leave_from_seat(Data.pick_bubble("dine_in", _life_rng), Color(0.6, 0.9, 0.6) if mood == "great" else Color(1, 1, 1), mood)
 	return table
 
 ## A stage that stays saturated for 20 game-minutes earns one "upgrade it" warning.

@@ -75,17 +75,23 @@ func can_sell(item: String) -> bool:
 ## One completed order: every portion of the party through Game.sell at price x spend,
 ## then per food portion a side, a drink and a sweet may be added (business RNG, in that
 ## order; the pick within a kind is uniform and a pricey add-on is refused more often).
-## Returns {sold, total, cogs, items (distinct, primary first), extras {id: n}, sweet}.
+## A kind with nothing to sell that this stage could offer still rolls its chance: a hit is
+## a wish nobody could serve ("wished", see Throughput.count_no_item).
+## Returns {sold, total, cogs, items (distinct, primary first), extras {id: n}, sweet, wished {kind: n}}.
 func settle(holder, item: String, portions: int, spend: float, wants: String, dine_in: bool,
 		weather_id: String, rng: RandomNumberGenerator) -> Dictionary:
 	var price := float(Game.menu[item]["price"])
 	var unit := Game.unit_cost(item)
 	var sold := sell(holder, item, portions, price * spend)
-	var out := {"sold": sold, "total": price * spend * sold, "cogs": unit * sold, "items": [item], "extras": {}, "sweet": false}
+	var out := {"sold": sold, "total": price * spend * sold, "cogs": unit * sold, "items": [item], "extras": {}, "sweet": false, "wished": {}}
 	if sold <= 0 or wants != "food":
 		return out
 	var bonus := Economy.ADDON_DINE_BONUS if dine_in else 0.0
 	var groups := [["side", Economy.ADDON_SIDE], ["drink", Economy.addon_drink_chance(weather_id)], ["sweet", Economy.ADDON_SWEET]]
+	# kinds this stage could offer but the menu does not (on sale and sold out is not "missing")
+	var missing := {}
+	for group in groups:
+		missing[group[0]] = Game.kind_possible(String(group[0])) and not Game.kind_on_sale(String(group[0]))
 	for n in range(sold):
 		for group in groups:
 			var pool := []
@@ -93,6 +99,8 @@ func settle(holder, item: String, portions: int, spend: float, wants: String, di
 				if Data.MENU_ITEMS[id]["kind"] == group[0] and can_sell(id):
 					pool.append(id)
 			if pool.is_empty():
+				if missing[group[0]] and rng.randf() < float(group[1]) + bonus:
+					out["wished"][group[0]] = int(out["wished"].get(group[0], 0)) + 1
 				continue
 			var pick: String = pool[rng.randi_range(0, pool.size() - 1)]
 			if rng.randf() >= (float(group[1]) + bonus) * addon_appeal(pick):

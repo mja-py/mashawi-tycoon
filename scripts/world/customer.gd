@@ -48,6 +48,10 @@ var _yaw := 0.0
 var _after_beat: Callable
 var _bag: Node3D
 var _glance_left := 0.0
+## great / ok / bad once this guest has been served (the face on their chip).
+var sale_mood := ""
+## Wall-clock time before which nobody in the line may glance again (ambient only).
+static var _next_glance_ms := 0
 
 func setup(model_id: String, direction: int, start: Vector3, end_x: float, decide_x: float, walk_speed: float) -> void:
 	dir = direction
@@ -127,9 +131,9 @@ func _sit_down() -> void:
 	arrived.emit(self)
 
 ## Stand up from the table and walk off along the sidewalk.
-func leave_from_seat(text: String = "", color: Color = Color.WHITE) -> void:
-	if text != "":
-		say(text, color)
+func leave_from_seat(text: String = "", color: Color = Color.WHITE, mood: String = "") -> void:
+	if text != "" or mood != "":
+		say(text, color, 1.0 if text != "" else 1.3, 0.78, mood)
 	if model:
 		model.position.y = 0.0
 	if state == State.SEATED:
@@ -148,9 +152,9 @@ func leave_from_seat(text: String = "", color: Color = Color.WHITE) -> void:
 
 var _leaving_after_path := false
 
-func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false) -> void:
+func leave(text: String = "", color: Color = Color.WHITE, hold: bool = false, mood: String = "") -> void:
 	if text != "":
-		say(text, color)
+		say(text, color, 1.0, 0.78, mood)
 	if hold:
 		perform("idle", "idle", 0.4, _start_leaving)
 		return
@@ -167,12 +171,12 @@ func perform(clip: String, fallback: String, seconds: float, then: Callable = Ca
 		state = State.REACT
 		_after_beat = then
 
-func reject(point: Vector3, reason: String, text: String, color: Color) -> void:
+func reject(point: Vector3, reason: String, text: String, color: Color, mood: String = "") -> void:
 	# Look across at the line, then pivot away. The side angle keeps hands readable.
 	face_point(Vector3(point.x, position.y, position.z + 0.24))
 	dir = -dir
 	exit_x = -exit_x
-	say(text, color)
+	say(text, color, 1.0, 0.78, mood)
 	perform(reason, "emote-no", 1.18, _start_leaving)
 
 func take_bag(bag: Node3D) -> void:
@@ -205,12 +209,12 @@ func _start_leaving() -> void:
 	_face_direction()
 
 ## The HUD's float layer draws the line as a backed chip that never overlaps another one.
-func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.78) -> void:
+func say(text: String, color: Color = Color.WHITE, duration: float = 1.0, height: float = 0.78, mood: String = "") -> void:
 	if model == null or not is_inside_tree():
 		return
 	var layer := get_tree().get_first_node_in_group(FloatLayer.GROUP) as FloatLayer
 	if layer:
-		layer.say(self, text, color, duration, height)
+		layer.say(self, text, color, duration, height, mood)
 		return
 	_ensure_bubble()
 	bubble.text = text
@@ -270,7 +274,7 @@ func step(delta: float) -> void:
 					return
 				state = State.QUEUED
 				face_point(pickup_facing if slot >= 100 else order_facing)
-				_glance_left = ModelLib.ambient_wait(4.0, 12.0)
+				_glance_left = ModelLib.ambient_wait(8.0, 20.0)
 				if model:
 					ModelLib.play_loop(model, "idle")
 				arrived.emit(self)
@@ -303,8 +307,13 @@ func step(delta: float) -> void:
 			if model and slot > 0 and slot != 100:
 				_glance_left -= delta / maxf(ModelLib.sim_speed, 0.01)
 				if _glance_left <= 0.0:
-					_glance_left = ModelLib.ambient_wait(7.0, 16.0)
-					ModelLib.play_once(model, "glance")
+					_glance_left = ModelLib.ambient_wait(12.0, 26.0)
+					# One person in the whole line at a time, well apart: a waiting line stands
+					# calmly, it does not look around in chorus.
+					var now := Time.get_ticks_msec()
+					if now >= _next_glance_ms:
+						_next_glance_ms = now + int(ModelLib.ambient_wait(15.0, 30.0) * 1000.0)
+						ModelLib.play_once(model, "glance")
 		_:
 			pass
 

@@ -1,6 +1,8 @@
-extends VBoxContainer
+extends Control
 ## Phone-sized card picker. Drag tracks the finger, then the focused card snaps
 ## into place. Only nearby cards are built, so a roll never renders a whole menu.
+## The arrows and the page count float over the edges of the roll: a landscape phone
+## cannot spare a row of height below the cards.
 
 signal index_changed(index: int)
 
@@ -24,32 +26,32 @@ var _dragging := false
 ## 0 -> 1 while the roll makes its entrance (focused card first, neighbours just after).
 var _entrance := 1.0
 var _entrance_tween: Tween
+## Smallest scale a card was drawn at for lack of height (1.0 = every card at full size).
+var _fit := 1.0
+## Set by the HUD when the panel is short (notch plus the guide strip): the page count goes
+## and the cards get its height.
+var tight := false
+const ARROW := Vector2(60, 84)
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 1)
-	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	custom_minimum_size.y = 136.0
 	surface = Control.new()
-	surface.custom_minimum_size.y = 136.0
-	surface.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	surface.clip_contents = true
 	add_child(surface)
 	surface.resized.connect(_layout_cards, CONNECT_DEFERRED)
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.layout_direction = Control.LAYOUT_DIRECTION_LTR
-	row.add_theme_constant_override("separation", 15)
-	add_child(row)
-	_previous = _arrow(row, -1)
+	_previous = _arrow(-1)
+	_next = _arrow(1)
 	_page = Label.new()
 	_page.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_page.custom_minimum_size.x = 104
 	_page.theme_type_variation = "Small"
-	row.add_child(_page)
-	_next = _arrow(row, 1)
+	_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_page.z_index = 6
+	add_child(_page)
 
-func _arrow(row: HBoxContainer, side: int) -> Button:
+func _arrow(side: int) -> Button:
 	var b := Button.new()
-	b.theme_type_variation = "Ghost"
+	b.theme_type_variation = "Icon"
 	# The row is always left-to-right, so the glyph points where it moves on screen (the
 	# triangles are not bidi-mirrored, unlike < > and ‹ ›); the spoken name follows the
 	# reading direction (the left arrow is "next" in Arabic).
@@ -58,12 +60,14 @@ func _arrow(row: HBoxContainer, side: int) -> Button:
 	var forward := (side > 0) != is_layout_rtl()
 	b.tooltip_text = tr("ui.roll_next") if forward else tr("ui.roll_prev")
 	b.accessibility_name = b.tooltip_text
-	b.add_theme_font_size_override("font_size", 20)
-	b.custom_minimum_size = Vector2(58, 48)
+	b.add_theme_font_size_override("font_size", 24)
+	b.custom_minimum_size = ARROW
+	b.focus_mode = Control.FOCUS_NONE
+	b.z_index = 6
 	b.pressed.connect(func(): move_to(_index + side * int(_rtl)))
 	if DevTools.has("uitest"):
 		b.set_meta("menu_target", "roll_left" if side < 0 else "roll_right")
-	row.add_child(b)
+	add_child(b)
 	return b
 
 func configure(count: int, index: int, factory: Callable) -> void:
@@ -95,11 +99,21 @@ func play_entrance(duration: float = 0.34) -> void:
 		_entrance = v
 		_layout_cards(), 0.0, 1.0, duration)
 
+## A tap on the focused card opens it. A tap on a neighbour brings it to the middle and
+## opens it in the same gesture; swiping or the arrows are for browsing.
 func choose(index: int, action: Callable) -> void:
 	if index == _index:
 		action.call()
-	else:
-		move_to(index)
+		return
+	move_to(index)
+	_snap.tween_callback(func():
+		if _index == index and not _dragging:
+			action.call())
+
+func test_view() -> Dictionary:
+	var box := get_global_rect().grow(1.0)
+	return {"fit": _fit, "count": _count, "index": _index, "arrows": _previous.visible,
+		"arrowsInside": box.encloses(_previous.get_global_rect()) and box.encloses(_next.get_global_rect())}
 
 func selected_index() -> int:
 	return _index
@@ -127,7 +141,6 @@ func _show_index() -> void:
 	_previous.disabled = _index - int(_rtl) < 0 or _index - int(_rtl) >= _count
 	_next.disabled = _index + int(_rtl) < 0 or _index + int(_rtl) >= _count
 	_page.text = Loc.ltr("%02d / %02d" % [_index + 1, _count]) if _count > 1 else ""
-	_page.visible = _count > 1
 	_layout_cards()
 
 func _set_cursor(value: float) -> void:
@@ -143,8 +156,18 @@ func _step() -> float:
 	return _card_width() * 0.92
 
 func _layout_cards() -> void:
+	# Arrows sit at the outer edges, vertically centred; the page count under the cards.
+	var mid := (size.y - ARROW.y) * 0.5
+	_previous.size = ARROW
+	_next.size = ARROW
+	_previous.position = Vector2(6.0, mid)
+	_next.position = Vector2(size.x - ARROW.x - 6.0, mid)
+	_page.visible = _count > 1 and not tight
+	_page.reset_size()
+	_page.position = Vector2((size.x - _page.size.x) * 0.5, size.y - _page.size.y + 4.0)
 	if _count == 0 or not _factory.is_valid() or surface.size.x < 1:
 		return
+	_fit = 1.0
 	var near := roundi(_cursor)
 	for i in range(maxi(0, near - 1), mini(_count - 1, near + 1) + 1):
 		if not _cards.has(i):
@@ -163,17 +186,18 @@ func _layout_cards() -> void:
 		card.visible = distance < 1.55
 		if not card.visible:
 			continue
-		var room := maxf(1.0, surface.size.y - 14.0)
+		var room := maxf(1.0, surface.size.y - (8.0 if tight else 22.0))
 		card.size = Vector2(_card_width(), room)
 		card.pivot_offset = card.size * 0.5
 		var fit := minf(1.0, room / card.size.y)
+		_fit = minf(_fit, fit)
 		var arrive := 1.0
 		if _entrance < 1.0:
 			var e := clampf(_entrance * 1.5 - distance * 0.4, 0.0, 1.0)
 			arrive = 1.0 - pow(1.0 - e, 3.0)
 		card.scale = Vector2.ONE * fit * lerpf(1.0, 0.86, minf(distance, 1.0)) * lerpf(0.95, 1.0, arrive)
 		card.rotation = clampf(offset, -1.0, 1.0) * 0.03
-		card.position = (surface.size - card.size) * 0.5 + Vector2(offset * _step(), distance * 6.0 + (1.0 - arrive) * 18.0)
+		card.position = (surface.size - card.size) * 0.5 + Vector2(offset * _step(), distance * 6.0 + (1.0 - arrive) * 18.0 - (0.0 if tight else 8.0))
 		card.modulate.a = lerpf(1.0, 0.8, minf(distance, 1.0)) * arrive
 		card.z_index = 3 - mini(roundi(distance * 2.0), 3)
 

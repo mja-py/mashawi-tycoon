@@ -34,15 +34,17 @@ func _ready() -> void:
 	set_process(false)
 
 ## A customer's line. One line per speaker: speaking again replaces the old line.
-func say(speaker: Node3D, text: String, color: Color, duration: float, height: float) -> void:
+## `mood` adds a drawn face before the words: great / ok / bad, or a reason for leaving
+## (pricey, slow, sold_out, full, rival). See `Icons.mood_icon`.
+func say(speaker: Node3D, text: String, color: Color, duration: float, height: float, mood: String = "") -> void:
 	for e in _live:
 		if e["owner"] == speaker and e["kind"] == &"say":
-			_fill(e, text, Color(color, 1.0), _say_style)
+			_fill(e, text, Color(color, 1.0), _say_style, mood)
 			e["age"] = 0.0
 			e["life"] = duration + POP_IN + FADE_OUT
 			e["height"] = height
 			return
-	_spawn(speaker, text, Color(color, 1.0), duration, height, &"say")
+	_spawn(speaker, text, Color(color, 1.0), duration, height, &"say", mood)
 
 ## "+AED 12" over the buyer for every sale.
 func money(buyer: Node3D, amount: float, height: float = 0.95) -> void:
@@ -59,7 +61,15 @@ func clear() -> void:
 func live_count() -> int:
 	return _live.size()
 
-func _spawn(speaker: Node3D, text: String, color: Color, duration: float, height: float, kind: StringName) -> void:
+## Moods of the chips on screen right now (tests).
+func live_moods() -> Array:
+	var out := []
+	for e in _live:
+		if String(e.get("mood", "")) != "":
+			out.append(e["mood"])
+	return out
+
+func _spawn(speaker: Node3D, text: String, color: Color, duration: float, height: float, kind: StringName, mood: String = "") -> void:
 	if not is_instance_valid(speaker) or not speaker.is_inside_tree():
 		return
 	if _live.size() >= MAX_CHIPS:
@@ -68,27 +78,44 @@ func _spawn(speaker: Node3D, text: String, color: Color, duration: float, height
 	if _pool.is_empty():
 		chip = PanelContainer.new()
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 5)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(row)
+		var face := TextureRect.new()
+		face.custom_minimum_size = Vector2(24, 24)
+		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(face)
 		var label := Label.new()
 		label.add_theme_font_override("font", UiTheme.bold())
 		label.add_theme_font_size_override("font_size", 17)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		chip.add_child(label)
+		row.add_child(label)
 		add_child(chip)
 	else:
 		chip = _pool.pop_back()
 	chip.show()
 	move_child(chip, -1)
-	var e := {"chip": chip, "label": chip.get_child(0), "owner": speaker, "anchor": speaker.global_position,
-		"height": height, "age": 0.0, "life": duration + POP_IN + FADE_OUT, "kind": kind}
-	_fill(e, text, color, _money_style if kind == &"money" else _say_style)
+	var e := {"chip": chip, "label": chip.get_child(0).get_child(1), "face": chip.get_child(0).get_child(0), "owner": speaker,
+		"anchor": speaker.global_position, "height": height, "age": 0.0, "life": duration + POP_IN + FADE_OUT, "kind": kind}
+	_fill(e, text, color, _money_style if kind == &"money" else _say_style, mood)
 	_live.append(e)
 	_place(e, Vector2.ZERO)
 	chip.modulate.a = 0.0
 	set_process(true)
 
-func _fill(e: Dictionary, text: String, color: Color, style: StyleBoxFlat) -> void:
+func _fill(e: Dictionary, text: String, color: Color, style: StyleBoxFlat, mood: String = "") -> void:
 	var chip: PanelContainer = e["chip"]
 	var label: Label = e["label"]
+	var face: TextureRect = e["face"]
+	face.visible = mood != ""
+	if mood != "":
+		face.texture = Icons.mood_icon(mood)
+	e["mood"] = mood
+	label.visible = text != "" # a face on its own: the buyer's mood as they leave
 	label.text = text
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_font_size_override("font_size", 18 if e["kind"] == &"money" else 17)

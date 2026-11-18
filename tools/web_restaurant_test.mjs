@@ -75,8 +75,10 @@ try {
       const at = q => Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] * 10) / 10;
       return { count: sorted.length, median: at(0.5), p95: at(0.95), worst: at(1) };
     });
+    // Every buyer shows a drawn face (great / ok / bad) as they are served and walk off.
+    await page.waitForFunction(() => (window.godotPresentation?.moods || []).some(m => ['great', 'ok', 'bad'].includes(m)), null, { timeout: 60000 });
     const beforeSkip = await page.evaluate(() => window.godotPresentation.service.served);
-    await tap('skip_day');
+    await page.evaluate(() => window.godotSkipDay());
     await page.waitForFunction(count => window.godotState?.finishing && window.godotPresentation?.service?.served > count, beforeSkip);
     await page.screenshot({ path: out + '/3-skip-purchase.png' });
     await waitPhase(page, 'report', 120000);

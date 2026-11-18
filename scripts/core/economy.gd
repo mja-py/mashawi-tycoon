@@ -120,6 +120,43 @@ static func arrival_rate(loc: Dictionary, weather_id: String, hour: float, ctx: 
 		rate *= 1.0 + float(lamps["evening_traffic_per_level"]) * lights
 	return rate * float(ctx.get("traffic_mult", 1.0))
 
+## Passer-by multiplier of the opening buzz on a given day (Data.OPENING): "traffic" on day 1,
+## a straight line down to 1.0 the day after the last buzz day.
+static func opening_boost(day: int) -> float:
+	var days := int(Data.OPENING["days"])
+	if day > days or days <= 0:
+		return 1.0
+	var left := float(days - maxi(day, 1) + 1) / float(days)
+	return 1.0 + (float(Data.OPENING["traffic"]) - 1.0) * left
+
+## A campaign's price at a stage tier (Data.MARKETING "cost" x Data.PROMO_SCALE).
+static func campaign_cost(def: Dictionary, stage: int) -> float:
+	var scale: Array = Data.PROMO_SCALE
+	return float(def["cost"]) * float(scale[clampi(stage, 0, scale.size() - 1)])
+
+## The extra stop chance a campaign gives today (before the place's promo_power):
+## offers to regulars grow with the guests served so far, a blogger's word follows how
+## happy the recent guests were (Data.MARKETING notes).
+static func campaign_boost(def: Dictionary, total_served: int, recent_satisfaction: float) -> float:
+	var boost := float(def["boost"])
+	if def.has("regulars_full"):
+		boost *= clampf(float(total_served) / float(def["regulars_full"]), 0.0, 1.0)
+	if def.has("sat_full"):
+		var lo := float(def["sat_floor"])
+		boost *= clampf((recent_satisfaction - lo) / (float(def["sat_full"]) - lo), 0.0, 1.0)
+	return boost
+
+## Popularity change when a reviewed campaign (the blogger) ends, from the guests'
+## average satisfaction on its days.
+static func campaign_review(def: Dictionary, satisfaction: float) -> float:
+	if not def.has("review"):
+		return 0.0
+	if satisfaction >= float(def["review_good"]):
+		return float(def["review"])
+	if satisfaction < float(def["review_bad"]):
+		return -float(def["review"])
+	return 0.0
+
 static func time_curve(loc: Dictionary, hour: float) -> float:
 	var c := 0.45
 	for peak in loc.get("peaks", []):
@@ -138,11 +175,20 @@ static func satisfaction(quality: float, price_ratio: float, wait_ratio: float, 
 	return clampf(s, 0.0, 1.0)
 
 static func bubble_for_satisfaction(s: float) -> String:
+	var m := mood(s)
+	return "bad_quality" if m == "bad" else m
+
+## How a guest leaves: "great" (>= 0.7), "ok" (>= 0.4) or "bad".
+static func mood(s: float) -> String:
 	if s >= 0.7:
 		return "great"
 	if s >= 0.4:
 		return "ok"
-	return "bad_quality"
+	return "bad"
+
+## The value of an ordinary dish: a passer who would have stopped for one, finding nothing of
+## the kind they want on the menu, counts as a "no_item" loss.
+const NO_ITEM_VALUE := 0.8
 
 ## Share of customers who want a drink rather than food, by weather.
 static func drink_share(weather_id: String) -> float:
@@ -303,6 +349,31 @@ static func dining_workers(stage: int, seats: int, staffroom: int) -> int:
 	if stage < Plot.FIXED or seats < 2:
 		return 0
 	return mini(3, 1 + (1 if stage >= 4 and seats >= 4 else 0) + (1 if staffroom > 0 else 0))
+
+## The day's wage bill (Data.WAGES) for a stand at `stage` running `stations` ({id: level})
+## with `seats` chairs on its terrace: nothing at the cart and stall, the truck's helper, and
+## from the kiosk up the cashier, the cooks and baristas of every running kitchen station
+## (kitchen crew per station) and the dining workers the counter crew does not cover, at the
+## stage's pay grade (whole 5 AED).
+static func daily_wages(stage: int, stations: Dictionary, seats: int) -> float:
+	var w: Dictionary = Data.WAGES
+	if stage < Plot.FIXED:
+		return float(w["helper"]) if stage >= int(w["helper_from"]) else 0.0
+	var roles: Dictionary = w["roles"]
+	var crew_table: Array = Data.SERVICE["kitchen_crew"]
+	var crew := float(crew_table[clampi(stage, 0, crew_table.size() - 1)])
+	var bill := float(roles["cashier"])
+	for id in stations:
+		var def: Dictionary = Data.STATIONS.get(id, {})
+		if not def.has("kinds") or kitchen_capacity(id, int(stations[id]), stage) <= 0.0:
+			continue
+		var role := String(def.get("roles", ["cook"])[0])
+		bill += float(roles.get(role, roles["cook"])) * crew
+	var covered: Array = w["counter_covers_tables"]
+	var servers := dining_workers(stage, seats, int(stations.get("staffroom", 0))) - int(covered[clampi(stage, 0, covered.size() - 1)])
+	bill += float(roles["server"]) * maxi(0, servers)
+	var grade: Array = w["grade"]
+	return snappedf(bill * float(grade[clampi(stage, 0, grade.size() - 1)]), 5.0)
 
 ## What the visible walking costs at this stage and street (Data.SERVICE "walk").
 static func walk_times(stage: int, location_id: String) -> Dictionary:

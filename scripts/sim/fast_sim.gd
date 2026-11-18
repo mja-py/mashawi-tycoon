@@ -53,6 +53,7 @@ func _run(context: Dictionary, r: RandomNumberGenerator) -> Dictionary:
 	stats = {"_day": int(ctx.get("day", Game.day)), "passers": 0, "served": 0, "portions": 0, "revenue": 0.0, "cogs": 0.0,
 		"sold": {}, "satisfaction_sum": 0.0, "wait_sum": 0.0, "left_wait": 0, "sold_out": 0, "queue_full": 0, "lost_rival": 0,
 		"too_pricey": 0, "crowd": 0, "dine_in": 0}
+	Throughput.add_loss_stats(stats)
 	var seats := int(ctx.get("seats", 0))
 	for i in range(seats):
 		_seats.append({"holder": -1, "table": i / 2, "needs_clean": false})
@@ -175,6 +176,8 @@ func _spawn_passer() -> void:
 	var r := rng.randf()
 	var p_room := _stop(best, 0)
 	var p_any := _stop(best, 0, false)
+	if look["cands"].is_empty() and r < _stop(Economy.NO_ITEM_VALUE, 0):
+		Throughput.count_no_item(stats, wants)
 	var visit := ""
 	if r < p_room:
 		visit = "buyer"
@@ -207,6 +210,7 @@ func _decide(b: Dictionary) -> void:
 	var look := _look(String(b["wants"]))
 	var cands: Array = look["cands"]
 	if cands.is_empty():
+		Throughput.count_no_item(stats, String(b["wants"]))
 		_leave(b, _walk("pass", pace))
 		return
 	var p := _stop(float(look["best"]), tp.queue_len())
@@ -322,6 +326,8 @@ func _on_gave_up(id: int, reason: String) -> void:
 	if b.is_empty():
 		return
 	ledger.release(id)
+	if reason == "closing":
+		stats["closing"] += 1
 	_leave(b, _walk("turn" if reason != "closing" else "out", float(b["pace"])))
 
 func _on_served(id: int, item: String, wait_s: float, dine_in: bool, portions: int) -> void:
@@ -366,6 +372,8 @@ func _settle(b: Dictionary, item: String, wait_s: float, dine_in: bool, portions
 	stats["sold"][item] = int(stats["sold"].get(item, 0)) + sold
 	for extra in sale["extras"]:
 		stats["sold"][extra] = int(stats["sold"].get(extra, 0)) + int(sale["extras"][extra])
+	for kind in sale["wished"]:
+		Throughput.count_no_item(stats, kind, int(sale["wished"][kind]))
 	Game.total_served += 1
 	stats["served"] += 1
 	stats["portions"] += sold
@@ -373,8 +381,10 @@ func _settle(b: Dictionary, item: String, wait_s: float, dine_in: bool, portions
 	if dine_in:
 		stats["dine_in"] += 1
 	var price := float(Game.menu[item]["price"])
-	stats["satisfaction_sum"] += Economy.satisfaction(Game.quality(item), price / float(Data.MENU_ITEMS[item]["base_price"]),
+	var s := Economy.satisfaction(Game.quality(item), price / float(Data.MENU_ITEMS[item]["base_price"]),
 		clampf(wait_s / float(ctx["patience_s"]), 0.0, 1.0), loc, float(ctx["satisfaction_bonus"]) + (0.05 if dine_in else 0.0))
+	stats["satisfaction_sum"] += s
+	Throughput.count_mood(stats, s)
 	return true
 
 func _on_left_seat(id: int) -> int:

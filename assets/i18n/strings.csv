@@ -15,7 +15,6 @@ ui.day,Day %d,اليوم %d
 ui.forecast,Forecast: %s,التوقعات: %s
 ui.costs_today,Costs today: %s,تكاليف اليوم: %s
 ui.finishing,Closing...,جارٍ الإغلاق...
-ui.skip,Skip to closing,تخطي إلى الإغلاق
 ui.live,Served %d  ·  %s   (line %d · kitchen %d · seated %d),تم تقديم %d  ·  %s   (طابور %d · مطبخ %d · جالسون %d)
 ui.next_day,Next day  >,اليوم التالي
 ui.r_title,Day %d  -  %s,اليوم %d  -  %s
@@ -77,7 +76,7 @@ ui.p_open,Open %s,مفتوح %s
 ui.p_here,You're here,أنت هنا
 ui.p_needs,Needs %.1f stars,يتطلب %.1f نجوم
 ui.p_move,Move here,انتقل إلى هنا
-ui.a_hint,Get the word out. Promotions matter most where rivals compete for the same crowd.,انشر الخبر. الإعلانات أهم ما يكون حيث يتنافس المنافسون على نفس الزبائن.
+ui.a_hint,"Get the word out. A campaign pays when your stand has room for more guests, and most where rivals compete for the same crowd. Prices grow with your stand.",انشر الخبر. الحملة تفيد يوم محلك يقدر يخدم زباين أكثر، وأكثر شي حيث يتنافس المنافسون على نفس الزبائن. أسعارها تكبر مع محلك.
 ui.a_active,Active - %d day(s) left,نشط - باقي %d يوم
 ui.a_start,Start  %s,ابدأ  %s
 ui.no_money,Not enough money.,لا يوجد مال كافٍ.
@@ -126,14 +125,20 @@ unit.pcs,pcs,قطعة
 unit.portions,portions,حصة
 unit.cans,cans,علبة
 unit.cups,cups,كوب
-mk.fliers,Hand out Fliers,توزيع منشورات
-mk.fliers.desc,+15% stop chance today.,+15% فرصة التوقف اليوم.
-mk.posters,Posters,لوحات إعلانية
-mk.posters.desc,+15% stop chance for 3 days.,+15% فرصة التوقف لمدة 3 أيام.
-mk.social,Instagram Page,صفحة إنستغرام
-mk.social.desc,+12% stop chance for a week.,+12% فرصة التوقف لمدة أسبوع.
-mk.radio,Radio Ad,إعلان راديو
-mk.radio.desc,+30% stop chance for 5 days. Everybody hears it.,+30% فرصة التوقف لمدة 5 أيام. الكل يسمعه.
+mk.samples,Free tasting tray,صينية تذوق مجانية
+mk.samples.desc,"Hand out bites of today's grill: +50% stop chance today. Best when your stand has room for more guests.",وزّع لقمات من مشاوي اليوم: +50% فرصة التوقف اليوم. أفضل شي يوم محلك يقدر يخدم زباين أكثر.
+mk.social,Short video post,مقطع فيديو قصير
+mk.social.desc,A short clip of your grill for the neighbourhood: +30% stop chance for 3 days.,مقطع قصير لشوايتك لأهل المنطقة: +30% فرصة التوقف لمدة 3 أيام.
+mk.chat,Offers to regulars,عروض للزباين الدايمين
+mk.chat.desc,"Send an offer to the guests you have served: up to +35% stop chance for 5 days, growing with every guest (full at 3,000 served).",أرسل عرض للزباين اللي خدمتهم: حتى +35% فرصة التوقف لمدة 5 أيام، وتزيد مع كل زبون (كاملة عند 3000 زبون).
+mk.maps,Delivery and maps listing,إدراج في التوصيل والخرايط
+mk.maps.desc,Put your stand on delivery and map apps: +12% stop chance for 14 days.,سجّل محلك في تطبيقات التوصيل والخرايط: +12% فرصة التوقف لمدة 14 يوم.
+mk.blogger,Food blogger visit,زيارة بلوقر أكل
+mk.blogger.desc,"A food blogger tries your menu: up to +60% stop chance for 3 days, in full when recent guests are happy (80% or more). Needs 2.0 stars. A happy visit (70% or more) lifts your stars, an unhappy one (under 50%) lowers them.",بلوقر أكل يجرّب قائمتك: حتى +60% فرصة التوقف لمدة 3 أيام، كاملة إذا زباينك الأخيرين مستانسين (80% فما فوق). تحتاج 2.0 نجوم. الزيارة الحلوة (70% فما فوق) ترفع نجومك، والزعلانة (أقل من 50%) تنزلها.
+mk.review_good,The food blogger loved your food: your stars went up.,البلوقر عجبه أكلك: نجومك ارتفعت.
+mk.review_bad,The food blogger was not impressed: your stars went down.,البلوقر ما عجبه الأكل: نجومك نزلت.
+ui.a_needs_stars,Needs %.1f stars,تحتاج %.1f نجوم
+ui.promo_refund,Promotions have changed: %s refunded for the days left on your old campaigns.,تغيّرت الإعلانات: رجّعنا لك %s عن الأيام الباقية من حملاتك القديمة.
 bubble.great.1,Delicious!,لذيذ!
 bubble.great.2,Best tikka in Dubai!,أحلى تكة في دبي!
 bubble.great.3,Yum!,يم!
@@ -535,7 +540,7 @@ guide.build.tip,Read the day report’s bottleneck before spending. Each new sta
 guide.build.fact,Counter: faster ordering and queue room. Grill and karak: faster preparation. Cold box: less overnight waste. Seating and majlis: room for diners; workers deliver and clear tables.,الكاونتر: طلبات أسرع ومساحة للطابور. الشواية والكرك: تحضير أسرع. التبريد: هدر أقل بالليل. الجلسات والمجلس: أماكن للزبائن، والموظفة توصل وتنظّف.
 guide.build.extra,"Signage attracts passers-by. Lights help evening traffic. Hospitality helps satisfaction and attraction. Shade softens heat and sandstorm losses. Fixed plots stay in their location; your cart, stall and truck travel with you.",اللوحة تجذب المارة. الإضاءة تساعد زبائن المساء. الضيافة تزيد الرضا والجذب. المظلة تخفف أثر الحر والعواصف. المحل الثابت يبقى بموقعه؛ العربة والكشك المتنقل والشاحنة ينتقلون معك.
 guide.promote.title,Invite a crowd you can serve,اعزم زحمة تقدر تخدمها
-guide.promote.say,"Choose a promotion after stocking enough food and making space in the kitchen. Fliers are a short trial; longer campaigns last several days. Competition is strong at the Mall and Global Village, where promotions have a bigger effect.",اختَر حملة بعد ما تجهّز المؤن وتتأكد إن مطبخك يتحمل. المنشورات تجربة قصيرة، والحملات الأطول تعرّف الناس عليك عدة أيام. المنافسة قوية بالمول والقرية العالمية، والترويج تأثيره أكبر هناك.
+guide.promote.say,"Choose a promotion after stocking enough food and making space in the kitchen. A tasting tray is a one-day trial; longer campaigns last several days, and offers to regulars and a blogger's visit grow with your guests and their mood. Competition is strong at the Mall and Global Village, where promotions have a bigger effect.",اختَر حملة بعد ما تجهّز المؤن وتتأكد إن مطبخك يتحمل. صينية التذوق تجربة يوم واحد، والحملات الأطول تعرّف الناس عليك عدة أيام، وعروض الزباين الدايمين وزيارة البلوقر تكبر مع زباينك ورضاهم. المنافسة قوية بالمول والقرية العالمية، والترويج تأثيره أكبر هناك.
 guide.promote.tip,"Check the campaign cost, duration and forecast. Advertising a sold-out or overloaded kitchen wastes an opportunity.",راجع سعر الحملة ومدتها وتوقع الطقس. الإعلان مع نفاد المؤن أو تأخر المطبخ يضيّع الفرصة.
 guide.promote.fact,"Compare results in the report: more traffic helps when you can turn it into happy, profitable orders.",قارن النتيجة في التقرير: زيادة الزبائن تفيد يوم تتحول لطلبات مربحة وزبائن راضين.
 guide.stars.title,"Earn a name, unlock the next step",اكسب سمعة وافتح خطوتك الياية
@@ -543,7 +548,7 @@ guide.stars.say,"The five stars show your reputation. Quality, fair value and sh
 guide.stars.tip,Visit Goals and claim each completed reward. Read the lock message for the exact requirement before saving for an unlock.,ادخل الأهداف واستلم مكافأة كل هدف مكتمل. اقرأ سبب القفل عشان تعرف المطلوب قبل ما توفّر له.
 guide.stars.fact,Metro: 1 star + stall. JBR: 1.5 + stall. Downtown: 2.25 + truck. Mall: 2.5 + truck. Global Village: 3 + truck. Stars measure reputation and cannot be spent.,المترو: نجمة + كشك متنقل. جي بي آر: 1.5 + كشك متنقل. داون تاون: 2.25 + شاحنة. المول: 2.5 + شاحنة. القرية العالمية: 3 + شاحنة. النجوم تقيس السمعة وما تنصرف كفلوس.
 guide.day.title,Let’s welcome our first customer,يلا نستقبل أول زبون
-guide.day.say,"Stock your ingredients and keep at least one food dish on sale, then tap Open shop. Watch who orders takeaway and who stays at a table. Skip speeds up the day; taken orders, meals and table cleaning finish before the report.",جهّز المكونات وخلّ صنف أكل واحد على الأقل معروض، وبعدين اضغط «افتح المحل». تابع منو يطلب سفري ومنو يجلس. التخطي يسرّع اليوم؛ الطلبات المقبولة والأكل وتنظيف الطاولات يخلصون قبل التقرير.
+guide.day.say,"Stock your ingredients and keep at least one food dish on sale, then tap Open shop. Watch who orders takeaway and who stays at a table. Pick 2× or 4× for the pace; taken orders, meals and table cleaning finish before the report.",جهّز المكونات وخلّ صنف أكل واحد على الأقل معروض، وبعدين اضغط «افتح المحل». تابع منو يطلب سفري ومنو يجلس. اختَر سرعة 2× أو 4×؛ الطلبات المقبولة والأكل وتنظيف الطاولات يخلصون قبل التقرير.
 guide.day.tip,"After closing, check profit, price complaints, stockouts and waits. Change one thing, then compare the next day.",بعد الإغلاق راجع الربح وشكاوى السعر ونفاد المؤن والانتظار. عدّل شي واحد وقارن اليوم الياي.
 guide.day.fact,"Reopen this guide from Settings. For cooler iPhone play, choose 30 fps and reduce 3D resolution; 60 fps is also available.",تقدر ترجع للدليل من الإعدادات. لتخفيف حرارة الآيفون اختَر 30 إطار وقلّل دقة المشهد؛ خيار 60 إطار متوفر بعد.
 coach.practice,Play with me,خلّنا نلعب سوا
@@ -589,7 +594,7 @@ coach.sale.title,Follow the handoff,تابع تسليم الوجبة
 coach.sale.say,Watch for the handoff and receipt. Takeaway guests collect; seated guests wait for a worker to deliver.,راقب تسليم الوجبة والإيصال. السفري يستلم ويمشي؛ واللي يجلس ينتظر الموظفة توصل له.
 coach.sale.done,Our first sale! Ingredients became a meal and cash. Revenue still has food costs and bills to cover.,أول بيعة! المكونات صارت وجبة ودخل. تذكّر إن الإيراد لازم يغطي المكونات والمصاريف.
 coach.finish.title,Try the day controls,جرّب سرعة اليوم
-coach.finish.say,"Try 2× or 4× below, or Skip to finish sooner. Every accepted order still gets its service animation.",جرّب سرعة 2 أو 4 تحت، أو تخطَّ لإنهاء اليوم أسرع. كل طلب مقبول يكمل حركة خدمته.
+coach.finish.say,The day runs at 2×. Tap 4× below when you want it faster. Every order still gets its service animation.,اليوم يمشي بسرعة 2×. اضغط 4× تحت إذا تبيه أسرع. كل طلب يكمل حركة خدمته.
 coach.finish.done,The day is complete. Let’s see what the numbers tell us.,خلص اليوم. نشوف الأرقام وش تقول لنا.
 coach.report.title,Learn from today,نتعلّم من اليوم
 coach.report.say,"Read profit, waits and price complaints in the report. Tap Next day when you’re ready.",راجع الربح والانتظار وشكاوى السعر في التقرير. اضغط اليوم التالي يوم تخلص.
@@ -598,7 +603,7 @@ coach.upgrade.title,Improve the bottleneck,نطوّر اللي يعطّلنا
 coach.upgrade.say,"Inspect %s. Compare its effect and cost with the report. Buy a level if it fits your budget, or save for later.",شوف %s. قارن تأثيره وتكلفته بالتقرير. اشترِ مستوى إذا يناسب ميزانيتك أو وفّر له بعدين.
 coach.upgrade.done,Good decision about %s. Upgrade the part causing waits; a bigger building alone won’t fix every queue.,قرارك بخصوص %s واضح. طوّر الشي اللي يسبّب الانتظار؛ المبنى الأكبر بروحه ما يحل كل الزحمة.
 coach.campaign.title,Invite guests wisely,نروّج بذكاء
-coach.campaign.say,"Inspect Fliers in Promotions. Start it only when you have stock and capacity, or choose Save for later.",شوف المنشورات في الإعلانات. شغّلها يوم عندك مؤن وقدرة تخدم الزحمة، أو خلّها لبعدين.
+coach.campaign.say,"Inspect the Free tasting tray in Promotions. Start it only when you have stock and room for more guests, or choose Save for later.",شوف صينية التذوق المجانية في الإعلانات. شغّلها يوم عندك مؤن وقدرة تخدم الزحمة، أو خلّها لبعدين.
 coach.campaign.done,Advertising is your choice. More guests help only when we can serve them; compare results after the campaign.,الإعلان قرارك. زيادة الزبائن تفيد يوم نقدر نخدمهم؛ قارن النتيجة بعد الحملة.
 coach.goals.title,Reputation and rewards,السمعة والمكافآت
 coach.goals.say,Open Goals. Claim a ready reward; otherwise read your next target. Happy guests build stars and unlock places.,افتح الأهداف. استلم المكافأة الجاهزة أو شوف هدفك الياي. رضا الزبائن يبني النجوم ويفتح أماكن.
@@ -616,3 +621,79 @@ coach.price.downtown,Try + or − once. Downtown guests accept premium prices wh
 coach.price.mall,Try + or − once. Mall guests expect quality; strong competition makes value matter too.,جرّب + أو − مرة. زبائن المول يتوقعون جودة؛ ومع المنافسة القوية القيمة لها دور بعد.
 coach.price.gv,Try + or − once. Global Village has plenty of choice; win guests with value and a kitchen that keeps up.,جرّب + أو − مرة. بالقرية العالمية الخيارات وايدة؛ اكسب الزبون بالقيمة وخدمة تلحق على الزحمة.
 coach.enable_food,"No food dish is on sale. Open Chicken Tikka and switch it on, then return to Supplies.",ما عندنا صنف أكل معروض. افتح تكة الدجاج وفعّل بيعها، وبعدين ارجع للمؤن.
+rep.title,Reputation,السمعة
+rep.what,"Stars show how well known and liked your stand is. More stars make more passers-by stop: about %d in 100 now, for a fairly priced dish.",النجوم تبيّن شكثر محلّك معروف ومحبوب. كل ما زادت النجوم وقف عندك ناس أكثر: تقريبًا %d من كل 100 مارّ الحين إذا السعر معقول.
+rep.last,Yesterday: %s stars. Guests were %d%% satisfied.,أمس: %s نجمة. رضا الزباين %d%%.
+rep.last_lost,"%d left a slow line or found a dish sold out, which costs stars.",%d مشوا من طابور بطيء أو لقوا الصنف خالص، وهذا ينقّص النجوم.
+rep.how,"To raise it: a better recipe, fair prices, short waits and enough stock. Hospitality and seating help too.",عشان ترفعها: وصفة أحسن، سعر معقول، انتظار قصير ومؤن كافية. الضيافة والجلسات تساعد بعد.
+rep.next,Next place: %s opens at %s stars.,المكان الياي: %s يفتح عند %s نجوم.
+rep.next_stage,It also needs a %s.,ويحتاج بعد %s.
+rep.all_open,Every place in Dubai is open to you.,كل أماكن دبي مفتوحة لك.
+rep.local,Known here: %s stars. Each place remembers you separately.,معروف هني: %s نجوم. كل مكان يتذكرك بروحه.
+rep.local_needs,Known here: %s stars. A %s here needs %s stars.,معروف هني: %s نجوم. %s هني يحتاج %s نجوم.
+rep.spend,Stars are never spent. They rise with happy guests and fade when guests leave unhappy.,النجوم ما تنصرف. ترتفع مع رضا الزباين وتنزل إذا مشوا زعلانين.
+rep.ok,Got it,تمام
+rep.reward,+%s reputation,+%s سمعة
+ui.p_needs_stage,Needs a %s,يحتاج %s
+ui.mood_today,Guest mood today,مزاج الزباين اليوم
+ui.mood_up,Reputation ▲,السمعة ▲
+ui.mood_down,Reputation ▼,السمعة ▼
+ui.mood_flat,Reputation =,السمعة =
+adv.title,Advisor,المستشار
+adv.show,Show me,ورّيني
+adv.next,Do this next,الخطوة الياية
+adv.gain,about +%s a day,تقريبًا +%s في اليوم
+adv.hide,Hide today’s tip,خبّي نصيحة اليوم
+adv.clean,A clean day: nobody left unhappy. Keep stock and prices as they are.,يوم نظيف: ما حد مشى زعلان. خلّ المؤن والأسعار مثل ما هي.
+adv.start,Open the stand and I will read the day with you.,افتح المحل وبنقرا اليوم مع بعض.
+adv.sold_out,%d guests found a dish sold out. Tap Stock today before opening: it buys for the forecast plus a little spare.,%d زبون لقى الصنف خالص. اضغط «مؤن اليوم» قبل الفتح: يشتري على قد التوقعات وزيادة بسيطة.
+adv.line,%d guests gave up on the line. Raise the %s level in Build to serve faster.,%d زبون ترك الطابور. ارفع مستوى %s في البناء عشان تخدم أسرع.
+adv.busy,The %s worked flat out all day. One more level lets you serve more.,%s اشتغل على آخره طول اليوم. مستوى زيادة يخليك تخدم أكثر.
+adv.crowd,%d passers-by wanted to buy but the stand was full. A bigger stand takes more buyers at once.,%d من المارّة بغوا يشترون بس المحل كان مليان. محل أكبر ياخذ زباين أكثر مرة وحدة.
+adv.pricey,%d guests said too pricey. %s is furthest above its usual price: try one step down.,%d زبون قالوا السعر غالي. %s أبعد شي عن سعره المعتاد: جرّب تنزله درجة.
+adv.no_item,%d times a guest wanted %s with their order and none was on sale. Put one on the menu.,%d مرة زبون بغى %s مع طلبه وما كان معروض. حط واحد في القائمة.
+adv.spoil,"%s of food spoiled overnight. A cold box in Build keeps it, or buy closer to what you sell.",خرب أكل بقيمة %s في الليل. الثلاجة في البناء تحفظه، أو اشترِ على قد بيعك.
+adv.spoil_box,%s of food still spoiled. Buy closer to what you sell: Stock today does the sums.,خرب أكل بقيمة %s. اشترِ على قد بيعك: «مؤن اليوم» يحسبها لك.
+adv.rival,%d guests went to a rival. A promotion wins them back here.,%d زبون راحوا للمنافس. الإعلان يرجّعهم هني.
+adv.quiet,"Only %d of %d passers-by bought, and the stand had room for more. Reputation, a busier place or a promotion brings them.",%d بس من %d مارّ اشتروا، والمحل كان يتحمّل أكثر. السمعة أو مكان أزحم أو إعلان يجيبهم.
+adv.raise,Guests were %d%% satisfied and nobody called it pricey. %s can take %s.,رضا الزباين %d%% وما حد قال غالي. %s يتحمّل %s.
+adv.trend_down,"Profit is down %d%% over three days. Check what changed: place, prices or stock.",الربح نزل %d%% في ثلاث أيام. شوف شو تغيّر: المكان، الأسعار أو المؤن.
+adv.trend_up,Profit is up %d%% over three days. Whatever you changed is working.,الربح زاد %d%% في ثلاث أيام. اللي غيّرته شغّال.
+adv.dead_dish,Nobody has ordered %s for five days. Lower its price or take it off sale to save stock.,ما حد طلب %s من خمس أيام. نزّل سعره أو شيله من البيع ووفّر المؤن.
+adv.best_place,"Your best place so far is %s: about %s a day, against %s here.",أحسن مكان لك لين الحين %s: تقريبًا %s في اليوم، مقابل %s هني.
+adv.hot,Heatwave forecast: about half the guests will want a drink. Stock extra drinks.,التوقعات حر شديد: تقريبًا نص الزباين يبون مشروب. زوّد المشروبات.
+adv.hot_none,"Heatwave forecast: about half the guests will want a drink, and none is on sale.",التوقعات حر شديد: تقريبًا نص الزباين يبون مشروب، وما عندك مشروب معروض.
+adv.sandstorm,Sandstorm forecast: far fewer people out. Stock light; forecasts are right about 7 days in 10.,التوقعات عاصفة رملية: ناس أقل بوايد. خفّف المؤن؛ التوقعات تصيب تقريبًا 7 أيام من 10.
+adv.breeze,A cool breeze is forecast: more people out walking. Stock a little extra.,التوقعات نسمة باردة: ناس أكثر تتمشى. زوّد المؤن شوي.
+adv.goal_ready,A goal is ready: claim %s in Goals.,في هدف جاهز: استلم %s من الأهداف.
+adv.goal_near,Your goal is %d%% done. Its reward is %s.,هدفك خلص %d%% منه. مكافأته %s.
+adv.buy,Best buy now: %s. About +%s a day; it pays for itself in %d days.,أحسن شراء الحين: %s. تقريبًا +%s في اليوم؛ يرجّع سعره في %d يوم.
+adv.save,"Worth saving for: %s. %s more to go, then about +%s a day.",يستاهل التوفير: %s. باقي %s، وبعدها تقريبًا +%s في اليوم.
+adv.promo,%s should bring about %d more buyers a day here: %s extra after its cost.,%s المفروض يجيب تقريبًا %d زبون زيادة في اليوم هني: %s صافي بعد التكلفة.
+adv.opening,The opening crowds last %d more days. Build your reputation while they are here.,زحمة الافتتاح باقي لها %d يوم. ابنِ سمعتك وهم موجودين.
+adv.trends,Your last %d days,آخر %d يوم
+adv.t_served,Buyers,الزباين
+adv.t_profit,Profit,الربح
+adv.t_happy,Satisfaction,الرضا
+adv.t_best,"Best seller: %s (%d plates, %d%% of sales)",الأكثر مبيعًا: %s (%d طبق، %d%% من المبيعات)
+adv.none,No history yet. Play a day and I will have numbers for you.,ما في سجل للحين. العب يوم ويكون عندي أرقام لك.
+rpt.verdict_great,A great day,يوم ممتاز
+rpt.verdict_good,A good day,يوم زين
+rpt.verdict_ok,A fair day,يوم مقبول
+rpt.verdict_bad,A hard day,يوم صعب
+rpt.why,What happened,شو صار
+rpt.funnel,%d passed by · %d bought (%d%%),%d مرّوا · %d اشتروا (%d%%)
+rpt.lost_none,Nobody left unhappy.,ما حد مشى زعلان.
+rpt.no_item,Extras asked for that you do not sell,إضافات انطلبت وما تبيعها
+rpt.closing,Still in line at closing,في الطابور وقت الإغلاق
+rpt.rep,%s stars,%s نجمة
+rpt.money,Money,الحساب
+adv.move,"A better place: %s should earn about %s a day more than here, after rent.",مكان أحسن: %s المفروض يربّحك تقريبًا %s في اليوم زيادة عن هني، بعد الإيجار.
+ui.a_gain,About %d more buyers a day for %d day(s): %s after its cost.,تقريبًا %d زبون زيادة في اليوم لمدة %d يوم: %s صافي بعد التكلفة.
+ui.a_loss,"About %d more buyers a day for %d day(s), but %s less than it costs here.",تقريبًا %d زبون زيادة في اليوم لمدة %d يوم، بس %s أقل من تكلفته هني.
+ui.a_capped,Your stand is already turning guests away. More passers-by would walk on: upgrade first.,محلك من الحين يردّ زباين. اللي بيجون زيادة بيمشون: طوّر المحل أول.
+adv.no_item_station,%d times a guest wanted %s with their order. The %s in Build lets you sell them.,%d مرة زبون بغى %s مع طلبه. %s في البناء يخليك تبيعها.
+adv.crowd_counter,%d passers-by wanted to buy but the stand was full. A higher counter level makes room for more buyers.,%d من المارّة بغوا يشترون بس المحل كان مليان. مستوى أعلى للكاونتر يوسّع لزباين أكثر.
+adv.stage_at,A %s would pay best at %s: about +%s a day. Trade there first.,%s يربح أكثر شي في %s: تقريبًا +%s في اليوم. روح اشتغل هناك أول.
+rep.next_needs,Next place: %s needs a %s.,المكان الياي: %s يحتاج %s.
+rpt.review,Food blogger review,تقييم البلوقر

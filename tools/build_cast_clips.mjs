@@ -158,7 +158,7 @@ function standingFrames(d, armDirections) {
       if (name === 'Spine01') delta = axis([1,0,0], 0.55*breath);
       if (name === 'Spine') delta = qmul(axis([1,0,0], 0.35*breath), axis([0,0,1], 0.20*sway));
       if (name === 'neck') delta = axis([1,0,0], -0.3*breath);
-      if (name === 'Head') delta = qmul(axis([0,1,0], 1.8*Math.sin(phase-0.6)), axis([0,0,1], 0.35*Math.sin(phase+0.8)));
+      if (name === 'Head') delta = qmul(axis([0,1,0], 0.6*Math.sin(phase-0.6)), axis([0,0,1], 0.15*Math.sin(phase+0.8)));
       if (/^(Left|Right)Shoulder$/.test(name)) delta = axis([1,0,0], 0.20*breath);
       if (/^(Left|Right)Arm$/.test(name)) delta = axis([1,0,0], 0.45*Math.sin(phase+(name.startsWith('Left') ? 0.5 : -0.4)));
       if (/^(Left|Right)ForeArm$/.test(name)) delta = axis([1,0,0], 1.0+0.4*Math.sin(phase-0.3));
@@ -232,12 +232,46 @@ function closeLoop(ts, length) {
 }
 function seatedLoop(ts, length) {
   return ts.map(t => {
-    // Preserve every source pose value, including hips Y and every leg key.
+    // Mirror the source poses; damping is applied to the completed cycle.
     // Inverse cosine timestamps ease the existing motion to a stop at each
     // turnaround. Reversing the same path then closes all channels exactly.
     const forward = t.times.map(time => length/Math.PI*Math.acos(Math.max(-1,Math.min(1,1-2*time/length))));
     return {...t, times: [...forward, ...forward.slice(0,-1).reverse().map(time => 2*length-time)],
       rows: [...t.rows.map(row=>row.slice()), ...t.rows.slice(0,-1).reverse().map(row=>row.slice())]};
+  });
+}
+
+// Scale the entire source excursion, not each frame's step: this retains the
+// authored look/settle timing without accumulating rotation or Euler artifacts.
+// Caps are defensive for future sources; current tracks use the fixed factors.
+function calmRule(name, clip) {
+  const glance = clip === 'glance';
+  if (name === 'Head') return [glance ? 0.17 : 0.10, glance ? 10 : 6];
+  if (name === 'neck') return [glance ? 0.17 : 0.15, 4];
+  if (/^Spine\d*$/.test(name)) return [glance ? 0.10 : 0.08, glance ? 2 : 3];
+  // A standing glance must not move the pelvis/legs beneath the planted feet.
+  if (name === 'Hips') return [glance ? 0 : 0.05, glance ? 1.5 : 2];
+  if (/^(Left|Right)(UpLeg|Leg|Foot|ToeBase)$/.test(name)) return [glance ? 0 : 0.05, 2];
+  if (/^(Left|Right)(Shoulder|Arm|ForeArm|Hand)$/.test(name)) return [glance ? 0.10 : 0.05, 4];
+  return [1, Infinity]; // static head markers; do not change the first pose
+}
+function calmTracks(ts, clip) {
+  return ts.map(t => {
+    const first = t.path === 'rotation' ? norm(t.rows[0]) : t.rows[0];
+    let rows = t.rows.map(row => row.slice());
+    if (t.path === 'rotation') {
+      const [factor, limit] = calmRule(t.name, clip);
+      const peak = Math.max(...rows.map(row => angle(first, row)));
+      const scale = peak ? Math.min(factor, limit * 0.999999 / peak) : factor;
+      rows = rows.map(row => slerp(first, row, scale));
+      assert(rows.every(row => angle(first, row) <= limit + 1e-5), `${clip}: ${t.name} travel`);
+    } else if (t.name === 'Hips' && t.path === 'translation') {
+      rows = rows.map(() => first.slice()); // seated height/position or standing ground placement
+    }
+    // Exact endpoints also survive float32 serialization and loop reversal.
+    rows[0] = first.slice();
+    rows[rows.length-1] = first.slice();
+    return {...t, rows};
   });
 }
 
@@ -249,10 +283,10 @@ function assertLoop(ts, name, limit) {
     } else assert(Math.hypot(...sub(t.rows[0],t.rows.at(-1))) < 1e-5, `${name}: ${t.name} translation/scale seam`);
   }
 }
-function verifyFootPins(d) {
+function verifyFootPins(d, clip = 'idle') {
   const nodes = d.json.nodes, skeleton = new Set(d.json.skins[0].joints);
   const hips = nodes.findIndex(n=>n.name==='Hips');
-  const ts = tracks(d,d.json.animations.find(a=>a.name==='idle'));
+  const ts = tracks(d,d.json.animations.find(a=>a.name===clip));
   const pins = [];
   let maximum = 0;
   // Check quantized, interpolated output at 60 Hz, including between baked keys.
@@ -298,9 +332,11 @@ for (const id of [...customers.map(id=>'customers/'+id), 'crew/filipina-server']
   const server = id.startsWith('crew/');
   const changed = server ? ['idle','carry'] : ['idle','sit','glance'];
   const metadata = d.json.animations.find(a=>a.name==='idle').extras?.buildCastClips;
-  if (metadata?.recipe === recipe) {
+  // This recipe only revises customers. Keep the server's existing repaired
+  // idle/carry and its build metadata byte-identical, even when our hash changes.
+  if (server || metadata?.recipe === recipe) {
     for (const name of changed) assertLoop(tracks(d,d.json.animations.find(a=>a.name===name)),name,1);
-    if (!server) verifyFootPins(d);
+    if (!server) { verifyFootPins(d); verifyFootPins(d,'glance'); }
     // Also require glTF-Transform to parse the shipped result successfully.
     await io.readBinary(new Uint8Array(bytes));
     totalBefore += bytes.length; totalAfter += bytes.length;
@@ -339,7 +375,7 @@ for (const id of [...customers.map(id=>'customers/'+id), 'crew/filipina-server']
       rows:frames.map(frame=>t.path==='rotation' ? frame[t.node].q : t.path==='translation' ? frame[t.node].t : [1,1,1])}));
     replace('idle',idleTracks);
     const sit = d.json.animations.find(a=>a.name==='sit');
-    replace('sit',seatedLoop(tracks(base,sit),duration(base,sit)));
+    replace('sit',calmTracks(seatedLoop(tracks(base,sit),duration(base,sit)),'sit'));
     const name = path.basename(id);
     const sourcePath = name === 'souq-man' ? 'raw/souq-customers/souq-man-animation.glb'
       : `raw/${['beach-walker','city-commuter','creek-abaya','creek-kandura'].includes(name)?'area-cast':'evening-cast'}/${name}-animation.glb`;
@@ -353,8 +389,7 @@ for (const id of [...customers.map(id=>'customers/'+id), 'crew/filipina-server']
       const out = {...t,node:nodes.get(t.name)};
       // Keep each shipped model's original ground placement, not raw root motion.
       if (t.name==='Hips'&&t.path==='translation') {
-        const offset = sub(oldHips,t.rows[0]);
-        out.rows = t.rows.map(row=>add(row,offset));
+        out.rows = t.rows.map(() => oldHips.slice());
       }
       out.rows = out.rows.map(row=>t.path==='rotation'?norm(row):row.slice());
       // The sources close already; duplicate first values to remove float noise.
@@ -362,7 +397,7 @@ for (const id of [...customers.map(id=>'customers/'+id), 'crew/filipina-server']
       out.rows[out.rows.length-1] = out.rows[0].slice();
       return out;
     });
-    replace('glance',glance);
+    replace('glance',calmTracks(glance,'glance'));
   }
   d.json.animations.find(a=>a.name==='idle').extras = { buildCastClips:build };
   const output = w.finish(), after = parse(output);
@@ -373,7 +408,7 @@ for (const id of [...customers.map(id=>'customers/'+id), 'crew/filipina-server']
   const decoded = await io.readBinary(new Uint8Array(output));
   for (const name of changed) assert(decoded.getRoot().listAnimations().some(a=>a.getName()===name));
   for (const name of changed) assertLoop(tracks(after,after.json.animations.find(a=>a.name===name)),name,1);
-  if (!server) contact = `; planted-foot error ${verifyFootPins(after).toFixed(6)} mm`;
+  if (!server) contact = `; planted-foot error idle ${verifyFootPins(after).toFixed(6)} mm, glance ${verifyFootPins(after,'glance').toFixed(6)} mm`;
   totalBefore += bytes.length; totalAfter += output.length;
   console.log(`${id}: ${bytes.length} -> ${output.length} bytes; ${changed.join(', ')}${contact}${check?' (would write)':''}`);
   results.push({file,output});

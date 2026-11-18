@@ -37,6 +37,31 @@ var _seats := 0
 var _station_of_kind: Dictionary = {}
 var _kitchen: Dictionary = {}
 
+## The losses and moods both sims count beside the pipeline's own stats:
+##   no_item: would-be buyers (and add-on wishes) for a kind nothing on the menu offers
+##     (no_item_kinds splits it by kind: food, drink, side, sweet);
+##   closing: buyers still in line when the day closes (sent home);
+##   mood_great / mood_ok / mood_bad: completed sales by Economy.mood of their satisfaction.
+static func add_loss_stats(stats: Dictionary) -> void:
+	stats["no_item"] = 0
+	stats["no_item_kinds"] = {}
+	stats["closing"] = 0
+	stats["mood_great"] = 0
+	stats["mood_ok"] = 0
+	stats["mood_bad"] = 0
+
+static func count_no_item(stats: Dictionary, kind: String, n: int = 1) -> void:
+	if n <= 0:
+		return
+	stats["no_item"] = int(stats.get("no_item", 0)) + n
+	var kinds: Dictionary = stats.get("no_item_kinds", {})
+	kinds[kind] = int(kinds.get(kind, 0)) + n
+	stats["no_item_kinds"] = kinds
+
+static func count_mood(stats: Dictionary, satisfaction: float) -> void:
+	var key := "mood_" + Economy.mood(satisfaction)
+	stats[key] = int(stats.get(key, 0)) + 1
+
 func setup(context: Dictionary, r: RandomNumberGenerator) -> void:
 	ctx = context
 	rng = r

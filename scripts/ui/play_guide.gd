@@ -15,6 +15,13 @@ var _poll := 0.0
 var _pulse := 0.0
 var _last_topic := ""
 var _last_layout := ""
+var _actions: BoxContainer
+var _close: Button
+## Folded to one row while a menu or the report is open, so the guide never squeezes them.
+var _compact := false
+## The player tapped the strip to read the whole message; it lies over the menu, not above it.
+var _expanded := false
+var _strip_height := 0.0
 
 func setup(owner_hud: CanvasLayer) -> void:
 	hud = owner_hud
@@ -46,23 +53,51 @@ func setup(owner_hud: CanvasLayer) -> void:
 	_words.add_theme_constant_override("line_spacing", -8)
 	_words.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_words.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_words.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# The folded strip shows two lines; a tap unfolds the whole message over the menu.
+	_words.mouse_filter = Control.MOUSE_FILTER_STOP
+	_words.gui_input.connect(func(ev: InputEvent):
+		if _compact and ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			_expanded = not _expanded
+			_apply_mode())
 	speech.add_child(_words)
-	var actions := VBoxContainer.new()
-	actions.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(actions)
-	_next = hud._menu_target(hud._button("", "Primary", Vector2(156, 50)), "coach_next")
+	_actions = BoxContainer.new()
+	_actions.vertical = true
+	_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	_actions.add_theme_constant_override("separation", 6)
+	row.add_child(_actions)
+	_next = hud._menu_target(hud._button("", "Primary", Vector2(156, 60)), "coach_next")
 	_next.pressed.connect(_continue)
-	actions.add_child(_next)
-	_later = hud._menu_target(hud._button(tr("coach.save_later"), "Ghost", Vector2(156, 48)), "coach_defer")
+	_actions.add_child(_next)
+	_later = hud._menu_target(hud._button(tr("coach.save_later"), "Ghost", Vector2(156, 60)), "coach_defer")
 	_later.pressed.connect(_defer)
-	actions.add_child(_later)
-	var close: Button = hud._menu_target(hud._button("×", "Ghost", Vector2(48, 48)), "coach_close")
-	close.tooltip_text = tr("coach.pause")
-	close.accessibility_name = tr("coach.pause")
-	close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	close.pressed.connect(hud.pause_tutorial)
-	row.add_child(close)
+	_actions.add_child(_later)
+	_close = hud._menu_target(hud._button("×", "Ghost", Vector2(60, 60)), "coach_close")
+	_close.tooltip_text = tr("coach.pause")
+	_close.accessibility_name = tr("coach.pause")
+	_close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	_close.pressed.connect(hud.pause_tutorial)
+	row.add_child(_close)
 	_refresh()
+
+## Full card over the street; a slim strip above an open menu or inside the report.
+func _apply_mode() -> void:
+	var slim := _compact and not _expanded
+	_host.custom_minimum_size = Vector2(46, 56) if slim else Vector2(80, 104)
+	_heading.visible = not slim
+	_words.add_theme_font_size_override("font_size", 18 if slim else 22)
+	_words.max_lines_visible = 2 if slim else -1
+	_actions.vertical = not slim
+	_next.custom_minimum_size.x = 132.0 if slim else 156.0
+	_later.custom_minimum_size.x = 132.0 if slim else 156.0
+	_close.size_flags_vertical = Control.SIZE_SHRINK_CENTER if slim else Control.SIZE_SHRINK_BEGIN
+	card.reset_size()
+	if slim:
+		_strip_height = card.get_combined_minimum_size().y
+
+## Called by the HUD the moment a menu opens or closes, before it sizes the panel.
+func sync_now() -> void:
+	_sync_layout()
 
 func topic() -> String:
 	return GuideJourney.STEPS[int(Game.tutorial["step"])]
@@ -70,6 +105,9 @@ func topic() -> String:
 func reserve_height() -> float:
 	if not is_instance_valid(card) or card.get_parent() != self or not card.visible:
 		return 0.0
+	# An unfolded message lies over the menu; only the strip takes space from it.
+	if _compact:
+		return _strip_height + 6.0
 	return card.get_combined_minimum_size().y + 6.0
 
 func detach_card() -> void:
@@ -91,6 +129,11 @@ func _sync_layout() -> void:
 	else:
 		detach_card()
 	card.visible = show
+	var compact: bool = show and (card.get_parent() != self or (hud.current_panel != "" and hud.main.phase == hud.main.Phase.PREP))
+	if compact != _compact:
+		_compact = compact
+		_expanded = false
+		_apply_mode()
 	if show and not is_instance_valid(_portrait):
 		_portrait = Portrait.new()
 		_portrait.max_edge = 320
@@ -104,6 +147,8 @@ func _sync_layout() -> void:
 	if card.get_parent() == self:
 		card.position = Vector2(8, maxf(hud.TOP_BAR_HEIGHT, hud.top_bar.size.y) + 6)
 		card.size = Vector2(hud.root.size.x - 16, card.get_combined_minimum_size().y)
+	if _compact and not _expanded:
+		_strip_height = card.get_combined_minimum_size().y
 	var layout := "%s:%s:%s" % [show, card.get_parent() == self, reserve_height()]
 	if layout != _last_layout:
 		_last_layout = layout
@@ -152,7 +197,7 @@ func _view() -> Dictionary:
 		"sauce": Game.menu["chicken_tikka"]["recipe"]["sauce"], "price": Game.menu["chicken_tikka"]["price"],
 		"portions": Game.portions_possible("chicken_tikka") if Game.is_on_sale("chicken_tikka") else 0, "foodReady": Game.food_on_sale(), "day": Game.day, "ordered": ordered,
 		"served": int(sim.stats.get("served", 0)) if phase == "day" else 0,
-		"level": Game.station_level(Game.tutorial["station"]), "campaign": Game.marketing.has("fliers"), "claimed": Game.goals_claimed.size()}
+		"level": Game.station_level(Game.tutorial["station"]), "campaign": Game.marketing.has(Data.STARTER_PROMO), "claimed": Game.goals_claimed.size()}
 
 func _store() -> void:
 	# Do not create partial business-day saves just to record a mentor message.
@@ -181,14 +226,17 @@ func _refresh() -> void:
 	_next.text = tr("coach.finish") if key == "graduate" else (tr("coach.next") if done or manual else tr("coach.show"))
 	_next.disabled = not done and not manual and key in ["order", "sale", "finish", "report"]
 	_next.visible = not _next.disabled
-	_later.visible = not done and ((key == "upgrade" and hud.current_panel == "build" and hud._prep_detail == Game.tutorial["station"]) or (key == "campaign" and hud.current_panel == "promote" and hud._prep_detail == "fliers") or (key == "goals" and hud.current_panel == "goals" and not Game.goal_ready()))
+	_later.visible = not done and ((key == "upgrade" and hud.current_panel == "build" and hud._prep_detail == Game.tutorial["station"]) or (key == "campaign" and hud.current_panel == "promote" and hud._prep_detail == Data.STARTER_PROMO) or (key == "goals" and hud.current_panel == "goals" and not Game.goal_ready()))
 	_later.text = tr("coach.keep_growing") if key == "goals" else tr("coach.save_later")
 	if key in ["stock", "open"] and not done and not Game.food_on_sale():
 		_words.text = tr("coach.enable_food") if _food_disabled() else tr("coach.restock")
-	if key == "campaign" and not done and Game.money < float(Data.MARKETING["fliers"]["cost"]) + Game.daily_wages() + float(Game.loc()["rent"]):
+	if key == "campaign" and not done and Game.money < Game.campaign_cost(Data.STARTER_PROMO) + Game.daily_wages() + float(Game.loc()["rent"]):
 		_words.text = tr("coach.campaign.wait")
 	if _last_topic != key:
 		_last_topic = key
+		if _expanded:
+			_expanded = false
+			_apply_mode()
 		if is_instance_valid(_portrait):
 			_portrait.gesture()
 		hud._fade_in(_words, 0.2)
@@ -209,14 +257,17 @@ func _target_id() -> String:
 		"supplies": return "tab_supplies"
 		"stock": return "stock_today" if hud.current_panel == "supplies" else "tab_supplies"
 		"open": return "open_shop"
-		"finish": return "skip_day"
+		"finish": return "speed_4"
 		"report": return "next_day"
 		"upgrade": return "buy_station" if hud._prep_detail == Game.tutorial["station"] else "tab_build"
-		"campaign": return "start_promo" if hud._prep_detail == "fliers" else "tab_promote"
+		"campaign": return "start_promo" if hud._prep_detail == Data.STARTER_PROMO else "tab_promote"
 		"goals": return "claim_goal" if hud.current_panel == "goals" and Game.goal_ready() else "tab_goals"
 	return ""
 
 func _continue() -> void:
+	if _expanded:
+		_expanded = false
+		_apply_mode()
 	if Game.tutorial["done"] or topic() in ["welcome", "graduate"]:
 		if topic() == "graduate":
 			Game.tutorial["completed"] = true
@@ -227,7 +278,7 @@ func _continue() -> void:
 		if topic() == "price":
 			Game.tutorial["price"] = float(Game.menu["chicken_tikka"]["price"])
 		if topic() == "upgrade":
-			Game.tutorial["station"] = GuideJourney.station_for(Game.history.back() if not Game.history.is_empty() else {})
+			Game.tutorial["station"] = Advisor.best_station(GuideJourney.station_for(Game.history.back() if not Game.history.is_empty() else {}))
 			Game.tutorial["level"] = Game.station_level(Game.tutorial["station"])
 		Game.tutorial["claimed"] = Game.goals_claimed.size()
 		_store()
@@ -253,7 +304,7 @@ func _focus() -> void:
 			hud._open_prep_detail(Game.tutorial["station"])
 		"campaign":
 			if hud.current_panel != "promote": hud.open_panel("promote")
-			hud._open_prep_detail("fliers")
+			hud._open_prep_detail(Data.STARTER_PROMO)
 		"goals": hud.open_panel("goals")
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -261,7 +312,8 @@ func _focus() -> void:
 	await get_tree().create_timer(0.32, true, false, true).timeout
 	if not is_inside_tree(): return
 	var target: Control = hud.guide_target(_target_id(), false)
-	if target and hud.panel_scroll.is_ancestor_of(target):
+	# Only scroll when the control is out of sight: a sheet that already shows it stays put.
+	if target and hud.panel_scroll.is_ancestor_of(target) and not hud.panel_scroll.get_global_rect().encloses(target.get_global_rect()):
 		hud.panel_scroll.set_process(false)
 		var content_y: float = target.get_global_rect().get_center().y - hud.panel_body.global_position.y
 		hud.panel_scroll.scroll_vertical = maxi(0, roundi(content_y - hud.panel_scroll.size.y * 0.5))
@@ -277,4 +329,5 @@ func test_view() -> Dictionary:
 		"text": _words.text, "target": _target_id(), "visible": card.is_visible_in_tree(),
 		"fits": hud.root.get_global_rect().encloses(r), "bottom": r.end.y,
 		"portrait": _portrait.test_view() if is_instance_valid(_portrait) else {},
-		"embedded": card.get_parent() == hud.report_body}
+		"embedded": card.get_parent() == hud.report_body, "compact": _compact, "expanded": _expanded,
+		"height": r.size.y, "reserve": reserve_height()}

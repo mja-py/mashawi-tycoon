@@ -56,9 +56,11 @@ try {
   });
   await page.waitForFunction(() => window.godotState?.paused === false);
 
-  await tap(page, 610, 360); // Skip to closing (RTL day controls)
+  const dayBar = await page.evaluate(() => Object.keys(window.godotMenuTargets).filter(k => k.startsWith('speed_') || k === 'skip_day').sort());
+  check(JSON.stringify(dayBar) === '["speed_2","speed_4"]', 'the day bar offers 2x and 4x only, no Skip (' + dayBar + ')');
+  await page.evaluate(() => window.godotSkipDay()); // The fast close is a test hook: players have no Skip button.
   await page.waitForFunction(() => window.godotState?.finishing === true);
-  await tap(page, 610, 360); // An extra tap must not restart closing or settle twice.
+  await page.evaluate(() => window.godotSkipDay()); // A repeat request must not restart closing or settle twice.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => window.godotState?.paused === true);
   check((await state(page)).finishing === true, 'Skip pauses behind the portrait guard');

@@ -59,8 +59,8 @@ func _draw_shop_card() -> void:
 		base = Color("89583d")
 		accent = Color("e0b47e")
 	elif subject.begins_with("campaign:"):
-		base = {"fliers": Color("844c3c"), "posters": Color("734e65"),
-			"social": Color("355c70"), "radio": Color("555c40")}.get(subject.trim_prefix("campaign:"), base)
+		base = {"samples": Color("844c3c"), "chat": Color("3f6650"), "social": Color("355c70"),
+			"maps": Color("6a5a3c"), "blogger": Color("734e65")}.get(subject.trim_prefix("campaign:"), base)
 		accent = Color("e8bd83")
 	draw_rect(Rect2(Vector2.ZERO, size), base)
 	var center := size * Vector2(0.5, 0.49)
@@ -174,8 +174,9 @@ func _draw_badge(id: String) -> void:
 				draw_line(Vector2(3, y), Vector2(25, y), DARK, 2.0, true)
 				draw_circle(Vector2(8 if i % 2 == 0 else 19, y), 3.2, DARK, true, -1.0, true)
 		"goals":
-			var points: Array[Vector2] = []
-			for i in range(10):
-				var a := -PI / 2.0 + TAU * i / 10.0
-				points.append(c + Vector2.from_angle(a) * (11.5 if i % 2 == 0 else 5.0))
-			_poly(points, PALE)
+			# A trophy cup. The star belongs to reputation alone.
+			_poly([Vector2(8, 4), Vector2(20, 4), Vector2(18.5, 13.5), Vector2(14, 17), Vector2(9.5, 13.5)], PALE)
+			draw_arc(Vector2(8, 8.5), 4.0, PI * 0.5, PI * 1.5, 10, PALE, 2.0, true)
+			draw_arc(Vector2(20, 8.5), 4.0, -PI * 0.5, PI * 0.5, 10, PALE, 2.0, true)
+			draw_line(Vector2(14, 16), Vector2(14, 21), PALE, 3.0, true)
+			_poly([Vector2(8, 21), Vector2(20, 21), Vector2(20, 24.5), Vector2(8, 24.5)], PALE)

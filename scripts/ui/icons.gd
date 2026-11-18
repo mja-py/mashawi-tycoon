@@ -208,6 +208,69 @@ func _cloud(img: Image, cx: float, cy: float, size: float, col: Color) -> void:
 	_disc(img, cx, cy - size * 0.08, size * 0.24, col)
 	_rect(img, cx - size * 0.3, cy + size * 0.05, size * 0.6, size * 0.18, col)
 
+var _moods := {}
+
+func _arc(img: Image, cx: float, cy: float, r: float, from: float, to: float, thick: float, col: Color) -> void:
+	var steps := maxi(8, int(r * absf(to - from)))
+	for i in range(steps + 1):
+		var a := lerpf(from, to, float(i) / steps)
+		_disc(img, cx + cos(a) * r, cy + sin(a) * r, thick * 0.5, col)
+
+## Drawn faces for a customer's reaction (the web font has no emoji). The mouth changes
+## with the colour, so the three moods read without colour vision. A reason adds a small
+## badge: "pricey" a coin, "slow" a clock, "sold_out" an empty plate, "full" a waiting line,
+## "rival" an arrow walking off.
+func mood_icon(kind: String, size: int = 48) -> Texture2D:
+	var key := "%s_%d" % [kind, size]
+	if _moods.has(key):
+		return _moods[key]
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var s := float(size)
+	var face := "bad"
+	if kind == "great":
+		face = "great"
+	elif kind in ["ok", "full", "rival", "closing"]:
+		face = "ok"
+	var col := Color("d9533f")
+	if face == "great":
+		col = Color("4fb06c")
+	elif face == "ok":
+		col = Color("e9b33c")
+	var ink := Color("2b211c")
+	_disc(img, s * 0.5, s * 0.5, s * 0.47, col.darkened(0.4))
+	_disc(img, s * 0.5, s * 0.5, s * 0.41, col)
+	_disc(img, s * 0.34, s * 0.40, s * 0.065, ink)
+	_disc(img, s * 0.66, s * 0.40, s * 0.065, ink)
+	match face:
+		"great": _arc(img, s * 0.5, s * 0.50, s * 0.21, PI * 0.12, PI * 0.88, s * 0.075, ink)
+		"ok": _arc(img, s * 0.5, s * 4.0, s * 3.34, -PI * 0.5 - 0.055, -PI * 0.5 + 0.055, s * 0.075, ink)
+		_: _arc(img, s * 0.5, s * 0.83, s * 0.21, PI * 1.14, PI * 1.86, s * 0.075, ink)
+	if kind in ["pricey", "slow", "sold_out", "full", "rival"]:
+		var b := Vector2(s * 0.77, s * 0.77)
+		var paper := Color("fbf1dc")
+		_disc(img, b.x, b.y, s * 0.24, ink)
+		_disc(img, b.x, b.y, s * 0.20, Color("e7b53b") if kind == "pricey" else paper)
+		match kind:
+			"pricey":
+				_disc(img, b.x, b.y, s * 0.13, Color("f6d77a"))
+				_rect_rot(img, b.x, b.y, s * 0.16, s * 0.05, PI * 0.5, ink)
+			"slow":
+				_rect_rot(img, b.x, b.y - s * 0.055, s * 0.11, s * 0.045, PI * 0.5, ink)
+				_rect_rot(img, b.x + s * 0.045, b.y, s * 0.09, s * 0.045, 0.0, ink)
+			"sold_out":
+				_arc(img, b.x, b.y, s * 0.11, 0.0, TAU, s * 0.04, ink)
+			"full":
+				for i in range(3):
+					_disc(img, b.x + (i - 1) * s * 0.11, b.y, s * 0.045, ink)
+			"rival":
+				_rect_rot(img, b.x - s * 0.02, b.y, s * 0.20, s * 0.045, 0.0, ink)
+				_rect_rot(img, b.x + s * 0.06, b.y - s * 0.045, s * 0.11, s * 0.045, PI * 0.25, ink)
+				_rect_rot(img, b.x + s * 0.06, b.y + s * 0.045, s * 0.11, s * 0.045, -PI * 0.25, ink)
+	var tex := ImageTexture.create_from_image(img)
+	_moods[key] = tex
+	return tex
+
 var _stars := {}
 
 ## A star glyph; `fill` 0..1 is how much of it (left to right) is golden.

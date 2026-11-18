@@ -398,7 +398,7 @@ func _on_serving(on: bool) -> void:
 	for i in range(_crew.size()):
 		var c: Node3D = _crew[i]
 		if _alive(c) and c.visible:
-			ModelLib.play_loop(c, "interact-right" if on and i == 0 else "idle", 1.3 if on and i == 0 else 1.0)
+			ModelLib.play_loop(c, "idle") # the serving gesture is a one-shot played per handoff
 
 var _serving := false
 
