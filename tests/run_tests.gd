@@ -1850,6 +1850,21 @@ func _test_advisor(game) -> void:
 		"trends cover the recorded days and name the best seller")
 	check((game.stage_def()["stations"] as Array).has(Advisor.best_station("counter")), "the guide's suggested upgrade exists at this stand")
 	_test_advisor_review(game)
+	_test_advisor_goal_ahead(game)
+
+## A goal waiting to be claimed must not hide the purchase the next goal pays for: the mentor,
+## the advisor and the goal ladder name the same first upgrade, claimed or not.
+func _test_advisor_goal_ahead(game) -> void:
+	game.new_game()
+	game.end_day({"served": 12, "revenue": 120.0, "cogs": 40.0, "satisfaction_sum": 8.0, "sold": {}})
+	check(game.goal_ready() and game.goal_after_current()["id"] == "counter1", "the first goal waits for its claim; the counter goal is next")
+	check(Advisor.best_station("grill") == "counter", "with a claim waiting the mentor still points at the next goal's station (%s)" % Advisor.best_station("grill"))
+	var lead: Dictionary = Advisor._buy_insights({})[0]
+	check(String(lead["detail"]) == "counter" and String(lead["text"]).contains(Loc.money(300.0)), "the advisor says the goal pays the counter back (%s)" % String(lead["text"]))
+	game.claim_goal()
+	check(Advisor.best_station("grill") == "counter", "and names the same station after the claim")
+	for key in ["adv.buy_1", "adv.buy_goal", "adv.buy_goal_only", "adv.buy_quality_1", "adv.trends_1", "ui.b_gain_1", "coach.sale.done_many"]:
+		check(tr(key) != key, "string %s exists" % key)
 	game.new_game()
 
 ## Cases from the independent review: each of these was wrong once.
@@ -1947,7 +1962,8 @@ func _test_advisor_variety(game) -> void:
 	check(buys.size() >= 1 and buys.size() <= 2, "one or two purchases are advised (%d)" % buys.size())
 	if buys.size() == 2:
 		check(buys[0]["category"] != buys[1]["category"], "the two purchases are different kinds of upgrade (%s, %s)" % [buys[0]["category"], buys[1]["category"]])
-		check(int(buys[1]["prio"]) == 2 and float(buys[1]["gain"]) <= float(buys[0]["gain"]) + 0.001, "the second purchase sorts after the best one")
+		check(int(buys[1]["prio"]) == 2 and float(buys[1]["sort"]) <= float(buys[0]["sort"]) + 0.001, "the second purchase sorts after the best one")
+		check(not bool(buys[0]["daily"]) and not bool(buys[1]["daily"]), "a purchase names its daily figure once, in its own sentence")
 	for c in Autoplayer.rank([], null, true)["cands"]:
 		check(Advisor.category(c) in ["capacity", "quality", "freshness", "reach"], "candidate %s:%s has a category" % [c["kind"], c["id"]])
 	# The second suggestion turns through the other kinds day by day.

@@ -132,6 +132,11 @@ var _money_kind_next := ""
 var _money_bounce_at := -1.0
 var _money_flash_tween: Tween
 var _toast_frame := -1
+## Bar and backdrop styles of this HUD only: their expand margins carry the colour out to
+## the screen edges while the contents stay inside the safe area (notch, home bar).
+var _bleed_top: StyleBoxFlat
+var _bleed_bottom: StyleBoxFlat
+var _bleed_dim: StyleBoxFlat
 
 const PANELS := {
 	"supplies": "ui.supplies", "menu": "ui.menu", "place": "ui.place", "build": "ui.build", "promote": "ui.promote", "goals": "ui.goals",
@@ -155,6 +160,7 @@ func _ready() -> void:
 	_refresh()
 
 func _build_all() -> void:
+	_bleed_top = null
 	root = Control.new()
 	root.theme = UiTheme.build()
 	root.layout_direction = Control.LAYOUT_DIRECTION_RTL if Loc.is_rtl() else Control.LAYOUT_DIRECTION_LTR
@@ -175,6 +181,7 @@ func _build_all() -> void:
 	_build_toast()
 	_build_fade()
 	_build_purchase_badge()
+	_bleed_edges()
 
 ## Rebuild every control in the new language and direction (only offered on the title screen).
 func _on_language_changed() -> void:
@@ -362,7 +369,41 @@ func _apply_safe_area() -> void:
 	_layout_prep_panel(Vector2(w, h))
 	_refresh_advisor_strip()
 	if report_panel:
-		report_panel.custom_minimum_size = Vector2(minf(1100.0, w - 16.0), maxf(300.0, h - 16.0))
+		# Full width on every phone (a 20:9 Android is about 1280 wide here): a narrower sheet
+		# leaves slivers of the bars showing beside it. Only a very wide window is capped.
+		report_panel.custom_minimum_size = Vector2(minf(1320.0, w - 16.0), maxf(300.0, h - 16.0))
+	_bleed_edges()
+
+## The safe area insets the HUD's contents, not its colours: bars and dim backdrops run to
+## the screen edges, so no strip of street shows around them on a notched phone.
+func _bleed_edges() -> void:
+	if top_bar == null or prep_bar == null or day_bar == null:
+		return
+	var l := maxf(0.0, root.offset_left)
+	var t := maxf(0.0, root.offset_top)
+	var r := maxf(0.0, -root.offset_right)
+	var b := maxf(0.0, -root.offset_bottom)
+	if _bleed_top == null:
+		_bleed_top = root.get_theme_stylebox("panel", "Bar").duplicate()
+		_bleed_bottom = _bleed_top.duplicate()
+		_bleed_dim = root.get_theme_stylebox("panel", "Dim").duplicate()
+	for style: StyleBoxFlat in [_bleed_top, _bleed_bottom, _bleed_dim]:
+		style.expand_margin_left = l
+		style.expand_margin_right = r
+	_bleed_top.expand_margin_top = t
+	_bleed_bottom.expand_margin_bottom = b
+	_bleed_dim.expand_margin_top = t
+	_bleed_dim.expand_margin_bottom = b
+	for pair in [[top_bar, _bleed_top], [prep_bar, _bleed_bottom], [day_bar, _bleed_bottom], [title_screen, _bleed_dim], [report_dim, _bleed_dim]]:
+		var c: Control = pair[0]
+		if c != null and not c.has_theme_stylebox_override("panel"):
+			c.add_theme_stylebox_override("panel", pair[1])
+	if curtain != null:
+		# The curtain hides a street rebuild: it has to cover the whole screen.
+		curtain.offset_left = -l
+		curtain.offset_top = -t
+		curtain.offset_right = r
+		curtain.offset_bottom = b
 
 func _layout_prep_panel(area: Vector2 = Vector2.ZERO) -> void:
 	if not panel: return
@@ -393,6 +434,22 @@ func _below_guide(y: float) -> float:
 		return maxf(y, coach.card.position.y + coach.card.size.y + 8.0)
 	if advisor_strip != null and advisor_strip.visible:
 		return maxf(y, advisor_strip.position.y + advisor_strip.size.y + 8.0)
+	return y
+
+## Where a toast sits: below the guide or advisor strip, and with a menu open below its
+## header row, so Close and the header shortcuts stay readable and tappable-looking.
+func _toast_top() -> float:
+	# Over a short dialog (a goal's thank-you) the toast sits just above the card, in front of
+	# the backdrop. A full-height report leaves no room: there it stays behind, as before.
+	toast.z_index = 0
+	if report_dim.visible and is_instance_valid(report_panel):
+		var card_top := report_panel.get_global_rect().position.y - root.global_position.y
+		if card_top >= toast.size.y + 12.0:
+			toast.z_index = 12
+			return card_top - toast.size.y - 6.0
+	var y := _below_guide(TOAST_Y)
+	if panel_dim.visible and current_panel != "" and is_instance_valid(panel_stage) and not report_dim.visible:
+		y = maxf(y, panel_stage.get_global_rect().position.y - root.global_position.y + 6.0)
 	return y
 
 # ================================================================= builders
@@ -1436,7 +1493,7 @@ func show_advisor() -> void:
 		var none := _label(tr("adv.none"), "Muted")
 		v2.add_child(none)
 	else:
-		v2.add_child(_heading(tr("adv.trends") % int(t["days"])))
+		v2.add_child(_heading(tr("adv.trends_1") if int(t["days"]) == 1 else (tr("adv.trends") % int(t["days"]))))
 		var served: Array[float] = t["served"]
 		var profits: Array[float] = t["profit"]
 		var happy: Array[float] = t["happy"]
@@ -1678,7 +1735,7 @@ func _toast(text: String, kind: String = "info") -> void:
 	toast.visible = true
 	toast.modulate = Color(1, 1, 1, 0)
 	toast.reset_size()
-	var toast_y := _below_guide(TOAST_Y)
+	var toast_y := _toast_top()
 	toast.position = Vector2((root.size.x - toast.size.x) / 2.0, toast_y - 16.0)
 	if _toast_tween:
 		_toast_tween.kill()
@@ -1686,7 +1743,9 @@ func _toast(text: String, kind: String = "info") -> void:
 	_toast_tween.tween_property(toast, "modulate:a", 1.0, 0.18)
 	_toast_tween.tween_property(toast, "position:y", toast_y, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_toast_tween.set_parallel(false)
-	_toast_tween.tween_interval(2.4)
+	# While it is up it keeps clear of whatever opens or grows under it (a purchase closes
+	# the menu and the guide card unfolds to its full height).
+	_toast_tween.tween_method(func(_v: float): toast.position.y = _toast_top(), 0.0, 1.0, 2.4)
 	_toast_tween.tween_property(toast, "modulate:a", 0.0, 0.4)
 	_toast_tween.tween_callback(func(): toast.visible = false)
 
@@ -2707,7 +2766,8 @@ func _station_card(id: String, est: Dictionary) -> void:
 	var gain := float(next["portions"]) - float(est["portions"])
 	var pgain := float(next["profit"]) - float(est["profit"])
 	if gain >= 1.0 or pgain >= 5.0:
-		var g := _label(tr("ui.b_gain") % [int(round(gain)), Loc.money(pgain)], "Small")
+		var more := int(round(gain))
+		var g := _label((tr("ui.b_gain_1") % Loc.money(pgain)) if more == 1 else (tr("ui.b_gain") % [more, Loc.money(pgain)]), "Small")
 		g.add_theme_color_override("font_color", UiTheme.GOOD)
 		v.add_child(g)
 	var cost := Game.station_cost(id)
@@ -2826,8 +2886,13 @@ func _promo_roll_card(index: int) -> PanelContainer:
 	if Game.marketing.has(id):
 		value = tr("ui.a_active") % int(Game.marketing[id])
 	elif why != "":
-		value = why
+		value = ""
 	var card := _model_roll_card("campaign:" + id, _promo_icon(id), title, value)
+	if value == "" and why != "":
+		var lock := _label("\u25c6  " + why, "Muted")
+		lock.autowrap_mode = TextServer.AUTOWRAP_OFF
+		lock.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		(card.get_child(0) as VBoxContainer).add_child(lock)
 	_roll_open(card, index, "inspect_" + id, title, _open_prep_detail.bind(id))
 	return card
 

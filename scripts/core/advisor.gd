@@ -5,7 +5,8 @@ class_name Advisor
 ## An insight is {id, mood, text, gain, panel, detail, dish}:
 ##   mood   a face for `Icons.mood_icon` (great / ok / bad / pricey / slow / sold_out / full / rival)
 ##   text   the translated sentence, numbers filled in
-##   gain   the estimated AED per day it is worth (0 when it cannot be priced); sorts the list
+##   gain   the estimated AED per day it is worth (0 when it cannot be priced)
+##   sort   where it stands among insights of its priority (the gain, unless a line is held back)
 ##   panel / detail / dish   where the "Show me" button goes in the prep menus
 
 const REPORT_TOP := 3
@@ -19,8 +20,9 @@ const PRIORITY := {"goal_ready": 0,
 	"buy": 2, "save": 2, "move": 2, "promo": 2, "stage_at": 2,
 	"buy_2": 2, "save_2": 2, "move_2": 2, "promo_2": 2, "stage_at_2": 2,
 	"hot": 3, "sandstorm": 3, "breeze": 3}
-## Insights whose `gain` is a one-off or only a sorting weight: no "about +AED n a day" line.
-const NO_DAILY := ["save", "save_2", "stage_at", "stage_at_2", "goal_ready", "goal_near", "trend_down", "trend_up", "quiet", "opening", "dead_dish", "hot", "sandstorm", "breeze", "clean", "start"]
+## Insights whose `gain` is a one-off or only a sorting weight, or whose sentence already
+## names the daily figure (purchases, a better place): no second "about +AED n a day" line.
+const NO_DAILY := ["buy", "buy_2", "move", "move_2", "save", "save_2", "stage_at", "stage_at_2", "goal_ready", "goal_near", "trend_down", "trend_up", "quiet", "opening", "dead_dish", "hot", "sandstorm", "breeze", "clean", "start"]
 
 static func _t(key: String) -> String:
 	return TranslationServer.translate(key)
@@ -29,7 +31,7 @@ static func _money(v: float) -> String:
 	return Loc.money(roundf(v))
 
 static func _insight(id: String, mood: String, text: String, gain: float = 0.0, panel: String = "", detail: String = "", dish: String = "") -> Dictionary:
-	return {"id": id, "mood": mood, "text": text, "gain": gain, "panel": panel, "detail": detail, "dish": dish,
+	return {"id": id, "mood": mood, "text": text, "gain": gain, "sort": gain, "panel": panel, "detail": detail, "dish": dish,
 		"prio": int(PRIORITY.get(id, 4)), "daily": not NO_DAILY.has(id)}
 
 ## What one more served guest earned on the day `r` (falls back to a modest figure).
@@ -108,7 +110,7 @@ static func _top(list: Array[Dictionary], n: int) -> Array[Dictionary]:
 	unique.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if int(a["prio"]) != int(b["prio"]):
 			return int(a["prio"]) < int(b["prio"])
-		return float(a["gain"]) > float(b["gain"]))
+		return float(a.get("sort", a["gain"])) > float(b.get("sort", b["gain"])))
 	# Purchases and losses share the list: up to two things to buy (of different kinds), and
 	# the costliest loss always has a place when there is one.
 	var buys := unique.filter(func(it: Dictionary) -> bool: return int(it["prio"]) == 2)
@@ -122,7 +124,7 @@ static func _top(list: Array[Dictionary], n: int) -> Array[Dictionary]:
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if int(a["prio"]) != int(b["prio"]):
 			return int(a["prio"]) < int(b["prio"])
-		return float(a["gain"]) > float(b["gain"]))
+		return float(a.get("sort", a["gain"])) > float(b.get("sort", b["gain"])))
 	return out
 
 # ------------------------------------------------------------------ the day's losses
@@ -403,7 +405,8 @@ static func _buy_insights(_r: Dictionary) -> Array[Dictionary]:
 		line["id"] = String(line["id"]) + "_2"
 		line["category"] = category(second)
 		line["prio"] = 2
-		line["gain"] = float(line["gain"]) * 0.5 # sorts after the best buy
+		line["sort"] = float(line["gain"]) * 0.5 # after the best buy; the figure shown stays whole
+		line["daily"] = not NO_DAILY.has(String(line["id"]))
 		out.append(line)
 	return out
 
@@ -449,13 +452,23 @@ static func _purchase(c: Dictionary, now: bool, buffer: float) -> Dictionary:
 			"item": change = {"unlock": id}
 			"station": change = {"stations": {id: Game.station_level(id) + 1}}
 		var happy := roundi(float(Game.quality_gain(change)["happy"])) if not change.is_empty() else 0
-		if happy >= 1:
+		if happy == 1:
+			return _insight("buy", "great", _t("adv.buy_quality_1") % [name, _money(gain)], gain, panel, detail, dish)
+		if happy > 1:
 			return _insight("buy", "great", _t("adv.buy_quality_n") % [name, happy, _money(gain)], gain, panel, detail, dish)
 		return _insight("buy", "great", _t("adv.buy_quality") % [name, _money(gain)], gain, panel, detail, dish)
 	if now and why == "freshness":
 		return _insight("buy", "great", _t("adv.buy_fresh") % [name, _money(gain)], gain, panel, detail, dish)
+	var reward := float(c.get("reward", 0.0))
+	if now and reward > 0.0:
+		# A goal pays part of the price back: say so, instead of a payback no sum explains.
+		var earns := gain - reward / 30.0
+		if earns >= 1.0:
+			return _insight("buy", "great", _t("adv.buy_goal") % [name, _money(reward), _money(earns)], gain, panel, detail, dish)
+		return _insight("buy", "great", _t("adv.buy_goal_only") % [name, _money(reward)], gain, panel, detail, dish)
 	if now:
-		return _insight("buy", "great", _t("adv.buy") % [name, _money(gain), maxi(1, ceili(float(c["payback"])))], gain, panel, detail, dish)
+		var days := maxi(1, ceili(float(c["payback"])))
+		return _insight("buy", "great", _t("adv.buy" if days > 1 else "adv.buy_1") % ([name, _money(gain), days] if days > 1 else [name, _money(gain)]), gain, panel, detail, dish)
 	# a stage's candidate price includes a few tables; the card shows the stage's own price
 	var price := float(Game.next_stage_def().get("cost", c["cost"])) if kind == "stage" else float(c["cost"])
 	var short := maxf(1.0, price - (Game.money - buffer))

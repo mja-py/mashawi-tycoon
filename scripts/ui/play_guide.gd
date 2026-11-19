@@ -53,7 +53,7 @@ func setup(owner_hud: CanvasLayer) -> void:
 	_words.add_theme_constant_override("line_spacing", -8)
 	_words.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_words.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_words.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# The folded strip trims to two lines (_apply_mode); the full card shows every line.
 	# The folded strip shows two lines; a tap unfolds the whole message over the menu.
 	_words.mouse_filter = Control.MOUSE_FILTER_STOP
 	_words.gui_input.connect(func(ev: InputEvent):
@@ -78,6 +78,7 @@ func setup(owner_hud: CanvasLayer) -> void:
 	_close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	_close.pressed.connect(hud.pause_tutorial)
 	row.add_child(_close)
+	_apply_mode()
 	_refresh()
 
 ## Full card over the street; a slim strip above an open menu or inside the report.
@@ -87,6 +88,9 @@ func _apply_mode() -> void:
 	_heading.visible = not slim
 	_words.add_theme_font_size_override("font_size", 18 if slim else 22)
 	_words.max_lines_visible = 2 if slim else -1
+	# A trimmed label reports a one-line minimum height, so the full card would cut its own
+	# sentence: only the folded strip trims. The full card grows with its text.
+	_words.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if slim else TextServer.OVERRUN_NO_TRIMMING
 	_actions.vertical = not slim
 	_next.custom_minimum_size.x = 132.0 if slim else 156.0
 	_later.custom_minimum_size.x = 132.0 if slim else 156.0
@@ -218,9 +222,13 @@ func _refresh() -> void:
 		_words.text = tr(text_key) % [tr(Data.STATIONS[Game.tutorial["station"]]["name"])]
 		if Game.tutorial["station"] == "signage":
 			_words.text = tr("coach.upgrade.attract_done" if done else "coach.upgrade.attract")
-	if key == "report" and not Game.history.is_empty():
+	if key == "report" and not done and not Game.history.is_empty():
 		var r: Dictionary = Game.history.back()
 		_words.text = tr("coach.report.live") % [int(r["served"]), Loc.money(float(r["profit"])), int(r["too_pricey"]), int(r["left_wait"])]
+	if key == "sale" and done and hud.main.phase == hud.main.Phase.DAY:
+		var served := int(hud.main.sim.stats.get("served", 0))
+		if served > 1:
+			_words.text = tr("coach.sale.done_many") % served
 	_target = hud.guide_target(_target_id()) if not done else null
 	var manual := key in ["welcome", "graduate"]
 	_next.text = tr("coach.finish") if key == "graduate" else (tr("coach.next") if done or manual else tr("coach.show"))
@@ -229,7 +237,10 @@ func _refresh() -> void:
 	_later.visible = not done and ((key == "upgrade" and hud.current_panel == "build" and hud._prep_detail == Game.tutorial["station"]) or (key == "campaign" and hud.current_panel == "promote" and hud._prep_detail == Data.STARTER_PROMO) or (key == "goals" and hud.current_panel == "goals" and not Game.goal_ready()))
 	_later.text = tr("coach.keep_growing") if key == "goals" else tr("coach.save_later")
 	if key in ["stock", "open"] and not done and not Game.food_on_sale():
-		_words.text = tr("coach.enable_food") if _food_disabled() else tr("coach.restock")
+		if _food_disabled():
+			_words.text = tr("coach.enable_food")
+		elif not (key == "stock" and hud.current_panel == "supplies"):
+			_words.text = tr("coach.restock")
 	if key == "campaign" and not done and Game.money < Game.campaign_cost(Data.STARTER_PROMO) + Game.daily_wages() + float(Game.loc()["rent"]):
 		_words.text = tr("coach.campaign.wait")
 	if _last_topic != key:
@@ -327,6 +338,9 @@ func test_view() -> Dictionary:
 	var r := card.get_global_rect()
 	return {"step": int(Game.tutorial["step"]), "topic": topic(), "done": Game.tutorial["done"],
 		"text": _words.text, "target": _target_id(), "visible": card.is_visible_in_tree(),
+		# the full card must show its whole sentence (the folded strip may trim to two lines)
+		"cut": not (_compact and not _expanded) and (_words.get_line_count() > _words.get_visible_line_count()
+			or _words.get_minimum_size().y > _words.size.y + 1.0),
 		"fits": hud.root.get_global_rect().encloses(r), "bottom": r.end.y,
 		"portrait": _portrait.test_view() if is_instance_valid(_portrait) else {},
 		"embedded": card.get_parent() == hud.report_body, "compact": _compact, "expanded": _expanded,

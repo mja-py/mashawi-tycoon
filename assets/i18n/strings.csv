@@ -298,6 +298,7 @@ ui.b_built,Built: %s!,تم البناء: %s!
 ui.b_bought,%s is now level %d.,%s الآن في المستوى %d.
 ui.b_level,Level %d / %d,المستوى %d / %d
 ui.b_gain,"+%d portions/day, %s profit",+%d حصة/يوم، %s ربح
+ui.b_gain_1,"+1 portion/day, %s profit",+1 حصة/يوم، %s ربح
 ui.b_buy_level,Level %d  -  %s,المستوى %d  -  %s
 ui.b_unlock,Install  -  %s,تركيب  -  %s
 ui.b_bn,Bottleneck today: %s. Upgrade it and the line moves.,الاختناق اليوم: %s. طوّرها ليتحرك الطابور.
@@ -591,7 +592,7 @@ coach.stock.title,Buy today’s ingredients,تموين اليوم
 coach.stock.say,"Check the Stock today quote, then tap it to buy. The game keeps rent and wages aside.",راجع مبلغ تموين اليوم وبعدين اضغطه للشراء. اللعبة تحجز مبلغ الإيجار والرواتب.
 coach.stock.done,"We have ingredients for real orders now. Leftover meat and vegetables can spoil, so watch tomorrow’s stock.",الحين عندنا مكونات لطلبات فعلية. اللحم والخضار الباقية ممكن تفسد؛ راقب مخزون باچر.
 coach.open.title,Open the grill,نفتح المحل
-coach.open.say,Tap Open shop below. No rush: service runs at 1× while you learn.,اضغط افتح المحل تحت. خذ راحتك؛ الخدمة تبدأ بسرعة عادية وإنت تتعلّم.
+coach.open.say,"Tap Open shop below. The day runs by itself at 2×, so you can watch every guest.",اضغط افتح المحل تحت. اليوم يمشي بروحه بسرعة 2×، وتقدر تتابع كل زبون.
 coach.open.done,We’re open! Watch the promenade: guests decide whether to join our queue.,فتحنا! تابع الممشى؛ الزبائن يقررون إذا يدخلون الطابور.
 coach.order.title,Watch the order,تابع الطلب
 coach.order.say,Watch a guest join the line and order at the counter. Passing by alone doesn’t count as a purchase.,تابع الزبون وهو يدخل الطابور ويطلب من الكاونتر. المرور لحاله ما يعتبر شراء.
@@ -599,6 +600,7 @@ coach.order.done,That guest placed an order. Preparation takes time; a long queu
 coach.sale.title,Follow the handoff,تابع تسليم الوجبة
 coach.sale.say,Watch for the handoff and receipt. Takeaway guests collect; seated guests wait for a worker to deliver.,راقب تسليم الوجبة والإيصال. السفري يستلم ويمشي؛ واللي يجلس ينتظر الموظفة توصل له.
 coach.sale.done,Our first sale! Ingredients became a meal and cash. Revenue still has food costs and bills to cover.,أول بيعة! المكونات صارت وجبة ودخل. تذكّر إن الإيراد لازم يغطي المكونات والمصاريف.
+coach.sale.done_many,%d guests served so far. Each sale turns ingredients into a meal and cash; revenue still has food costs and bills to cover.,خدمنا %d زبون لين الحين. كل بيعة تحوّل المكونات لوجبة ودخل، والإيراد لازم يغطي المكونات والمصاريف.
 coach.finish.title,Try the day controls,جرّب سرعة اليوم
 coach.finish.say,The day runs at 2×. Tap 4× below when you want it faster. Every order still gets its service animation.,اليوم يمشي بسرعة 2×. اضغط 4× تحت إذا تبيه أسرع. كل طلب يكمل حركة خدمته.
 coach.finish.done,The day is complete. Let’s see what the numbers tell us.,خلص اليوم. نشوف الأرقام وش تقول لنا.
@@ -684,10 +686,14 @@ adv.breeze,A cool breeze is forecast: more people out walking. Stock a little ex
 adv.goal_ready,A goal is ready: claim %s in Goals.,في هدف جاهز: استلم %s من الأهداف.
 adv.goal_near,Your goal is %d%% done. Its reward is %s.,هدفك خلص %d%% منه. مكافأته %s.
 adv.buy,Best buy now: %s. About +%s a day; it pays for itself in %d days.,أحسن شراء الحين: %s. تقريبًا +%s في اليوم؛ يرجّع سعره في %d يوم.
+adv.buy_1,Best buy now: %s. About +%s a day; it pays for itself in a day.,أحسن شراء الحين: %s. تقريبًا +%s في اليوم؛ يرجّع سعره في يوم.
+adv.buy_goal,"Best buy now: %s. Your next goal pays %s back for it, and it earns about +%s a day.",أحسن شراء الحين: %s. هدفك الياي يرجّع لك %s منه، ويربّحك تقريبًا +%s في اليوم.
+adv.buy_goal_only,Best buy now: %s. Your next goal pays %s back for it.,أحسن شراء الحين: %s. هدفك الياي يرجّع لك %s منه.
 adv.save,"Worth saving for: %s. %s more to go, then about +%s a day.",يستاهل التوفير: %s. باقي %s، وبعدها تقريبًا +%s في اليوم.
 adv.promo,%s should bring about %d more buyers a day here: %s extra after its cost.,%s المفروض يجيب تقريبًا %d زبون زيادة في اليوم هني: %s صافي بعد التكلفة.
 adv.opening,The opening crowds last %d more days. Build your reputation while they are here.,زحمة الافتتاح باقي لها %d يوم. ابنِ سمعتك وهم موجودين.
 adv.trends,Your last %d days,آخر %d يوم
+adv.trends_1,Yesterday,أمس
 adv.t_served,Buyers,الزباين
 adv.t_profit,Profit,الربح
 adv.t_happy,Satisfaction,الرضا
@@ -722,3 +728,4 @@ fame.ui.local_up,Better known here: %s!,صرت معروف أكثر هني: %s!
 fame.ui.reward,+ fame,+ شهرة
 rpt.local_fame,Fame here,الشهرة هني
 adv.buy_quality_n,"Tastier food: %s. About %d more guests a day leave happy, and happy guests build your fame. Worth about +%s a day.",أكل ألذ: %s. تقريبًا %d زبون زيادة يطلعون مبسوطين كل يوم، والمبسوطين يبنون شهرتك. يسوى تقريبًا +%s في اليوم.
+adv.buy_quality_1,"Tastier food: %s. About 1 more guest a day leaves happy, and happy guests build your fame. Worth about +%s a day.",أكل ألذ: %s. تقريبًا زبون زيادة يطلع مبسوط كل يوم، والمبسوطين يبنون شهرتك. يسوى تقريبًا +%s في اليوم.

@@ -156,8 +156,9 @@ func _step() -> float:
 	return _card_width() * 0.92
 
 func _layout_cards() -> void:
-	# Arrows sit at the outer edges, vertically centred; the page count under the cards.
-	var mid := (size.y - ARROW.y) * 0.5
+	# Arrows sit at the outer edges beside the cards' art, above the title row: centred they
+	# covered the neighbours' names and prices. The page count goes under the cards.
+	var mid := clampf(size.y * 0.32 - ARROW.y * 0.5, 4.0, maxf(4.0, (size.y - ARROW.y) * 0.5))
 	_previous.size = ARROW
 	_next.size = ARROW
 	_previous.position = Vector2(6.0, mid)

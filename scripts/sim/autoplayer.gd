@@ -211,7 +211,8 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 			score = (gain - cost / max_payback) / net
 		pick["cands"].append({"kind": kind, "id": id, "where": where, "cost": cost, "net": net, "gain": gain,
 			"payback": payback, "score": score, "affordable": short <= 0.0, "ok": ok, "category": category(kind, id),
-			"happy": happy, "fame_value": fame_value, "saving": bonus if kind == "station" and id == "coldbox" else 0.0})
+			"happy": happy, "fame_value": fame_value, "saving": bonus if kind == "station" and id == "coldbox" else 0.0,
+			"reward": reward})
 		if not ok:
 			return
 		if short > 0.0:
@@ -226,6 +227,13 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 	# The current goal is worth chasing when a purchase or a trip completes it: its reward,
 	# spread over a month, counts as daily gain (a goal already met waits for its claim).
 	var goal := Game.current_goal()
+	var goal_waits := Game.goal_ready()
+	if as_priced and goal_waits:
+		# The advisor speaks to a player who may not have claimed yet: the purchase to point
+		# at is the one the NEXT goal rewards, the same answer as after the claim. (The bot
+		# claims at the start of its day, so its ranking is as before.)
+		goal = Game.goal_after_current()
+		goal_waits = false
 	# a cold box earns nothing in the day's estimate: its gain is what it saves (spoilage, bulk)
 	var cold := {"saving": -1.0}
 	var station_ctx := func(sid: String) -> Dictionary:
@@ -238,7 +246,7 @@ static func rank(left: Array = [], cache = null, as_priced: bool = false) -> Dic
 		return float(cold["saving"])
 	# A day that opens here completes a pending "trade a day at ..." goal: leaving forfeits it.
 	var reward_here := 0.0
-	if not goal.is_empty() and not Game.goal_ready():
+	if not goal.is_empty() and not goal_waits:
 		var req: Dictionary = goal["req"]
 		var reward := float(goal["reward"].get("money", 0.0))
 		match String(req["type"]):

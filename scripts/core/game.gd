@@ -634,6 +634,13 @@ func _first_open_goal() -> int:
 			return i
 	return Data.GOALS.size()
 
+## The goal the ladder moves to when the current one is claimed ({} at the end of the ladder).
+func goal_after_current() -> Dictionary:
+	for i in range(goal_index + 1, Data.GOALS.size()):
+		if not String(Data.GOALS[i]["id"]) in goals_claimed:
+			return Data.GOALS[i]
+	return {}
+
 func goal_progress() -> float:
 	var g := current_goal()
 	if g.is_empty():
