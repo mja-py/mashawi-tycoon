@@ -1,0 +1,53 @@
+Mashawi Tycoon Proprietary End-User License Agreement
+Copyright (c) 2026 Mohammad Jassem. All rights reserved.
+
+1. Scope and ownership
+
+This license covers the original materials in Mashawi Tycoon to the extent
+Mohammad Jassem holds the rights, including the source code, writing,
+interface, illustrations, 3D models, textures, rigs, animations, and original
+contributions to adapted assets. All other rights in these materials are
+reserved by the copyright holder.
+
+2. Permission to play
+
+Mohammad Jassem grants you a personal, nonexclusive, nontransferable license
+to run an authorized release of Mashawi Tycoon for personal entertainment.
+This permission applies worldwide for as long as you lawfully have access to
+that release. It includes the copies ordinarily needed to load, install,
+cache, and run the game.
+
+3. Reuse of game materials
+
+Separate prior written permission from the copyright holder is required to:
+
+- Extract or copy proprietary game code or assets for reuse outside the game.
+- Modify proprietary materials or use them to create derivative works.
+- Repackage, republish, distribute, sell, or sublicense the game or its
+  proprietary materials.
+- Remove or alter copyright or ownership notices on proprietary materials.
+
+Rights provided by applicable law, third-party licenses, and applicable
+platform terms continue to apply. On GitHub this includes viewing and forking
+through GitHub as permitted by its Terms of Service.
+
+4. Third-party materials
+
+Third-party assets and software remain available under their own terms.
+
+- Kenney models and sound effects and KayKit assets retain their CC0 terms.
+  https://kenney.nl/assets
+  https://kaylousberg.com/game-assets
+  https://creativecommons.org/publicdomain/zero/1.0/
+- Baloo Bhaijaan 2 is by the Baloo 2 Project Authors under the SIL Open Font
+  License 1.1. The license text is in assets/fonts/OFL-BalooBhaijaan2.txt in
+  the source and OFL-BalooBhaijaan2.txt in the web release.
+- The game uses Godot Engine under the MIT License. Godot's dependencies
+  carry their respective notices and terms.
+  https://godotengine.org/license/
+  https://github.com/godotengine/godot/blob/master/COPYRIGHT.txt
+- Meshy-assisted assets were generated with Meshy and adapted for the game.
+  Any public license applicable to an individual Meshy asset continues to
+  apply to that asset, such as CC BY 4.0 or CC0 where applicable.
+  https://www.meshy.ai/terms-of-use
+  https://creativecommons.org/licenses/by/4.0/
