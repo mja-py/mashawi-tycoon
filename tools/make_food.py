@@ -1,12 +1,15 @@
-"""Build two small, texture-free food assets with Blender 5.2.
+"""Build three small, texture-free food assets with Blender 5.2.
 
 Run from any directory: /opt/homebrew/bin/blender -b -P tools/make_food.py
 Coordinates are metres, with Z up while modeling; glTF converts to +Y up.
 """
 
+import json
 import math
 from pathlib import Path
 import random
+import struct
+import sys
 
 import bpy
 from mathutils import Vector
@@ -252,6 +255,98 @@ def build_salad():
     return parts
 
 
+def join_parts(parts, name):
+    """Join only these meshes, keeping the first part's origin and axes."""
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    for part in parts:
+        part.select_set(True)
+    root = parts[0]
+    bpy.context.view_layer.objects.active = root
+    if len(parts) > 1:
+        result = bpy.ops.object.join()
+        assert result == {"FINISHED"}, (name, result)
+    root.name = name
+    return root
+
+
+def exported_nodes(path):
+    with path.open("rb") as stream:
+        stream.seek(12)
+        length, kind = struct.unpack("<I4s", stream.read(8))
+        assert kind == b"JSON", path
+        doc = json.loads(stream.read(length))
+    print(f"{path.name} exported nodes: " + ", ".join(n["name"] for n in doc["nodes"]),
+          flush=True)
+    return doc
+
+
+def export_stock_model(root, name, expected_tree, size, triangles):
+    """Check full-stock world bounds, then verify the hierarchy and faces on disk."""
+    bpy.context.view_layer.update()
+    objects = [root, *root.children_recursive]
+    coords = [obj.matrix_world @ v.co for obj in objects for v in obj.data.vertices]
+    low = [min(v[i] for v in coords) for i in range(3)]
+    high = [max(v[i] for v in coords) for i in range(3)]
+    # Report in glTF order (width, height, depth).
+    actual_size = tuple(high[i] - low[i] for i in (0, 2, 1))
+    assert all(abs(a - b) < 0.00001 for a, b in zip(actual_size, size)), actual_size
+    assert abs(low[2]) < 0.00001 and root.location.length < 0.00001, root.name
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in objects:
+        obj.select_set(True)
+    path = OUTPUT / f"{name}.glb"
+    bpy.ops.export_scene.gltf(filepath=str(path), export_format="GLB", export_apply=True,
+                              export_yup=True, use_selection=True,
+                              export_cameras=False, export_lights=False)
+    doc = exported_nodes(path)
+    nodes = doc["nodes"]
+    tree = {n["name"]: sorted(nodes[i]["name"] for i in n.get("children", []))
+            for n in nodes}
+    assert len(nodes) == len(tree) and tree == expected_tree, (path, tree)
+    assert all("mesh" in n for n in nodes) and not doc.get("textures"), path
+    primitives = [p for m in doc["meshes"] for p in m["primitives"]]
+    count = sum(doc["accessors"][p["indices"]]["count"] // 3 for p in primitives)
+    assert count == triangles, (path, count, triangles)
+    dimensions = " x ".join(f"{v:.6f}" for v in actual_size)
+    print(f"{path.name}: {dimensions} m (Y up), {count} exported triangles", flush=True)
+    return count
+
+
+def export_salad(parts):
+    bowl, *ingredients = parts
+    bowl.name = "salad-bowl"
+    # The bowl lathe already closes the inner floor with its last cap.
+    contents = join_parts([mesh("contents", [], [], []), *ingredients], "contents")
+    contents.parent = bowl
+    export_stock_model(bowl, "salad-bowl", {"salad-bowl": ["contents"], "contents": []},
+                       (0.500, 0.247, 0.500), 1872)
+    return bowl
+
+
+def build_empty_tray():
+    # Import here because make_mashawi also uses the mesh helpers in this module.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from make_mashawi import tray
+    shell = tray()
+    paper = material("Liner - ivory paper", (0.94, 0.90, 0.78))
+    crumb = material("Crumbs - toasted khubz", (0.43, 0.235, 0.095))
+    # The diagonal crease lifts one corner off the liner resting on the steel floor.
+    vertices = [(-0.180, -0.094, 0.0174), (0.140, -0.114, 0.0174),
+                (0.151, 0.034, 0.0174), (0.146, 0.091, 0.036),
+                (0.074, 0.100, 0.0174), (-0.168, 0.116, 0.0174)]
+    liner = mesh("Folded paper liner", vertices, [(0, 1, 2, 4, 5), (2, 3, 4)], [paper])
+    parts = [shell, liner]
+    for x, y, z, r in [(-0.084, 0.033, 0.0174, 0.007),
+                       (-0.064, 0.024, 0.0174, 0.004), (0.088, -0.051, 0.0174, 0.006),
+                       (0.176, -0.063, 0.017, 0.005)]:
+        # Open underside sits flush against the paper (or exposed steel).
+        points = [(x - r, y - r / 2, z), (x + r, y - r / 3, z), (x, y + r, z),
+                  (x + r / 4, y, z + r * 0.65)]
+        parts.append(mesh("Crumb", points, [(0, 1, 3), (1, 2, 3), (2, 0, 3)], [crumb]))
+    return join_parts(parts, "empty-tray")
+
+
 def export_asset(parts, name):
     bpy.ops.object.select_all(action="DESELECT")
     for obj in parts:
@@ -275,6 +370,7 @@ def export_asset(parts, name):
                               export_format="GLB", export_apply=True,
                               export_yup=True, use_selection=True,
                               export_cameras=False, export_lights=False)
+    exported_nodes(OUTPUT / f"{name}.glb")
     return obj
 
 
@@ -324,9 +420,13 @@ def main():
                                  (build_salad, "salad-bowl", "salad_preview.png")]:
         bpy.ops.object.select_all(action="SELECT")
         bpy.ops.object.delete(use_global=False)
-        obj = export_asset(builder(), name)
+        parts = builder()
+        obj = export_salad(parts) if name == "salad-bowl" else export_asset(parts, name)
         preview(obj, image)
-    print("Finished both GLB exports and 512 x 512 previews.", flush=True)
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete(use_global=False)
+    tray = build_empty_tray()
+    export_stock_model(tray, "empty-tray", {"empty-tray": []}, (0.500, 0.048, 0.350), 252)
 
 
 if __name__ == "__main__":

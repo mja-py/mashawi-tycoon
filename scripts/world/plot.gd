@@ -70,23 +70,29 @@ var tables: Array = []
 var _slots: Array = []
 var _music_spot := Vector3.ZERO
 var _helper: Node3D
-var _board: Label3D
+var _board: Node3D
 var _applied := false
-var _stall_board: Label3D
-var _truck_board: Label3D
+var _stall_board: Node3D
+var _truck_board: Node3D
 var _extractor: Node3D
 var dining_staff: Array[DiningStaff] = []
 var staff_collect: Callable
 var service_open := false
 var clean_seconds := 1.4
 var service_stats := {"deliveries": 0, "cleaned": 0}
+## Food props that follow the stock; shared with the cart.
+var food: FoodDisplay
 
 func _init() -> void:
 	cart = MashawiStand.new()
 	cart.position = STAND_POS
 	cart.scale = Vector3.ONE * STAND_SCALE
-	cart.serving_hook = _on_serving
+	food = cart.food
 	add_child(cart)
+
+## Show what is left of each ingredient (FoodDisplay levels) on every prop of the stand.
+func show_stock(levels: Dictionary, wanted: Dictionary = {}) -> void:
+	food.set_levels(levels, wanted)
 
 ## Half-width of the street gap a stage needs (0 = none).
 static func footprint(stage_tier: int) -> float:
@@ -165,6 +171,9 @@ func _wanted(stations: Dictionary, paved: bool) -> Dictionary:
 		var lt := _tier(stations, "lights")
 		if lt > 0:
 			w["station:lights:%d:%s" % [lt, s]] = ["_rig_lights", lt]
+		var sg := _tier(stations, "signage")
+		if sg > 0:
+			w["rig:signage:%d:%s" % [mini(sg, 2), s]] = ["_rig_signage", mini(sg, 2)]
 		if stage >= 1:
 			for id in ["doner", "fryer", "sweets"]:
 				var t := _tier(stations, id)
@@ -219,6 +228,7 @@ static func _alive(n) -> bool:
 	return n != null and is_instance_valid(n) and (n as Node).is_inside_tree() and not (n as Node).is_queued_for_deletion()
 
 func _prune() -> void:
+	food.prune()
 	for arr in [_lights, _lanterns, _bulbs, _neon, _night_only, _spits, _fans, _smokes, _crew]:
 		for i in range(arr.size() - 1, -1, -1):
 			if not _alive(arr[i]):
@@ -393,12 +403,6 @@ func staff_busy() -> bool:
 func set_serving(on: bool) -> void:
 	cart.set_serving(on)
 
-func _on_serving(on: bool) -> void:
-	_serving = on
-	for i in range(_crew.size()):
-		var c: Node3D = _crew[i]
-		if _alive(c) and c.visible:
-			ModelLib.play_loop(c, "idle") # the serving gesture is a one-shot played per handoff
 
 var _serving := false
 
@@ -417,7 +421,7 @@ func set_night(is_night: bool) -> void:
 	for b in _bulbs:
 		(b as GeometryInstance3D).material_override = PlotBuilders.bulb_material(is_night)
 	for n in _neon:
-		(n as Label3D).outline_size = 18 if is_night else 6
+		PlotBuilders.neon_night(n, is_night)
 	for n in _night_only:
 		(n as Node3D).visible = is_night
 
@@ -496,11 +500,12 @@ func _build_stall(n: Node3D) -> void:
 			_at(Vector3(-0.63 + i * 0.18, 0.98, 0.505)))
 	b.add_box(Vector3(1.0, 0.17, 0.03), PlotBuilders.CREAM, _at(Vector3(0, 1.14, 0.48)))
 	b.add_box(Vector3(1.04, 0.02, 0.035), PlotBuilders.GOLD, _at(Vector3(0, 1.235, 0.48)))
-	_stall_board = _label(n, Vector3(0, 1.14, 0.5), "ui.sign", 72, 0.0026, Color(0.45, 0.1, 0.1))
+	_stall_board = PlotBuilders.name_board(n, Vector3(0, 1.15, 0.5), 1.08, 72, 0.0026)
 	_light(n, Vector3(0, 0.90, 0.52), Color("ffd39d"), 0.90, 1.60)
 	# A-board menu: two leaning boards
 	var ab := Node3D.new()
-	ab.position = Vector3(-1.42, 0, 0.6)
+	# behind the pickup line (guests wait at z 0.49..0.70 here), never among them
+	ab.position = Vector3(-1.12, 0, 0.1)
 	ab.rotation.y = deg_to_rad(20)
 	n.add_child(ab)
 	for side in [-1.0, 1.0]:
@@ -547,14 +552,14 @@ func _build_mobile_equipment(n: Node3D, station: String, t: int) -> void:
 			var p := FoodTruck.FRYER
 			if stage == 1:
 				p = Vector3(1.18, 0.315, 0.11)
-			PlotBuilders.fryer(n, p, t)
+			PlotBuilders.fryer(n, p, t, food)
 		"sweets":
-			PlotBuilders.dessert_case(n, FoodTruck.SWEETS, t)
+			PlotBuilders.dessert_case(n, FoodTruck.SWEETS, t, food)
 		"doner":
 			var p := Vector3(-0.10, 0.423, -0.048) if stage == 2 else Vector3(-0.90, 0.33, -0.34)
 			var bottom := 0.24 if stage == 2 else 0.0
 			ModelLib.box(n, Vector3(0.296, p.y - bottom, 0.27), Vector3(p.x, (p.y + bottom) * 0.5, p.z - 0.015), FoodTruck.DARK_TEAL)
-			var rotor := PlotBuilders.shawarma(n, p)
+			var rotor := PlotBuilders.shawarma(n, p, food)
 			if rotor:
 				_spits.append(rotor)
 		"karak":
@@ -564,19 +569,28 @@ func _build_mobile_equipment(n: Node3D, station: String, t: int) -> void:
 				ModelLib.box(n, Vector3(0.23, 0.32, 0.22), p - Vector3.UP * 0.18, PlotBuilders.WOOD)
 				ModelLib.box(n, Vector3(0.26, 0.023, 0.24), p - Vector3.UP * 0.012, PlotBuilders.GOLD)
 			PlotBuilders.spawn("samovar", n, p, 0, 0.85 if stage == 0 else 1.10)
-			PlotBuilders.spawn("cup_tea", n, p + Vector3(-0.09, 0, 0.05), 0, 0.20, false)
+			food.add_single("karak", PlotBuilders.spawn("cup_tea", n, p + Vector3(-0.09, 0, 0.05), 0, 0.20, false))
 		"coldbox":
 			if stage == 2:
 				var p := Vector3(1.08, 0.24, -0.30)
 				var height := 0.29 + 0.035 * t
 				ModelLib.box(n, Vector3(0.29, height, 0.25), p + Vector3.UP * (height * 0.5), STEEL)
-				ModelLib.box(n, Vector3(0.25, 0.022, 0.018), p + Vector3(0, height - 0.066, 0.134), PlotBuilders.DARK)
+				if PlotBuilders.painted(n, p + Vector3(0, height * 0.5, 0.128), "coldbox", height * 0.54) == null:
+					ModelLib.box(n, Vector3(0.25, 0.022, 0.018), p + Vector3(0, height - 0.066, 0.134), PlotBuilders.DARK)
 		"counter":
 			if t >= 2:
 				ModelLib.box(n, Vector3(0.052, 0.028, 0.071), Vector3(-0.53, FoodTruck.SILL_Y + 0.014, 0.36), PlotBuilders.STEEL)
 		"grill":
 			var b := MeshBatch.new()
-			PlotBuilders.grill(n, FoodTruck.GRILL - Vector3(0.08, 0, 0), 2 if t >= 2 else 1, b)
+			PlotBuilders.grill(n, FoodTruck.GRILL - Vector3(0.08, 0, 0), 2 if t >= 2 else 1, b, food)
+			# the truck hides the cart's counter: its own bread and cans stand on the hatch sill
+			var sill := Vector3(0.62, FoodTruck.SILL_Y, FoodTruck.HATCH_Z - 0.10)
+			food.add_stack("bread", PlotBuilders.spawn("pita", n, sill, 20, 0.22, false))
+			var cans: Array = []
+			for i in range(3):
+				cans.append(ModelLib.spawn("food/soda-can", n, sill + Vector3(0.16 + i * 0.055, 0, 0.01), 0, 0.2))
+				PlotBuilders.no_shadow(cans[i])
+			food.add_parts("drink", cans)
 			if t >= 3:
 				b.add_box(Vector3(0.065, 0.008, 0.082), STEEL, _at(Vector3(0.046, FoodTruck.SILL_Y + 0.004, 0.28)))
 			b.flush(n)
@@ -792,7 +806,7 @@ func _build_kiosk(n: Node3D) -> void:
 	var board_cap_y := K_H + 0.355
 	b.add_box(board_size, CREAM, _at(Vector3(K_X, board_y, board_z)))
 	b.add_box(board_cap, PlotBuilders.WOOD if house else TRIM, _at(Vector3(K_X, board_cap_y, board_z)))
-	_board = _label(n, Vector3(K_X, board_y, K_FRONT + 0.09), "ui.sign", 96, 0.0032, Color(0.45, 0.1, 0.1))
+	_board = PlotBuilders.name_board(n, Vector3(K_X, board_y + 0.01, K_FRONT + 0.115), 1.56, 96, 0.0032)
 	_crew_member(n, true, Vector3(K_X - 0.36, CREW_Y, -0.22), 15)
 	_helper = _crew_member(n, false, Vector3(K_X + 0.36, CREW_Y, -0.24), -15)
 	if house:
@@ -1186,8 +1200,8 @@ func _st_counter(n: Node3D, t: int) -> void:
 		var glass := ModelLib.box(n, Vector3(0.34, 0.13, 0.12), Vector3(gx, y + 0.065, z), Color(0.75, 0.9, 1.0))
 		glass.material_override = _glass_mat()
 		b.add_box(Vector3(0.36, 0.015, 0.14), PlotBuilders.GOLD, _at(Vector3(gx, y + 0.135, z)))
-		PlotBuilders.spawn("pita", n, Vector3(gx - 0.07, y, z), 0, 0.22, false)
-		PlotBuilders.spawn("pita", n, Vector3(gx + 0.08, y, z), 40, 0.22, false)
+		food.add_parts("bread", [PlotBuilders.spawn("pita", n, Vector3(gx - 0.07, y, z), 0, 0.22, false),
+			PlotBuilders.spawn("pita", n, Vector3(gx + 0.08, y, z), 40, 0.22, false)])
 	b.flush(n)
 
 static var _glass: StandardMaterial3D
@@ -1204,10 +1218,10 @@ func _st_grill(n: Node3D, t: int) -> void:
 	var b := MeshBatch.new()
 	var count := clampi(t, 1, 3)
 	var x0 := K_X - K_W / 2.0 + 0.13
-	PlotBuilders.grill(n, Vector3(x0, COUNTER_Y, LINE_Z), count, b)
+	PlotBuilders.grill(n, Vector3(x0, COUNTER_Y, LINE_Z), count, b, food)
 	# smoke leaves through the chimney
 	_smoke(n, Vector3(K_X - K_W / 2.0 + 0.3, K_H + 0.4, CHIMNEY_Z), Vector3(0.03, 0.01, 0.03), 10 + 6 * count)
-	PlotBuilders.spawn("charcoal", n, Vector3(x0 - 0.02, 0, -0.5), 0, 0.5, false)
+	food.add_single("charcoal", PlotBuilders.spawn("charcoal", n, Vector3(x0 - 0.02, 0, -0.5), 0, 0.5, false))
 	if t >= 4:
 		# brick oven with a tajine outside the kiosk's right wall
 		var ox := K_X + K_W / 2.0 + 0.34
@@ -1228,10 +1242,11 @@ func _st_doner(n: Node3D, t: int) -> void:
 		var rotor := roast.find_child("SpitRotor", true, false) as Node3D if roast else null
 		if rotor:
 			_spits.append(rotor)
+			PlotBuilders.stock_roast(food, rotor, spit, 0.46)
 		ModelLib.box(n, Vector3(0.12, 0.3, 0.02), Vector3(x, COUNTER_Y + 0.18, LINE_Z - 0.1), Color(1.0, 0.45, 0.1), 1.8)
 
 func _st_fryer(n: Node3D, t: int) -> void:
-	PlotBuilders.fryer(n, Vector3(K_X + 0.16, COUNTER_Y, LINE_Z), t)
+	PlotBuilders.fryer(n, Vector3(K_X + 0.16, COUNTER_Y, LINE_Z), t, food)
 
 func _st_karak(n: Node3D, t: int) -> void:
 	var xs := [K_X + 0.47]
@@ -1239,8 +1254,10 @@ func _st_karak(n: Node3D, t: int) -> void:
 		xs.append(K_X + 0.67)
 	for x in xs:
 		PlotBuilders.spawn("samovar", n, Vector3(x, COUNTER_Y, LINE_Z), 0, 1.3)
+	var cups: Array = []
 	for i in range(3):
-		PlotBuilders.spawn("cup_tea", n, Vector3(K_X - 0.33 + i * 0.07, COUNTER_Y + 0.04, K_FRONT + 0.06), 0, 0.22, false)
+		cups.append(PlotBuilders.spawn("cup_tea", n, Vector3(K_X - 0.33 + i * 0.07, COUNTER_Y + 0.04, K_FRONT + 0.06), 0, 0.22, false))
+	food.add_parts("karak", cups, cups[0], 0.12)
 	if t >= 3:
 		# tea counter: a stew pot of karak and more glasses on the line
 		PlotBuilders.spawn("pot_stew", n, Vector3(K_X + 0.83, COUNTER_Y, LINE_Z), 0, 0.17, false)
@@ -1249,15 +1266,16 @@ func _st_karak(n: Node3D, t: int) -> void:
 			PlotBuilders.spawn("cup_tea", n, Vector3(K_X + 0.5 + i * 0.07, COUNTER_Y + 0.27, LINE_Z - 0.06), 0, 0.2, false)
 
 func _st_sweets(n: Node3D, t: int) -> void:
-	PlotBuilders.dessert_case(n, Vector3(K_X + 0.46, COUNTER_Y + 0.04, K_FRONT + 0.01), t)
+	PlotBuilders.dessert_case(n, Vector3(K_X + 0.46, COUNTER_Y + 0.04, K_FRONT + 0.01), t, food)
 
 func _st_coldbox(n: Node3D, count: int) -> void:
 	var b := MeshBatch.new()
 	for i in range(count):
 		var x := K_X + K_W / 2.0 + 0.2 + i * 0.3
 		b.add_box(Vector3(0.26, 0.46, 0.24), Color(0.92, 0.94, 0.96), _at(Vector3(x, 0.23, -0.78)))
-		b.add_box(Vector3(0.2, 0.3, 0.005), Color(0.6, 0.8, 0.95), _at(Vector3(x, 0.27, -0.657)))
-		b.add_box(Vector3(0.02, 0.12, 0.02), PlotBuilders.DARK, _at(Vector3(x + 0.09, 0.3, -0.65)))
+		if PlotBuilders.painted(n, Vector3(x, 0.23, -0.657), "coldbox", 0.25) == null:
+			b.add_box(Vector3(0.2, 0.3, 0.005), Color(0.6, 0.8, 0.95), _at(Vector3(x, 0.27, -0.657)))
+			b.add_box(Vector3(0.02, 0.12, 0.02), PlotBuilders.DARK, _at(Vector3(x + 0.09, 0.3, -0.65)))
 	b.flush(n)
 
 func _st_signage(n: Node3D, t: int) -> void:
@@ -1282,15 +1300,22 @@ func _st_signage(n: Node3D, t: int) -> void:
 		# neon tube frame mounted on the board, pink name inside it
 		var ny := y - 0.15
 		PlotBuilders.spawn("neon_frame", n, Vector3(K_X, ny, z + 0.04), 0, 1.2, false)
-		var neon := _label(n, Vector3(K_X, y + 0.0, z + 0.07), "ui.sign", 80, 0.0034, Color(1.0, 0.25, 0.6))
-		neon.outline_modulate = Color(1.0, 0.7, 0.9)
-		neon.outline_size = 6
+		var neon: Node3D = PlotBuilders.neon(n, Vector3(K_X, y + 0.0, z + 0.07), 1.05)
+		if neon == null:
+			var lettering := _label(n, Vector3(K_X, y + 0.0, z + 0.07), "ui.sign", 80, 0.0034, Color(1.0, 0.25, 0.6))
+			lettering.outline_modulate = Color(1.0, 0.7, 0.9)
+			lettering.outline_size = 6
+			neon = lettering
+		elif (neon as Sprite3D).texture.get_height() * 3.6 > (neon as Sprite3D).texture.get_width():
+			(neon as Sprite3D).pixel_size *= 0.75 # the taller Arabic tube fits the frame's height
 		_neon.append(neon)
 		_light(n, Vector3(K_X, ny + 0.1, K_FRONT + 0.6), Color(1.0, 0.45, 0.7), 0.8, 2.0)
 	if t >= 4:
 		var py := PlotBuilders.spawn("pylon", n, Vector3(-_gap - 0.25, 0, 0.62), 0, 0.95)
 		if py:
-			_label(py, Vector3(0, 0.92, 0.1), "ui.sign", 56, 0.0026, Color(0.45, 0.1, 0.1))
+			# the roadside pylon carries the medallion, not a second name beside the neon
+			if PlotBuilders.painted(py, Vector3(0, 0.92, 0.1), "emblem", 0.26) == null:
+				_label(py, Vector3(0, 0.92, 0.1), "ui.sign", 56, 0.0026, Color(0.45, 0.1, 0.1))
 	b.flush(n)
 
 func _st_lights(n: Node3D, t: int) -> void:
@@ -1597,6 +1622,31 @@ static func _sail_mat() -> StandardMaterial3D:
 	return _sail
 
 # ---------------------------------------------------------------- stages 1-2 lights
+
+## Signage on the cart, stall and truck: brass picture lamps over the painted board
+## (tier 1), lit at night from tier 2. The neon of tier 3+ is the cart's own (set_neon).
+func _rig_signage(n: Node3D, t: int) -> void:
+	n.position = STAND_POS
+	var board := Vector3(0, 1.33, 0.385) * STAND_SCALE
+	var width := 1.0 * STAND_SCALE
+	if stage == 1:
+		board = Vector3(0, 1.15, 0.5)
+		width = 1.08
+	elif stage == 2:
+		board = (FoodTruck.SIGN + Vector3(0, 0, 0.004)) * FoodTruck.SCALE
+		width = 0.78 * FoodTruck.SCALE
+	var b := MeshBatch.new()
+	var top := board.y + width * 0.17
+	for sx in [-0.3, 0.3]:
+		var x: float = board.x + sx * width
+		b.add_box(Vector3(0.012, 0.05, 0.012), PlotBuilders.GOLD, _at(Vector3(x, top + 0.025, board.z - 0.005)))
+		b.add_box(Vector3(0.012, 0.012, 0.06), PlotBuilders.GOLD, _at(Vector3(x, top + 0.05, board.z + 0.02)))
+		b.add_box(Vector3(0.05, 0.022, 0.028), PlotBuilders.GOLD.darkened(0.15), _at(Vector3(x, top + 0.04, board.z + 0.05)))
+		if t >= 2:
+			_night_only.append(ModelLib.box(n, Vector3(0.04, 0.006, 0.02), Vector3(x, top + 0.027, board.z + 0.05), Color(1.0, 0.9, 0.6), 3.0))
+	b.flush(n)
+	if t >= 2:
+		_light(n, board + Vector3(0, 0.02, 0.22), Color("ffd9a3"), 0.7, 1.1)
 
 func _rig_lights(n: Node3D, t: int) -> void:
 	n.position = STAND_POS

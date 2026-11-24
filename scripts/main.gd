@@ -180,6 +180,15 @@ func _apply_dev_flags() -> void:
 			var kv := pair.split(":")
 			if kv.size() == 2 and Data.STATIONS.has(kv[0]):
 				Game._station_store()[kv[0]] = int(kv[1])
+	if DevTools.has("stock"):
+		# --stock=all:40,chicken:0,bread:3 sets the store for screenshots ("all" first)
+		for pair in DevTools.get_flag("stock").split(","):
+			var kv := pair.split(":")
+			if kv.size() == 2 and kv[0] == "all":
+				for ing in Data.INGREDIENTS:
+					Game.inventory[ing] = int(kv[1])
+			elif kv.size() == 2 and Data.INGREDIENTS.has(kv[0]):
+				Game.inventory[kv[0]] = int(kv[1])
 	if DevTools.has("autodays"):
 		if _autoplay_started:
 			return # a seeded run re-applies the state flags above, nothing below

@@ -45,7 +45,72 @@ static func stripes(roof: Node3D, w: float, d: float, col: Color = Color(0.97, 0
 		if i % 2 == 1:
 			ModelLib.box(roof, Vector3(0.18, h, d), Vector3(-w / 2 + 0.09 + i * 0.18, 0.0, 0.0), col)
 
-## The stand's name board text.
+static var _sign_textures := {}
+
+## Painted sign art for the current language (`assets/textures/signs/<name>-<lang>.png`),
+## with mipmaps so it stays calm at street distance. Null when the file is missing.
+static func sign_texture(name: String) -> Texture2D:
+	var lang := "ar" if TranslationServer.get_locale().begins_with("ar") else "en"
+	var path := "res://assets/textures/signs/%s-%s.png" % [name, lang]
+	if not ResourceLoader.exists(path):
+		path = "res://assets/textures/signs/%s.png" % name # art without lettering, or bilingual
+	if not _sign_textures.has(path):
+		var tex: Texture2D = null
+		if ResourceLoader.exists(path):
+			var img := (load(path) as Texture2D).get_image()
+			if img:
+				if img.is_compressed():
+					img.decompress()
+				img.generate_mipmaps()
+				tex = ImageTexture.create_from_image(img)
+		_sign_textures[path] = tex
+	return _sign_textures[path]
+
+## A flat painted sign `width` wide facing +Z (the name board, the "finished" tag).
+static func painted(parent: Node3D, pos: Vector3, name: String, width: float) -> Sprite3D:
+	var tex := sign_texture(name)
+	if tex == null:
+		return null
+	var sp := Sprite3D.new()
+	sp.texture = tex
+	sp.pixel_size = width / float(tex.get_width())
+	sp.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	sp.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sp.position = pos
+	parent.add_child(sp)
+	return sp
+
+## The neon name as glowing tube art, `width` wide (soft halo, so alpha-blended and unlit).
+## Null when the language has no art; callers then fall back to outlined lettering.
+static func neon(parent: Node3D, pos: Vector3, width: float) -> Sprite3D:
+	var sp := painted(parent, pos, "neon", width)
+	if sp:
+		sp.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+		sp.shaded = false
+		sp.modulate = NEON_DAY
+	return sp
+
+const NEON_DAY := Color(0.92, 0.42, 0.72, 1.0) # deeper by day so it reads on a pale board
+const NEON_NIGHT := Color(1.0, 1.0, 1.0, 1.0)
+
+## Day/night look of a neon name, whichever way it is drawn.
+static func neon_night(sign: Node3D, night: bool, day_outline: int = 6) -> void:
+	if sign is Sprite3D:
+		(sign as Sprite3D).modulate = NEON_NIGHT if night else NEON_DAY
+	elif sign is Label3D:
+		(sign as Label3D).outline_size = 16 if night else day_outline
+
+## The stand's painted name board, `width` wide: the sign art when the language has one,
+## otherwise the plain lettering.
+static func name_board(parent: Node3D, pos: Vector3, width: float, font_size: int, pixel_size: float,
+		color: Color = Color(0.45, 0.1, 0.1)) -> Node3D:
+	var art := painted(parent, pos, "board", width)
+	if art:
+		return art
+	return PlotBuilders.sign(parent, pos, font_size, pixel_size, "ui.sign", color)
+
+## Plain lettering on a board (Order / Pickup, and the name without sign art).
 static func sign(parent: Node3D, pos: Vector3, font_size: int, pixel_size: float, key: String = "ui.sign",
 		color: Color = Color(0.45, 0.1, 0.1)) -> Label3D:
 	var l := Label3D.new()
@@ -59,8 +124,27 @@ static func sign(parent: Node3D, pos: Vector3, font_size: int, pixel_size: float
 	parent.add_child(l)
 	return l
 
+## Skewers on a grill: the meat leaves piece by piece with the grill meats in stock, the
+## vegetables with the veg; the bare sticks stay on the coals.
+static func stock_skewers(food: FoodDisplay, skewers: Array, lift: float) -> void:
+	var meat: Array = []
+	var veg: Array = []
+	var anchor: Node3D = null
+	for sk in skewers:
+		if sk == null:
+			continue
+		if anchor == null:
+			anchor = sk
+		meat.append_array((sk as Node).find_children("meat*", "Node3D", true, false))
+		veg.append_array((sk as Node).find_children("vegetables*", "Node3D", true, false))
+	if food == null or anchor == null:
+		return
+	food.add_parts("meat", meat, anchor, lift)
+	food.add_parts("veg", veg)
+
 ## Charcoal boxes with separate grates, embers and skewers resting on the rim.
-static func grill(parent: Node3D, pos: Vector3, n: int, batch: MeshBatch) -> void:
+static func grill(parent: Node3D, pos: Vector3, n: int, batch: MeshBatch, food: FoodDisplay = null) -> void:
+	var skewers: Array = []
 	for i in range(n):
 		var p := pos + Vector3(i * 0.2, 0, 0)
 		batch.add_box(Vector3(0.177, 0.052, 0.153), DARK, Transform3D(Basis.IDENTITY, p + Vector3.UP * 0.026))
@@ -71,10 +155,11 @@ static func grill(parent: Node3D, pos: Vector3, n: int, batch: MeshBatch) -> voi
 			batch.add_box(Vector3(0.010, 0.010, 0.115), DARK, Transform3D(Basis.IDENTITY, p + Vector3(x, 0.066, 0)))
 		for ember in [Vector3(-0.040, 0.061, -0.02), Vector3(0.042, 0.061, 0.025)]:
 			batch.add_box(Vector3(0.018, 0.009, 0.025), Color("b04d2e"), Transform3D(Basis.IDENTITY, p + ember), 0.42)
-		spawn("skewer" if i % 2 == 0 else "skewer_veg", parent, p + Vector3(0, 0.073, 0.0), 90, 0.32, false)
+		skewers.append(spawn("skewer" if i % 2 == 0 else "skewer_veg", parent, p + Vector3(0, 0.073, 0.0), 90, 0.32, false))
+	stock_skewers(food, skewers, 0.10)
 
 ## Fitted vertical broiler. Only the shaft and roast turn.
-static func shawarma(parent: Node3D, p: Vector3) -> Node3D:
+static func shawarma(parent: Node3D, p: Vector3, food: FoodDisplay = null) -> Node3D:
 	var b := MeshBatch.new()
 	var brushed := Color("aaa9a0")
 	var dark_steel := Color("6e716e")
@@ -94,9 +179,19 @@ static func shawarma(parent: Node3D, p: Vector3) -> Node3D:
 	b.add_box(Vector3(0.093, 0.013, 0.016), dark_steel, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.022, 0.113)))
 	b.flush(parent)
 	var roast := spawn("doner", parent, p + Vector3(0, 0.03, 0.005), 25, 0.34)
-	return roast.find_child("SpitRotor", true, false) as Node3D if roast else null
+	var rotor := roast.find_child("SpitRotor", true, false) as Node3D if roast else null
+	stock_roast(food, rotor, roast, 0.42)
+	return rotor
 
-static func fryer(parent: Node3D, p: Vector3, tier: int) -> void:
+## The roast on a spit thins as the chicken goes. A model with a separate "Roast" piece
+## keeps its bare shaft; an older one-piece rotor thins whole.
+static func stock_roast(food: FoodDisplay, rotor: Node3D, anchor: Node3D, lift: float) -> void:
+	if food == null or rotor == null:
+		return
+	var meat := rotor.find_child("Roast*", true, false) as Node3D
+	food.add_roast("chicken", meat if meat else rotor, anchor, lift)
+
+static func fryer(parent: Node3D, p: Vector3, tier: int, food: FoodDisplay = null) -> void:
 	var b := MeshBatch.new()
 	b.add_box(Vector3(0.26, 0.087, 0.19), STEEL, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.044, 0)))
 	b.add_box(Vector3(0.21, 0.012, 0.14), DARK, Transform3D(Basis.IDENTITY, p + Vector3(0, 0.088, 0)))
@@ -106,13 +201,18 @@ static func fryer(parent: Node3D, p: Vector3, tier: int) -> void:
 		b.add_box(Vector3(0.021, 0.022, 0.070), DARK, Transform3D(Basis.IDENTITY, p + Vector3(x, 0.109, 0.064)))
 	b.add_box(Vector3(0.038, 0.017, 0.008), RED, Transform3D(Basis.IDENTITY, p + Vector3(-0.073, 0.059, 0.098)))
 	b.flush(parent)
-	spawn("fries", parent, p + Vector3(0.097, 0.086, -0.047), 0, 0.19, false)
+	var basket := spawn("fries", parent, p + Vector3(0.097, 0.086, -0.047), 0, 0.19, false)
+	if food and basket:
+		food.add_parts("fries", basket.find_children("fries*", "Node3D", true, false), basket, 0.13)
 
-static func dessert_case(parent: Node3D, p: Vector3, tier: int) -> void:
+static func dessert_case(parent: Node3D, p: Vector3, tier: int, food: FoodDisplay = null) -> void:
 	spawn("sweets", parent, p, 0, 1.0)
 	if tier >= 2:
-		ModelLib.spawn("food/saffron-cake", parent, p + Vector3(-0.075, 0.219, 0), 20, 0.24)
-		ModelLib.spawn("food/omani-halwa", parent, p + Vector3(0.075, 0.219, 0), -10, 0.24)
+		var cake := ModelLib.spawn("food/saffron-cake", parent, p + Vector3(-0.075, 0.219, 0), 20, 0.24)
+		var halwa := ModelLib.spawn("food/omani-halwa", parent, p + Vector3(0.075, 0.219, 0), -10, 0.24)
+		if food:
+			food.add_single("cake", cake)
+			food.add_single("halwa", halwa)
 
 ## Grill smoke rising from pos (keep these few: one GPUParticles3D each).
 static func smoke(parent: Node3D, pos: Vector3, extents: Vector3 = Vector3(0.08, 0.01, 0.06), amount: int = 16) -> GPUParticles3D:

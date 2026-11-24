@@ -319,7 +319,7 @@ plot.kiosk.desc,"A fixed booth with a shaded terrace: customers sit, eat and spe
 plot.restaurant,Restaurant,مطعم
 plot.restaurant.desc,A shop front with a dining room and majlis.,واجهة محل مع صالة طعام ومجلس.
 plot.flagship,Flagship,الفرع الرئيسي
-plot.flagship.desc,"Two floors, two terraces and a fountain. The finest address on the street.",طابقان وتراسان ونافورة. أرقى عنوان في الشارع.
+plot.flagship.desc,"Two floors, two terraces and a wind tower. The finest address on the street.",طابقان وتراسان وبرجيل. أرقى عنوان في الشارع.
 station.counter,Counter,الكاونتر
 station.counter.desc,Cashiers take orders and keep the line moving.,الكاشير يأخذ الطلبات ويحرّك الطابور.
 station.counter.effect,+10% faster orders and handoffs and one more place in line per level; higher tiers make room for more buyers.,+10% أسرع في أخذ الطلبات والتسليم ومكان إضافي في الطابور لكل مستوى؛ المستويات الأعلى تتسع لمشترين أكثر.

@@ -973,6 +973,20 @@ func apply_visual() -> void:
 		cart.apply_upgrades(Game.cart_upgrades())
 	if plot != null:
 		plot.apply(_plot_state_for(location_id))
+		show_prep_stock()
+
+## Planning: the stand shows what is in the store. One small pack of an ingredient fills
+## its prop, less shows partly empty, none shows it finished. (The day shows it against
+## the opening stock instead, see DaySim._show_stock.)
+func show_prep_stock() -> void:
+	if plot == null or managed_customers:
+		return
+	var reference := {}
+	for ing in Data.INGREDIENTS:
+		reference[ing] = int(Data.INGREDIENTS[ing]["packs"][0][0])
+	var wanted := FoodDisplay.wanted_today()
+	var units := func(ing: String) -> int: return int(Game.inventory.get(ing, 0))
+	plot.show_stock(FoodDisplay.levels_for(units, reference, wanted), wanted)
 
 ## Game.plot_state() for today's place; a previewed other place gets its own stage and levels.
 func _plot_state_for(id: String) -> Dictionary:
@@ -999,6 +1013,11 @@ func spawn_car() -> void:
 	if cars >= 4:
 		return
 	var dir := 1 if randf() < 0.5 else -1
+	var from_x := -HALF_W - 2.0 if dir > 0 else HALF_W + 2.0
+	for child in _level.get_children():
+		# never drop a car onto one that has not cleared the lane's entry yet
+		if child is Car and (child as Car).dir == dir and absf((child as Car).position.x - from_x) < 1.4:
+			return
 	var car := Car.new()
 	_level.add_child(car)
 	var z := 0.22 if dir > 0 else -0.22

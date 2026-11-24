@@ -87,12 +87,12 @@ tools/check.sh
 
 # screenshot a phase (for review without touching the editor)
 tools/shot.sh out.png 4 --phase=prep --panel=menu --lang=en
-tools/shot.sh out.png 10 --phase=day --location=gv --vehicle=truck2 --weather=sandstorm --speed=4
+tools/shot.sh out.png 10 --phase=day --location=gv --stage=2 --weather=sandstorm --speed=4
 ```
 
-Dev flags (after `--`): `--phase=title|prep|day|report`, `--panel=supplies|menu|place|upgrades|promote`,
-`--location=fahidi|creek|metro|jbr|downtown|mall|gv`, `--vehicle=cart|truck|truck2`,
-`--weather=sunny|hot|cloudy|sandstorm|breeze`, `--lang=ar|en`, `--speed=<n>`, `--upgrades=a,b,c`,
+Dev flags (after `--`): `--phase=title|prep|day|report`, `--panel=supplies|menu|place|build|promote|goals|advisor|reputation`,
+`--location=fahidi|creek|metro|jbr|downtown|mall|gv`, `--stage=0..5 --stations=grill:4,seating:5`,
+`--weather=sunny|hot|cloudy|sandstorm|breeze`, `--lang=ar|en`, `--speed=<n>`, `--stock=all:40,chicken:0`,
 `--money=<n>`, `--screenshot=<path> --delay=<s>`, `--gallery=<models folder>`.
 
 ## Android (release APK)

@@ -17,6 +17,7 @@ import bpy
 from mathutils import Euler, Vector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from make_food import export_stock_model, join_parts
 from make_mashawi import (OUTPUT, PREVIEWS, TAU, box, export_asset, fleck,
                           material, meat_cube, mesh, metal, onion_ring, oval,
                           place, preview, skewer, transform)
@@ -81,6 +82,9 @@ def build_cubed_skewer(chicken=True):
                                    0.007, char, rng)],
                            (0.005, -dims[1] / 2 - 0.0003, 0.004),
                            (math.pi / 2, 0, 0)))
+        if not chicken:
+            # Keep the cube-centred pivot so its sear patches shrink with it.
+            group = [join_parts(group, "meat" if i == 0 else f"meat.{i:03d}")]
         parts.extend(place(group, ((i - 2.5) * 0.074, 0, 0.012 - (-dims[2] / 2)),
                            (0, 0, rng.uniform(-0.075, 0.075))))
     if chicken:
@@ -97,7 +101,7 @@ def build_cubed_skewer(chicken=True):
     else:
         purple = material("Onion piece - purple outer skin", (0.47, 0.12, 0.30))
         ivory = material("Onion piece - ivory flesh", (0.93, 0.84, 0.76))
-        onion = onion_ring("Onion piece threaded between mutton cubes", purple, ivory)
+        onion = onion_ring("vegetables", purple, ivory)
         parts.append(transform(onion, (0, 0, 0.049), (0, math.pi / 2, 0)))
     return parts
 
@@ -328,6 +332,18 @@ def checked_export(parts, name, expected):
     triangles = sum(len(obj.data.loop_triangles) for obj in parts)
     assert 0 < triangles < 2000, f"{name}: {triangles} triangles exceeds budget"
     bpy.context.view_layer.update()
+    if name == "mutton-skewer":
+        children = [obj for obj in parts if obj.name.startswith("meat") or obj.name == "vegetables"]
+        root = join_parts([obj for obj in parts if obj not in children], name)
+        # Bake the common centering offset into the bread and blade. The child
+        # transforms already include that offset and keep their individual pivots.
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        for obj in children:
+            obj.parent = root
+        names = ["meat", *(f"meat.{i:03d}" for i in range(1, 6)), "vegetables"]
+        export_stock_model(root, name, {name: names, **{n: [] for n in names}},
+                           (0.600, 0.095107, 0.150660), 592)
+        return root
     obj = export_asset(parts, name, expected)
     bounds = [vertex.co for vertex in obj.data.vertices]
     for axis in (0, 1):
@@ -350,7 +366,14 @@ def checked_export(parts, name, expected):
         actual += count // 3
     assert actual == triangles and actual < 2000, (name, actual, triangles)
     print(f"Validated {path.name}: {actual} exported triangles, no textures.", flush=True)
+    print(f"{path.name} exported nodes: " + ", ".join(n["name"] for n in document["nodes"]),
+          flush=True)
     return obj
+
+
+def set_preview_hidden(obj, hidden):
+    for part in (obj, *obj.children_recursive):
+        part.hide_render = hidden
 
 
 def main():
@@ -372,14 +395,14 @@ def main():
     if "--no-previews" in arguments:
         return
     for obj, _ in assets:
-        obj.hide_render = True
+        set_preview_hidden(obj, True)
     for obj, image in assets:
-        obj.hide_render = False
+        set_preview_hidden(obj, False)
         preview(obj, image)
         assert (PREVIEWS / image).is_file(), f"Missing preview: {image}"
-        obj.hide_render = True
+        set_preview_hidden(obj, True)
     for obj, _ in assets:
-        obj.hide_render = False
+        set_preview_hidden(obj, False)
     print("Finished all five 512 x 512 EEVEE previews.", flush=True)
 
 

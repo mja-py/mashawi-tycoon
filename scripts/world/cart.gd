@@ -9,10 +9,10 @@ var _spit: Node3D
 var _spit_rotor: Node3D
 var _vendor: Node3D
 var _helper: Node3D
-var _neon: Label3D
+var _neon: Node3D
 var _neon_on := false
 ## Painted name boards (cart roof, truck); hidden while the neon replaces them.
-var _title: Label3D
+var _title: Node3D
 var _neon_light: OmniLight3D
 var _awning_big: Node3D
 var _speaker: Node3D
@@ -24,12 +24,12 @@ var _wheels: Array[Node3D] = []
 var _skirt: Node3D
 ## Stage 1 (stall): wheels off, the plot's canopy replaces the roof.
 var stall := false
-## Called with set_serving(on) so the Plot can animate its own crew (kiosk and up).
-var serving_hook: Callable
 var _roof: Node3D
 var _truck := false
 var _upgrades: Dictionary = {}
 var _grill_glow: MeshInstance3D
+## What is on show follows the stock (the Plot shares this one and adds its stations).
+var food := FoodDisplay.new()
 var _serving := false
 
 func _ready() -> void:
@@ -63,11 +63,10 @@ func _build() -> void:
 		ModelLib.box(_body, Vector3(0.012, 0.22, 0.014), Vector3(x, 0.28, 0.283), teal.lightened(0.18))
 	for x in [-0.53, 0.53]:
 		ModelLib.box(_body, Vector3(0.025, 0.36, 0.025), Vector3(x, 0.3, 0.284), gold)
-	var seal := ModelLib.cylinder(_body, 0.09, 0.012, Vector3(0, 0.29, 0.29), gold)
-	seal.rotation.x = PI / 2
-	for i in range(3):
-		ModelLib.box(_body, Vector3(0.034, 0.025, 0.012), Vector3(-0.042 + i * 0.042, 0.29, 0.304), red)
-	ModelLib.box(_body, Vector3(0.145, 0.009, 0.012), Vector3(0, 0.29, 0.307), cream)
+	# the painted brass medallion; the plain disc stands in when the art is missing
+	if PlotBuilders.painted(_body, Vector3(0, 0.29, 0.292), "emblem", 0.24) == null:
+		var seal := ModelLib.cylinder(_body, 0.09, 0.012, Vector3(0, 0.29, 0.29), gold)
+		seal.rotation.x = PI / 2
 	# posts and roof (hidden when selling from a truck, which brings its own)
 	_roof = Node3D.new()
 	_body.add_child(_roof)
@@ -88,7 +87,7 @@ func _build() -> void:
 	_awning_big.visible = false
 	# menu board on the roof front
 	ModelLib.box(_roof, Vector3(0.9, 0.22, 0.03), Vector3(0, 1.32, 0.36), cream)
-	_title = PlotBuilders.sign(_roof, Vector3(0, 1.32, 0.38), 72, 0.0028)
+	_title = PlotBuilders.name_board(_roof, Vector3(0, 1.33, 0.385), 1.0, 72, 0.0028)
 	# rotating spit
 	_spit = Node3D.new()
 	_spit.position = Vector3(-0.33, 0.59, -0.05)
@@ -96,12 +95,16 @@ func _build() -> void:
 	var roast := ModelLib.spawn("food/doner-spit", _spit, Vector3.ZERO, 0, 0.55)
 	if roast:
 		_spit_rotor = roast.find_child("SpitRotor", true, false) as Node3D
+		PlotBuilders.stock_roast(food, _spit_rotor, null, 0.0)
 	# heater behind the spit
 	ModelLib.box(_spit, Vector3(0.1, 0.42, 0.14), Vector3(0, 0.23, -0.15), dark)
 	ModelLib.box(_spit, Vector3(0.06, 0.34, 0.02), Vector3(0, 0.23, -0.075), Color(1.0, 0.45, 0.1), 2.0)
 	# charcoal grill (mangal) with glowing coals and smoke
 	ModelLib.box(_body, Vector3(0.42, 0.08, 0.3), Vector3(0.12, 0.63, -0.05), dark)
 	_grill_glow = ModelLib.box(_body, Vector3(0.38, 0.01, 0.26), Vector3(0.12, 0.672, -0.05), Color(1.0, 0.4, 0.05), 1.5)
+	# its own material and mesh: the coals go dark when the charcoal is finished
+	_grill_glow.material_override = ModelLib.flat_material_unique(Color(1.0, 0.4, 0.05), 1.5)
+	food.add_glow("charcoal", _grill_glow.material_override)
 	for i in range(7):
 		ModelLib.box(_body, Vector3(0.04, 0.03, 0.04), Vector3(-0.04 + (i % 4) * 0.09, 0.685, -0.12 + int(i / 4) * 0.12), Color(0.12, 0.1, 0.1), 0.0)
 	var smoke := GPUParticles3D.new()
@@ -139,30 +142,49 @@ func _build() -> void:
 	smoke.draw_pass_1 = sm
 	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_body.add_child(smoke)
+	var skewers: Array = []
 	for i in range(4):
 		var sk := ModelLib.spawn("food/skewer" if i % 2 == 0 else "food/skewer-vegetables", _body, Vector3(0.12, 0.69, -0.16 + i * 0.075), 0, 0.5)
 		if sk:
 			sk.rotation.y = deg_to_rad(90)
+			skewers.append(sk)
+	PlotBuilders.stock_skewers(food, skewers, 0.2)
 	# sodas and bread on the counter
+	var cans: Array = []
 	for i in range(4):
-		ModelLib.spawn("food/soda-can", _body, Vector3(0.38 + (i % 2) * 0.08, 0.59, -0.18 + int(i / 2) * 0.09), 0, 0.3)
-	ModelLib.spawn("food/pita-stack", _body, Vector3(0.42, 0.59, 0.14), 20, 0.5)
-	ModelLib.spawn("food/salad-bowl", _body, Vector3(-0.1, 0.59, 0.18), 0, 0.42)
-	ModelLib.spawn("food/charcoal-bag", _body, Vector3(0.62, 0.0, -0.1), -20, 0.7)
-	ModelLib.spawn("food/mutton-skewer", _body, Vector3(-0.1, 0.595, -0.22), 90, 0.4)
-	ModelLib.spawn("food/bottle-ketchup", _body, Vector3(-0.05, 0.59, 0.2), 0, 0.4)
-	ModelLib.spawn("food/bottle-musterd", _body, Vector3(0.03, 0.59, 0.22), 0, 0.4)
+		cans.append(ModelLib.spawn("food/soda-can", _body, Vector3(0.38 + (i % 2) * 0.08, 0.59, -0.18 + int(i / 2) * 0.09), 0, 0.3))
+	food.add_parts("drink", cans)
+	food.add_stack("bread", ModelLib.spawn("food/pita-stack", _body, Vector3(0.42, 0.59, 0.14), 20, 0.5))
+	# the bowl stays on the counter; only the salad in it goes
+	var bowl := ModelLib.spawn("food/salad-bowl", _body, Vector3(-0.1, 0.59, 0.18), 0, 0.42)
+	if bowl:
+		var salad := bowl.find_child("contents*", true, false) as Node3D
+		food.add_single("veg", salad if salad else bowl)
+	food.add_single("charcoal", ModelLib.spawn("food/charcoal-bag", _body, Vector3(0.62, 0.0, -0.1), -20, 0.7))
+	var lamb := ModelLib.spawn("food/mutton-skewer", _body, Vector3(-0.1, 0.595, -0.22), 90, 0.4)
+	if lamb:
+		var cubes := lamb.find_children("meat*", "Node3D", true, false)
+		if cubes.is_empty():
+			food.add_single("mutton", lamb)
+		else:
+			food.add_parts("mutton", cubes)
+			food.add_parts("veg", lamb.find_children("vegetables*", "Node3D", true, false))
+	food.add_single("sauce", ModelLib.spawn("food/bottle-ketchup", _body, Vector3(-0.05, 0.59, 0.2), 0, 0.4))
+	food.add_single("sauce", ModelLib.spawn("food/bottle-musterd", _body, Vector3(0.03, 0.59, 0.22), 0, 0.4))
 	# neon sign (upgrade)
-	_neon = Label3D.new()
-	_neon.text = _title.text
-	_neon.font = UiTheme.font()
-	_neon.font_size = 80
-	_neon.pixel_size = 0.004
-	_neon.modulate = Color(1.0, 0.25, 0.6)
-	_neon.outline_modulate = Color(1.0, 0.7, 0.9)
-	_neon.outline_size = 10
+	_neon = PlotBuilders.neon(self, Vector3.ZERO, 0.9)
+	if _neon == null:
+		var lettering := Label3D.new()
+		lettering.text = TranslationServer.translate("ui.sign")
+		lettering.font = UiTheme.font()
+		lettering.font_size = 80
+		lettering.pixel_size = 0.004
+		lettering.modulate = Color(1.0, 0.25, 0.6)
+		lettering.outline_modulate = Color(1.0, 0.7, 0.9)
+		lettering.outline_size = 10
+		add_child(lettering)
+		_neon = lettering
 	_neon.visible = false
-	add_child(_neon)
 	_neon_light = OmniLight3D.new()
 	_neon_light.light_color = Color(1.0, 0.4, 0.7)
 	_neon_light.light_energy = 0.60
@@ -287,9 +309,11 @@ func _build() -> void:
 	_body.add_child(_fridge)
 	# beside the counter on the pavement (behind the cart it would sink into a shop front)
 	ModelLib.box(_fridge, Vector3(0.33, 0.52, 0.34), Vector3(-0.85, 0.26, -0.18), Color("90a5a2"))
-	ModelLib.box(_fridge, Vector3(0.30, 0.41, 0.025), Vector3(-0.85, 0.285, 0.006), Color("c0ccc5"))
-	ModelLib.box(_fridge, Vector3(0.022, 0.16, 0.028), Vector3(-0.75, 0.33, 0.023), dark)
-	ModelLib.box(_fridge, Vector3(0.26, 0.038, 0.020), Vector3(-0.85, 0.046, 0.006), dark)
+	# the painted glass door with the day's ingredients; plain panels when the art is missing
+	if PlotBuilders.painted(_fridge, Vector3(-0.85, 0.262, -0.006), "coldbox", 0.283) == null:
+		ModelLib.box(_fridge, Vector3(0.30, 0.41, 0.025), Vector3(-0.85, 0.285, 0.006), Color("c0ccc5"))
+		ModelLib.box(_fridge, Vector3(0.022, 0.16, 0.028), Vector3(-0.75, 0.33, 0.023), dark)
+		ModelLib.box(_fridge, Vector3(0.26, 0.038, 0.020), Vector3(-0.85, 0.046, 0.006), dark)
 	_fridge.visible = false
 	# seating (upgrade)
 	_seating = Node3D.new()
@@ -310,7 +334,7 @@ func _build() -> void:
 		_helper.hide()
 	# The small decorative pieces are rigid; roofs/upgrades retain their own batches
 	# so hiding them never leaves stray geometry floating in the truck or stall.
-	ModelLib.batch_primitives(_body, [_roof, _awning_big, _speaker, _fridge, _spit] + _chassis + _wheels, false)
+	ModelLib.batch_primitives(_body, [_roof, _awning_big, _speaker, _fridge, _spit, _skirt, _grill_glow] + _chassis + _wheels, false)
 	for group in [_roof, _awning_big, _speaker, _fridge]:
 		ModelLib.batch_primitives(group)
 
@@ -345,20 +369,28 @@ func set_neon(on: bool) -> void:
 func _place_neon() -> void:
 	if _truck:
 		_neon.position = (FoodTruck.SIGN + Vector3.BACK * 0.009) * FoodTruck.SCALE / CART_SCALE
-		_neon.font_size = 66
-		_neon.pixel_size = 0.0026 * FoodTruck.SCALE / CART_SCALE
+		_size_neon(0.6 * FoodTruck.SCALE / CART_SCALE, 66, 0.0026 * FoodTruck.SCALE / CART_SCALE)
 	elif stall:
 		# the canopy board is built by the Plot in plot space (stand scale 0.72)
 		_neon.position = Vector3(0, 1.14 / 0.72, 0.52 / 0.72)
-		_neon.font_size = 72
-		_neon.pixel_size = 0.0026 / 0.72
+		_size_neon(0.82 / 0.72, 72, 0.0026 / 0.72)
 	else:
 		_neon.position = Vector3(0, 1.32, 0.40)
-		_neon.font_size = 72
-		_neon.pixel_size = 0.0028
+		_size_neon(0.78, 72, 0.0028)
 	_neon_light.position = _neon.position + Vector3(0, -0.1, 0.5)
 	if _title:
 		_title.visible = not _neon_on
+
+## The neon is tube art `width` wide, or (without art) lettering at a font and pixel size.
+func _size_neon(width: float, font_size: int, pixel_size: float) -> void:
+	if _neon is Sprite3D:
+		var art := _neon as Sprite3D
+		# Arabic art is taller for its width: keep it inside the board's height
+		var w := minf(width, width * 0.26 * art.texture.get_width() / art.texture.get_height())
+		art.pixel_size = w / float(art.texture.get_width())
+	elif _neon is Label3D:
+		(_neon as Label3D).font_size = font_size
+		(_neon as Label3D).pixel_size = pixel_size
 
 ## Wheels / roof / skirt for the current vehicle and stall mode.
 func _refresh_frame() -> void:
@@ -391,7 +423,9 @@ func apply_upgrades(upgrades: Dictionary) -> void:
 	_awning_big.visible = upgrades.has("awning")
 	_speaker.visible = upgrades.has("speaker")
 	_fridge.visible = upgrades.has("fridge") or upgrades.has("fridge2")
-	_spit.visible = not upgrades.has("doner")
+	# The cart's own spit only stands for shawarma that can really be sold from it; once the
+	# doner station is bought the plot builds its fitted broiler instead.
+	_spit.visible = false
 	_seating.visible = upgrades.has("seating")
 	if _helper:
 		_helper.visible = upgrades.has("helper")
@@ -399,14 +433,12 @@ func apply_upgrades(upgrades: Dictionary) -> void:
 
 func set_night(is_night: bool) -> void:
 	_neon_light.visible = is_night and _neon.visible
-	_neon.outline_size = 16 if is_night else 6
+	PlotBuilders.neon_night(_neon, is_night)
 
 func set_serving(on: bool) -> void:
 	if on == _serving:
 		return
 	_serving = on
-	if serving_hook.is_valid():
-		serving_hook.call(on)
 	if _vendor:
 		ModelLib.play_loop(_vendor, "idle") # the serving gesture is a one-shot played per handoff
 	if _helper and _helper.visible:

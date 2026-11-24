@@ -36,6 +36,8 @@ func hold(holder, item: String, portions: int) -> int:
 		return 0
 	var needs := Economy.portion_ingredients(item, Game.menu[item])
 	for ing in needs:
+		if int(needs[ing]) <= 0:
+			continue
 		_held[ing] = int(_held.get(ing, 0)) + int(needs[ing]) * n
 	_orders[holder] = {"item": item, "portions": n, "needs": needs}
 	return n
@@ -48,9 +50,12 @@ func release(holder) -> void:
 	_orders.erase(holder)
 	var needs: Dictionary = order["needs"]
 	for ing in needs:
-		_held[ing] = int(_held[ing]) - int(needs[ing]) * int(order["portions"])
-		if int(_held[ing]) <= 0:
+		# .get: a recipe amount of 0 writes a zero entry that an earlier release already erased
+		var left := int(_held.get(ing, 0)) - int(needs[ing]) * int(order["portions"])
+		if left <= 0:
 			_held.erase(ing)
+		else:
+			_held[ing] = left
 
 ## Sell a holder's order (or, without a hold, up to `portions` of free stock), one
 ## Game.sell per portion. Returns the portions actually sold.

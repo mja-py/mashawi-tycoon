@@ -1010,7 +1010,20 @@ func _build_title() -> void:
 	logo.add_theme_color_override("font_color", UiTheme.INK)
 	logo.add_theme_color_override("font_outline_color", UiTheme.NIGHT_DARK)
 	logo.add_theme_constant_override("outline_size", 0)
-	band.add_child(logo)
+	var wordmark := PlotBuilders.sign_texture("logo")
+	if wordmark:
+		# the painted wordmark; the lettering above stays as the fallback
+		var art := TextureRect.new()
+		art.texture = wordmark
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		# a fifth of the screen: a short phone with a Continue button still fits the card
+		art.custom_minimum_size = Vector2(0, clampf(get_viewport().get_visible_rect().size.y * 0.2, 96.0, 150.0))
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		band.add_child(art)
+		logo.free()
+	else:
+		band.add_child(logo)
 	v.add_child(_divider())
 	v.add_child(_label(tr("ui.subtitle"), "Muted", HORIZONTAL_ALIGNMENT_CENTER))
 	var new_btn := _button(tr("ui.new_game"), "Primary", Vector2(0, 64))
@@ -1685,7 +1698,7 @@ func _on_stats(stats: Dictionary) -> void:
 	_show_mood(stats)
 	# The grill crackles while there is food on it and a moment after, never as a constant bed.
 	var now := Time.get_ticks_msec() / 1000.0
-	if int(stats.get("kitchen", 0)) > 0:
+	if int(stats.get("cooking", 0)) > 0:
 		_grill_until = now + 1.5
 	Sfx.set_loop("sizzle", main != null and main.phase == main.Phase.DAY and now < _grill_until)
 

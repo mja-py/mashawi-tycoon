@@ -159,6 +159,8 @@ func _market_sign(parent: Node3D, p: Vector3) -> void:
 	for x in [-0.26, 0.26]:
 		_box(p + Vector3(x, 0.074, -0.027), Vector3(0.02, 0.085, 0.05), TIMBER)
 	_box(p, Vector3(0.62, 0.151, 0.035), TIMBER)
+	if PlotBuilders.painted(parent, p + Vector3.BACK * 0.02, "souk", 0.66):
+		return
 	_box(p + Vector3.BACK * 0.022, Vector3(0.58, 0.122, 0.017), TEAL)
 	for i in range(2):
 		var label := Label3D.new()

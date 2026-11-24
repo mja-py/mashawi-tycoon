@@ -25,7 +25,7 @@ const WHEEL := Color("302d2b")
 const STEEL := Color("aeaaa0")
 const EXTRACTOR := Vector3(0.05, 1.232, -0.20)
 
-static func build(parent: Node3D) -> Label3D:
+static func build(parent: Node3D) -> Node3D:
 	var b := MeshBatch.new()
 	# Wheelbase and cab are part of the same shell, with a visible kitchen floor.
 	b.add_box(Vector3(2.80, 0.13, 0.86), WHEEL, _at(Vector3(-0.07, 0.19, -0.03)))
@@ -85,7 +85,7 @@ static func build(parent: Node3D) -> Label3D:
 		blades.add_box(Vector3(0.034, 0.008, 0.059), STEEL, Transform3D(turn * Basis(Vector3.BACK, 0.27), turn * Vector3(0, 0.003, 0.052)))
 	for mesh in blades.flush(rotor):
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return PlotBuilders.sign(parent, SIGN, 66, 0.0026, "ui.sign", STONE)
+	return PlotBuilders.name_board(parent, SIGN + Vector3(0, 0.0, 0.004), 0.78, 66, 0.0026, STONE)
 
 static func _at(p: Vector3) -> Transform3D:
 	return Transform3D(Basis.IDENTITY, p)

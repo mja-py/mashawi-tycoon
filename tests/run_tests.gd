@@ -54,6 +54,8 @@ func _ready() -> void:
 	_test_fame_levels(game)
 	_test_fame_guests(game)
 	_test_upgrade_jobs(game)
+	_test_food_display(game)
+	_test_traffic()
 	game.delete_save() # the suite must not leave user://save_test.json behind
 	print("tests: %d passed, %d failed" % [passes, failures])
 	get_tree().quit(1 if failures > 0 else 0)
@@ -286,6 +288,18 @@ func _test_group_orders(game) -> void:
 	check(int(sale["sold"]) == 6 and is_equal_approx(float(sale["total"]), price * 6.0) and is_equal_approx(game.money - money, price * 6.0),
 		"the party pays for all six portions (%s)" % str(sale))
 	check(chicken - int(game.inventory["chicken"]) == int(needs["chicken"]) * 6 and ledger.is_empty(), "six portions of chicken leave the store and the hold is cleared")
+	# A recipe with no sauce: two orders in the kitchen at once must both give their stock back.
+	game.menu["chicken_tikka"]["recipe"]["sauce"] = 0
+	var c1 := RefCounted.new()
+	var c2 := RefCounted.new()
+	var free_before := ledger.free_units("chicken")
+	ledger.hold(c1, "chicken_tikka", 2)
+	ledger.hold(c2, "chicken_tikka", 3)
+	ledger.release(c1)
+	ledger.release(c2)
+	check(ledger.is_empty() and ledger.free_units("chicken") == free_before and ledger.free_units("charcoal") == int(game.inventory["charcoal"]),
+		"two orders of a dish with a zero-amount ingredient both release every ingredient (%d of %d chicken free)" % [ledger.free_units("chicken"), free_before])
+	game.menu["chicken_tikka"]["recipe"]["sauce"] = 1
 	# Add-ons are offered per food portion: a party of 30 brings many more extras than one.
 	for id in ["salad", "laban", "soda"]:
 		game.menu[id]["unlocked"] = true
@@ -2461,3 +2475,121 @@ func _test_upgrade_jobs(game) -> void:
 	game.delete_save()
 	game.persist = was_persistent
 	game.new_game()
+
+## The food on show follows the stock: full at opening, emptier as orders are taken,
+## finished (with its tag) at zero, and still right after a station rebuild.
+func _test_food_display(game) -> void:
+	check(FoodDisplay.step(0, 40) == 0 and FoodDisplay.step(1, 40) == 1 and FoodDisplay.step(40, 40) == FoodDisplay.STEPS
+		and FoodDisplay.step(21, 40) == 3 and FoodDisplay.step(5, 0) == FoodDisplay.STEPS, "stock steps: empty at 0, never empty with stock, full at the reference")
+	game.new_game()
+	for id in Data.INGREDIENTS:
+		game.inventory[id] = 0
+	var world := World.new()
+	add_child(world)
+	world.set_location(game.location)
+	world.apply_visual()
+	var food: FoodDisplay = world.plot.food
+	for key in ["meat", "bread", "drink", "veg", "sauce", "charcoal"]:
+		check(food.keys().has(key), "the cart shows %s" % key)
+	check(food.shown("meat") == 0 and food.shown("bread") == 0 and food.marked("meat"),
+		"an empty store shows bare skewers and no bread, tagged as finished (meat %d)" % food.shown("meat"))
+	var grilled := {}
+	for id in Data.MENU_ITEMS:
+		if String(Data.MENU_ITEMS[id].get("station_kind", "")) == "grill":
+			grilled[id] = game.menu[id]["enabled"]
+			game.menu[id]["enabled"] = false
+	world.apply_visual()
+	check(not food.marked("meat") and food.shown("meat") == 0, "bare skewers get no finished tag while nothing grilled is on the menu")
+	for id in grilled:
+		game.menu[id]["enabled"] = grilled[id]
+	world.apply_visual()
+	check(world.cart._grill_glow.mesh != null and world.cart._grill_glow.material_override.emission_energy_multiplier == 0.0,
+		"the coals are their own mesh and go dark without charcoal")
+	for id in ["bread", "chicken", "veg", "sauce", "charcoal"]:
+		game.inventory[id] = 40
+	world.apply_visual()
+	var full_meat := food.shown("meat")
+	check(full_meat >= 6 and food.shown("bread") == 1 and not food.marked("meat") and world.cart._grill_glow.material_override.emission_energy_multiplier > 1.0,
+		"buying supplies fills the grill and lights the coals (%d pieces)" % full_meat)
+	var sim := DaySim.new()
+	add_child(sim)
+	var money: float = game.money
+	sim.start(game.sim_context(), world)
+	check(food.level("chicken") == FoodDisplay.STEPS and food.shown("meat") == full_meat, "the day opens with the stand full")
+	var needs: Dictionary = Economy.portion_ingredients("chicken_tikka", game.menu["chicken_tikka"])
+	var per := int(40 / int(needs["chicken"]))
+	var a := world.spawn_guest(-1, world.queue_slot(0))
+	check(sim._take_order(a, "chicken_tikka", per / 2) == per / 2, "half the chicken is promised to one party")
+	var half_meat := food.shown("meat")
+	check(half_meat < full_meat and half_meat > 0, "the skewers lose meat as orders are taken (%d of %d)" % [half_meat, full_meat])
+	var b := world.spawn_guest(-1, world.queue_slot(1))
+	sim._take_order(b, "chicken_tikka", per)
+	check(food.shown("meat") == 0 and food.marked("meat") and sim.ledger.portions_free("chicken_tikka") == 0,
+		"with every portion promised the skewers are bare and tagged finished")
+	sim._on_gone(b)
+	check(food.shown("meat") == half_meat and not food.marked("meat"), "a party that leaves puts its meat back on show")
+	check(is_equal_approx(game.money, money) and game.inventory["chicken"] == 40, "showing stock never sells or spends anything")
+	sim.running = false
+	world.set_day_managed(false)
+	sim.queue_free()
+	# a rebuild (new stage) keeps the levels on the new props
+	game.money = 100000.0
+	game.inventory["chicken"] = 0
+	game.buy_stage()
+	game.buy_stage()
+	world.apply_visual()
+	food = world.plot.food
+	check(food.keys().has("meat") and food.keys().has("bread") and food.keys().has("drink"), "the truck shows grill meat, bread and cans of its own")
+	check(food.shown("meat") == 0 and food.marked("meat"), "the truck's new grill comes up with the stock it has (none)")
+	game.inventory["chicken"] = 40
+	world.apply_visual()
+	check(food.shown("meat") > 0 and not food.marked("meat"), "restocking fills the truck's skewers")
+	for e in food._entries:
+		for node in e["nodes"]:
+			check(is_instance_valid(node), "no freed prop is left in the display after rebuilds")
+	world.queue_free()
+	game.new_game()
+
+## Street cars brake behind a slower one instead of driving through it, pull away again
+## when the road clears, and their wheels turn with the road speed.
+func _test_traffic() -> void:
+	var road := Node3D.new()
+	add_child(road)
+	var slow := Car.new()
+	road.add_child(slow)
+	slow.setup("cars/sedan", 1, Vector3(1.2, 0, 0.22), 50.0)
+	slow.cruise = 0.6
+	slow.speed = 0.6
+	var fast := Car.new()
+	road.add_child(fast)
+	fast.setup("cars/taxi", 1, Vector3(-1.0, 0, 0.22), 50.0)
+	fast.cruise = 1.6
+	fast.speed = 1.6
+	var oncoming := Car.new()
+	road.add_child(oncoming)
+	oncoming.setup("cars/van", -1, Vector3(6.0, 0, -0.22), -50.0)
+	check(fast._wheels.size() == 4, "a car's four wheels are found (%d)" % fast._wheels.size())
+	var wheel_before: Basis = fast._wheels[0].transform.basis
+	var closest := INF
+	var hardest := 0.0
+	for i in range(600):
+		var before: float = fast.speed
+		for car in [slow, fast, oncoming]:
+			car._process(1.0 / 60.0)
+		hardest = maxf(hardest, (before - fast.speed) * 60.0)
+		closest = minf(closest, slow.position.x - fast.position.x - (slow.length + fast.length) * 0.5)
+	check(closest > 0.05, "the faster car never touches the one ahead (closest %.2f)" % closest)
+	check(absf(fast.speed - slow.speed) < 0.05, "it settles to the speed of the car ahead (%.2f vs %.2f)" % [fast.speed, slow.speed])
+	check(hardest <= Car.BRAKE + 0.01 and hardest > 0.3, "it brakes at a real rate, not instantly (%.2f)" % hardest)
+	check(is_equal_approx(oncoming.speed, oncoming.cruise), "the other lane is not held up")
+	check(not fast._wheels[0].transform.basis.is_equal_approx(wheel_before), "the wheels turn while it drives")
+	road.remove_child(slow)
+	slow.free()
+	var quickest := 0.0
+	for i in range(240):
+		var before: float = fast.speed
+		fast._process(1.0 / 60.0)
+		quickest = maxf(quickest, (fast.speed - before) * 60.0)
+	check(is_equal_approx(fast.speed, fast.cruise) and quickest <= Car.ACCEL + 0.01,
+		"with the road clear it accelerates back to its own speed (%.2f, at most %.2f a second)" % [fast.speed, quickest])
+	road.queue_free()

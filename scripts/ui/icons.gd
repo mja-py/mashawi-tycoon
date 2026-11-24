@@ -270,30 +270,3 @@ func mood_icon(kind: String, size: int = 48) -> Texture2D:
 	var tex := ImageTexture.create_from_image(img)
 	_moods[key] = tex
 	return tex
-
-var _stars := {}
-
-## A star glyph; `fill` 0..1 is how much of it (left to right) is golden.
-func star_icon(fill: float, size: int = 28) -> Texture2D:
-	var key := "%d_%d" % [size, int(round(fill * 4.0))]
-	if _stars.has(key):
-		return _stars[key]
-	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var pts := PackedVector2Array()
-	var c := Vector2(size / 2.0, size / 2.0 + size * 0.03)
-	for i in range(10):
-		var r := size * (0.48 if i % 2 == 0 else 0.2)
-		var a := -PI / 2.0 + i * PI / 5.0
-		pts.append(c + Vector2(cos(a), sin(a)) * r)
-	var gold := Color(0.95, 0.75, 0.2)
-	var grey := Color(0.55, 0.5, 0.45, 0.5)
-	var split: float = size * roundf(fill * 4.0) / 4.0
-	for y in range(size):
-		for x in range(size):
-			var p := Vector2(x + 0.5, y + 0.5)
-			if Geometry2D.is_point_in_polygon(p, pts):
-				img.set_pixel(x, y, gold if p.x <= split else grey)
-	var tex := ImageTexture.create_from_image(img)
-	_stars[key] = tex
-	return tex

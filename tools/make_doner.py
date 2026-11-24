@@ -2,7 +2,7 @@
 
 Run from any directory: blender -b -P /path/to/tools/make_doner.py
 Blender uses Z up; the standard glTF exporter converts this to +Y up.
-Only the joined asset mesh is exported, never the preview stage or lights.
+Only the food model hierarchy is exported.
 """
 
 import json
@@ -10,9 +10,13 @@ import math
 from pathlib import Path
 import random
 import struct
+import sys
 
 import bpy
 from mathutils import Vector
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from make_food import export_stock_model
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,20 +142,21 @@ def ribbon(name, path, width, thickness, top_mat, edge_mat):
 
 
 def build_spit(m):
-    lathe("Dark metal drip tray", [(0, 0), (0.245, 0), (0.268, 0.014),
+    tray = lathe("Dark metal drip tray", [(0, 0), (0.245, 0), (0.268, 0.014),
           (0.268, 0.038), (0.250, 0.038), (0.242, 0.023), (0, 0.023)],
           m["tray"], 20)
-    lathe("Vertical steel skewer", [(0, 0.023), (0.010, 0.023),
+    shaft = lathe("Vertical steel skewer", [(0, 0.023), (0.010, 0.023),
           (0.010, 0.980), (0, 0.980)], m["steel"], 10)
-    lathe("Lower meat support", [(0, 0.158), (0.090, 0.158),
+    support = lathe("Lower meat support", [(0, 0.158), (0.090, 0.158),
           (0.090, 0.176), (0, 0.176)], m["steel"], 12)
-    lathe("Top steel knob", [(0, 0.966), (0.021, 0.966), (0.026, 0.983),
+    knob = lathe("Top steel knob", [(0, 0.966), (0.021, 0.966), (0.026, 0.983),
           (0.017, 1.0), (0, 1.0)], m["steel"], 10)
-    for i in range(14):
-        meat_layer(i, m["crust"][i % len(m["crust"])], m["inner"][i % 2])
-    lathe("Small serving plate", [(0, 0.026), (0.084, 0.026), (0.123, 0.039),
+    layers = [meat_layer(i, m["crust"][i % len(m["crust"])], m["inner"][i % 2])
+              for i in range(14)]
+    plate = lathe("Small serving plate", [(0, 0.026), (0.084, 0.026), (0.123, 0.039),
           (0.123, 0.049), (0.108, 0.053), (0.081, 0.037), (0, 0.037)],
           m["plate"], 16, (0, -0.258))
+    plated = [plate]
     for i in range(4):
         path = []
         for j in range(7):
@@ -160,8 +165,17 @@ def build_spit(m):
                          -0.315 + i * 0.035 + 0.010 * math.sin(t * TAU + i),
                          0.054 + i * 0.002 + 0.010 * math.sin(t * math.pi)
                          + 0.022 * max(0, (t - 0.72) / 0.28) ** 2))
-        ribbon(f"Curled shaved meat {i + 1}", path, 0.021, 0.004,
-               m["inner"][i % 2], m["crust"][i % 3])
+        plated.append(ribbon(f"Curled shaved meat {i + 1}", path, 0.021, 0.004,
+               m["inner"][i % 2], m["crust"][i % 3]))
+
+    base = join_asset("Doner spit", plated)
+    rotor = join_asset("SpitRotor", [tray, shaft, support, knob])
+    roast = join_asset("Roast", layers)
+    # These meshes were authored in asset coordinates around the shaft axis.
+    assert all(obj.location.length < 1e-8 for obj in (base, rotor, roast))
+    rotor.parent = base
+    roast.parent = rotor
+    return base
 
 
 def pita_shell(m):
@@ -231,9 +245,10 @@ def build_wrap(m):
               m["tomato"], 5, (x, y))
 
 
-def join_asset(name):
+def join_asset(name, objects=None):
     bpy.ops.object.select_all(action="DESELECT")
-    objects = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"]
+    if objects is None:
+        objects = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"]
     for obj in objects:
         obj.select_set(True)
     bpy.context.view_layer.objects.active = objects[0]
@@ -273,6 +288,8 @@ def export_asset(obj, filename, height):
     assert not gltf.get("textures"), "Assets should contain flat colors only"
     print(f"VERIFIED {filename}: {exported_tris} triangles; Y-up height "
           f"{ymax - ymin:.6f}; origin (0, 0, 0); {len(gltf['materials'])} materials",
+          flush=True)
+    print(f"{filename} exported nodes: " + ", ".join(n["name"] for n in gltf["nodes"]),
           flush=True)
     return triangles
 
@@ -342,9 +359,10 @@ def main():
         "lettuce_light": material("Lettuce folded edge", "8EBA50"),
         "tomato": material("Tomato red", "D84A32"),
     }
-    build_spit(mats)
-    spit = join_asset("Doner spit")
-    spit_count = export_asset(spit, "doner-spit.glb", 1.0)
+    spit = build_spit(mats)
+    spit_count = export_stock_model(spit, "doner-spit", {
+        "Doner spit": ["SpitRotor"], "SpitRotor": ["Roast"], "Roast": [],
+    }, (0.536, 1.000, 0.649), 1556)
     preview(spit, "doner_preview.png", 1.0)
     clear_scene()
     build_wrap(mats)

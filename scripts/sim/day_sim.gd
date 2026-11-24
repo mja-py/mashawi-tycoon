@@ -49,6 +49,9 @@ var _street_ticks := 0
 var purchase_log: Array[Dictionary] = []
 var _showcase_time := 0.0
 var _showcase_step := 0
+var _stock_open := {}     # ingredient -> units when the day opened
+var _stock_wanted := {}
+var _stock_shown := {}
 
 func start(context: Dictionary, w: World) -> void:
 	world = w
@@ -97,7 +100,6 @@ func start(context: Dictionary, w: World) -> void:
 	if DevTools.has("sim-seed"):
 		_rng.seed = int(DevTools.get_flag("sim-seed"))
 	tp = Throughput.new()
-	ctx["visual"] = true
 	tp.setup(ctx, _rng)
 	tp.on_served = _on_served
 	tp.on_gave_up = _on_gave_up
@@ -113,12 +115,27 @@ func start(context: Dictionary, w: World) -> void:
 	if world.plot:
 		world.plot.service_open = true
 		world.plot.service_stats = {"deliveries": 0, "cleaned": 0}
+	_stock_open = Game.inventory.duplicate()
+	_stock_wanted = FoodDisplay.wanted_today()
+	_stock_shown = {}
+	_show_stock()
 	running = true
 	_car_timer = 1.0
 	_ambient_timer = 2.0
 	world.set_time(hour, ctx["weather"])
 	clock_changed.emit(hour)
 	stats_changed.emit(stats)
+
+## The food on show follows what is left unpromised (presentation only; no RNG, no state
+## a sale reads). Redrawn only when a level steps.
+func _show_stock() -> void:
+	if not is_instance_valid(world) or world.plot == null:
+		return
+	var levels := FoodDisplay.levels_for(ledger.free_units, _stock_open, _stock_wanted)
+	if levels == _stock_shown:
+		return
+	_stock_shown = levels
+	world.plot.show_stock(levels, _stock_wanted)
 
 ## All business actors consume identical fixed simulation ticks at every speed.
 func set_playback_speed(value: float) -> void:
@@ -243,6 +260,11 @@ func _tick(delta: float) -> void:
 func _emit_stats() -> void:
 	stats["queue"] = tp.queue_len()
 	stats["kitchen"] = tp.waiting_payloads().size()
+	# orders really on the fire (grill, spit, fryer): the sizzle follows these
+	var cooking := 0
+	for s in ["grill", "doner", "fryer"]:
+		cooking += (tp.backlog.get(s, []) as Array).size()
+	stats["cooking"] = cooking
 	var seated := 0
 	for diner in tp.seated:
 		if diner.get("active", true):
@@ -367,6 +389,7 @@ func _on_decision(c: Customer) -> void:
 func _on_gone(c: Customer) -> void:
 	tp.remove(c)
 	ledger.release(c)
+	_show_stock()
 	_pending_deliveries.erase(c)
 	_release_seat(c)
 
@@ -376,6 +399,7 @@ func _on_gave_up(payload, reason: String) -> void:
 	if c == null or not is_instance_valid(c):
 		return
 	ledger.release(c)
+	_show_stock()
 	if reason == "closing":
 		stats["closing"] = int(stats["closing"]) + 1
 		c.leave(tr("ev.closing"), Color(0.9, 0.9, 0.9), false)
@@ -453,6 +477,7 @@ func _take_order(payload: Customer, item: String, portions: int) -> int:
 	if held <= 0:
 		_sold_out(payload, item)
 		return 0
+	_show_stock()
 	payload.portions = held
 	return held
 
@@ -535,6 +560,7 @@ func _sold_out(c: Customer, item: String) -> void:
 	stats["sold_out"] = int(stats["sold_out"]) + 1
 	tp.remove(c)
 	ledger.release(c)
+	_show_stock()
 	_release_seat(c)
 	if c.state == Customer.State.SEATED:
 		c.leave_from_seat(Data.pick_bubble("sold_out", _life_rng), Color("efa36f"), "sold_out")
@@ -586,6 +612,7 @@ func _settle_sale(c: Customer, item: String, wait_s: float, dine_in: bool, porti
 	var mood := "great" if key == "great" else ("ok" if key == "ok" else "bad")
 	c.sale_mood = mood
 	_check_stock_warnings()
+	_show_stock()
 	c.purchase_shown = true
 	if dine_in:
 		c.say(text, col, 0.9, 0.78, mood)
@@ -679,7 +706,7 @@ func _bottleneck_watch(game_min: float) -> void:
 
 func _check_stock_warnings() -> void:
 	for id in Data.MENU_ITEMS:
-		if Game.is_on_sale(id) and Game.portions_possible(id) == 0:
+		if Game.is_on_sale(id) and not _stock_available(id):
 			_warn("out_" + id, tr("ev.out_of") % tr(Data.MENU_ITEMS[id]["name"]))
 
 func _warn(key: String, text: String) -> void:

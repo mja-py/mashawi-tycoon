@@ -87,8 +87,31 @@ func _rect(x: float, y: float, w: float, h: float, color: Color) -> void:
 func _poly(points: Array[Vector2], color: Color) -> void:
 	draw_colored_polygon(PackedVector2Array(points), color)
 
+static var _place_art := {}
+
+## The painted picture of a place (`assets/textures/places/<id>.jpg`), or null.
+static func place_texture(id: String) -> Texture2D:
+	if not _place_art.has(id):
+		var path := "res://assets/textures/places/%s.jpg" % id
+		_place_art[id] = load(path) as Texture2D if ResourceLoader.exists(path) else null
+	return _place_art[id]
+
 func _draw_place() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), INK)
+	var art := place_texture(subject)
+	if art and size.x > 0.0 and size.y > 0.0:
+		# cover the card: crop the painting to the card's shape around its centre
+		var tex := art.get_size()
+		var want := size.x / size.y
+		var src := Rect2(Vector2.ZERO, tex)
+		if tex.x / tex.y > want:
+			src.size.x = tex.y * want
+			src.position.x = (tex.x - src.size.x) * 0.5
+		else:
+			src.size.y = tex.x / want
+			src.position.y = (tex.y - src.size.y) * 0.55
+		draw_texture_rect_region(art, Rect2(Vector2.ZERO, size), src)
+		return
 	var fit := minf(size.x / 300.0, size.y / 115.0)
 	draw_set_transform((size - Vector2(300, 115) * fit) * 0.5, 0.0, Vector2.ONE * fit)
 	var water := Color("477e77")
